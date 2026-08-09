@@ -13,6 +13,7 @@ import Market from './pages/market/market';
 import MarketConfig from './pages/market/MarketConfig';
 import Publish from './pages/publish/publish';
 import Listpr from './pages/listpr/listpr';
+import Favorites from './pages/favorites/favorites';
 
 import { useState, useEffect } from 'react';
 import { LoadingScreen, ConfiguringScreen } from './components/LoadingScreen';
@@ -151,6 +152,14 @@ function MainApp() {
           <Route path="/auth/success" element={<AuthSuccess />} />
 
           <Route path="/listpr" element={<Listpr />} />
+          <Route 
+            path="/favorites" 
+            element={
+              <ProtectedRoute>
+                <Favorites />
+              </ProtectedRoute>
+            }
+          />
 
           <Route path="/market" element={<StoreRoute><Market /></StoreRoute>} />
           <Route path="/market/config" element={<StoreRoute><MarketConfig /></StoreRoute>} />

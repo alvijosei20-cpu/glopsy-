@@ -911,3 +911,15 @@ export const createMercadoPagoPreferenceForCart = async (userId, items, shipping
     preferenceId: prefResponse.id
   };
 };
+
+export const getFavoriteProductsDetails = async (userId) => {
+  const { rows } = await pool.query(
+    `SELECT p.*, f.created_at as favorited_at 
+     FROM favoritos f
+     JOIN produc p ON f.product_id = p.id
+     WHERE f.user_id = $1
+     ORDER BY f.created_at DESC`,
+    [userId]
+  );
+  return rows;
+};

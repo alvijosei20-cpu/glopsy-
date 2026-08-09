@@ -1,5 +1,5 @@
 import { obtenerProductoPorId } from '../services/mastershopService.js';
-import { saveProductForUser, getProductsForUser, searchQueryProducts, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, getTiposEmpaque } from '../services/product.service.js';
+import { saveProductForUser, getProductsForUser, searchQueryProducts, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, getTiposEmpaque, getFavoriteProductsDetails } from '../services/product.service.js';
 
 export const getProductById = async (req, res) => {
   const productId = req.params.id;
@@ -104,6 +104,20 @@ export const getFavorites = async (req, res) => {
   } catch (error) {
     console.error('Error al obtener favoritos:', error.message);
     res.status(500).json({ ok: false, message: 'Error al obtener favoritos.' });
+  }
+};
+
+export const getFavoritesProductsController = async (req, res) => {
+  try {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({ ok: false, message: 'No autorizado' });
+    }
+    const products = await getFavoriteProductsDetails(userId);
+    res.json({ ok: true, products });
+  } catch (error) {
+    console.error('Error al obtener productos favoritos:', error.message);
+    res.status(500).json({ ok: false, message: 'Error al obtener productos favoritos.' });
   }
 };
 

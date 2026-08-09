@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getProductById, saveProduct, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, getFavorites, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, createPreferenceController, getTiposEmpaqueController } from '../controllers/product.controller.js';
+import { getProductById, saveProduct, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, createPreferenceController, getTiposEmpaqueController } from '../controllers/product.controller.js';
 import { requireAuth } from '../middlewares/auth.js';
 import { tiendaLimiter } from '../middlewares/limiters.js';
 
@@ -11,6 +11,7 @@ router.post('/auto-categorize', autoCategorizeController);
 
 // Endpoint: Favoritos
 router.get('/favorites', requireAuth, getFavorites);
+router.get('/favorite-products', requireAuth, getFavoritesProductsController);
 router.post('/favorite', requireAuth, toggleFavorite);
 
 // Endpoint: GET /api/product (and /search)

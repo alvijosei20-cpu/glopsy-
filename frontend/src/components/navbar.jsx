@@ -9,7 +9,7 @@ import {
   X, 
   ChevronDown,
   LogOut,
-  Settings,
+  Heart,
   LogIn
   ,Store
 } from 'lucide-react';
@@ -181,12 +181,12 @@ export default function Navbar() {
                       <span>Mi Perfil</span>
                     </Link>
                     <Link 
-                      to="/settings" 
+                      to="/favorites" 
                       onClick={() => setIsUserMenuOpen(false)}
                       className="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-fuchsia-50 hover:text-fuchsia-600 transition-colors"
                     >
-                      <Settings size={16} className="text-fuchsia-500" />
-                      <span>Ajustes</span>
+                      <Heart size={16} className="text-fuchsia-500" />
+                      <span>Favoritos</span>
                     </Link>
                     <hr className="my-1 border-fuchsia-100" />
                     <button 
@@ -286,12 +286,12 @@ export default function Navbar() {
                   Mi Perfil
                 </Link>
                 <Link
-                  to="/settings"
+                  to="/favorites"
                   onClick={() => setIsMobileMenuOpen(false)}
                   className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-700 hover:text-fuchsia-600 hover:bg-fuchsia-50 text-base font-medium"
                 >
-                  <Settings size={20} className="text-fuchsia-500" />
-                  Ajustes
+                  <Heart size={20} className="text-fuchsia-500" />
+                  Favoritos
                 </Link>
                 <button
                   onClick={handleLogout}
