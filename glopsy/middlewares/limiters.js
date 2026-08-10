@@ -1,6 +1,6 @@
 import rateLimit from 'express-rate-limit';
 
-// Limitador general para toda la API
+// 1. Límite global (100 req / 15 min)
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -8,27 +8,34 @@ export const apiLimiter = rateLimit({
   legacyHeaders: false,
   message: {
     ok: false,
-    message: 'Demasiadas peticiones desde esta IP, por favor intenta de nuevo en 15 minutos.',
+    message: 'Por favor intenta dentro de 15 min.',
   },
 });
 
-// Limitador estricto para flujos de autenticación / OAuth
+// 2. Límite estricto para autenticación/login (3 intentos fallidos / 15 min)
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 15,
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: {
+    ok: false,
+    message: 'Demasiados intentos fallidos intenta más tarde.',
+  },
+});
+
+// 3. Límite para endpoints pesados (30 req / 15 min)
+export const heavyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
     ok: false,
-    message: 'Demasiados intentos de autenticación. Intenta más tarde.',
+    message: 'Exceso de solicitudes.',
   },
 });
 
-// Cambios de estado: evita automatización o abuso sin penalizar la lectura normal.
-export const tiendaLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { ok: false, message: 'Demasiadas solicitudes a tienda. Intenta más tarde.' },
-});
+// Alias / compatibilidad
+export const tiendaLimiter = heavyLimiter;

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { ShoppingCart, ArrowLeft, ShieldCheck, Phone, Home, Check } from 'lucide-react';
+import { ShoppingCart, ArrowLeft, ShieldCheck, Phone, Home, Check, ChevronDown, ChevronUp, Truck, Package, DollarSign } from 'lucide-react';
 import api from '../../services/api';
 import './cart.css';
 
@@ -42,8 +42,94 @@ export default function Checkout() {
   const [freeShippingFlag, setFreeShippingFlag] = useState(false);
   const [loadingShipping, setLoadingShipping] = useState(false);
   const [loadingCheckout, setLoadingCheckout] = useState(false);
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const [showBricks, setShowBricks] = useState(false);
+  const [preferenceData, setPreferenceData] = useState(null);
 
   useEffect(() => {
+    if (!showBricks || !preferenceData) return;
+
+    const scriptId = 'mercadopago-sdk-v2';
+    if (!document.getElementById(scriptId)) {
+      const script = document.createElement('script');
+      script.id = scriptId;
+      script.src = 'https://sdk.mercadopago.com/js/v2';
+      script.onload = () => initBricks();
+      document.body.appendChild(script);
+    } else {
+      initBricks();
+    }
+
+    async function initBricks() {
+      if (!window.MercadoPago) return;
+      try {
+        const isDark = document.documentElement.classList.contains('dark');
+        const mp = new window.MercadoPago(preferenceData.publicKey, { locale: 'es-CO' });
+        const bricksBuilder = mp.bricks();
+        await bricksBuilder.create('payment', 'paymentBrick_container', {
+          initialization: {
+            preferenceId: preferenceData.preferenceId,
+            amount: Number(total),
+          },
+          callbacks: {
+            onReady: () => {},
+            onSubmit: ({ selectedPaymentMethod, formData }) => {
+              return new Promise((resolve, reject) => {
+                api.post('/product/process-mp-payment', {
+                  formData,
+                  preferenceId: preferenceData.preferenceId,
+                  guestHash,
+                  customer_info: {
+                    departamento_id: selectedDepartamentoId,
+                    ciudad_id: selectedCiudadId,
+                    direccion,
+                    telefono
+                  }
+                })
+                .then(res => {
+                  if (res.data.ok) {
+                    setCheckoutSuccess(true);
+                    localStorage.removeItem('glopsy_cart');
+                    window.dispatchEvent(new Event('storage'));
+                    resolve();
+                  } else {
+                    alert(res.data.message || 'Error en el pago');
+                    reject(new Error(res.data.message));
+                  }
+                })
+                .catch(err => {
+                  alert(err.response?.data?.message || 'Error al procesar el pago');
+                  reject(err);
+                });
+              });
+            },
+            onError: (error) => {
+              console.error('MP Bricks Error:', error);
+            }
+          },
+          customization: {
+            visual: {
+              style: {
+                theme: isDark ? 'dark' : 'default',
+              }
+            },
+            paymentMethods: {
+              creditCard: 'all',
+              debitCard: 'all',
+              ticket: 'all',
+              bankTransfer: 'all',
+              mercadoPago: 'all',
+            }
+          }
+        });
+      } catch (err) {
+        console.error('Error rendering MP Bricks:', err);
+      }
+    }
+  }, [showBricks, preferenceData]);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     const status = searchParams.get('status');
     if (status === 'success') {
       setCheckoutSuccess(true);
@@ -150,10 +236,14 @@ export default function Checkout() {
         guestHash
       });
 
-      if (res.data.ok && (res.data.init_point || res.data.sandbox_init_point)) {
-        window.location.href = res.data.init_point || res.data.sandbox_init_point;
+      if (res.data.ok && res.data.preferenceId && res.data.public_key) {
+        setPreferenceData({
+          preferenceId: res.data.preferenceId,
+          publicKey: res.data.public_key
+        });
+        setShowBricks(true);
       } else {
-        alert('No se pudo iniciar el pago con Mercado Pago.');
+        alert('No se pudo iniciar la preferencia de pago con Mercado Pago.');
       }
     } catch (err) {
       console.error('Error al procesar el checkout:', err);
@@ -212,7 +302,7 @@ export default function Checkout() {
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 flex items-center gap-3">
             <ShieldCheck size={32} className="text-blue-600" />
-            Checkout y Pago Seguro
+            Glopsy pagos
           </h1>
           <Link to="/cart" className="text-sm font-semibold text-fuchsia-600 hover:underline flex items-center gap-1">
             <ArrowLeft size={16} /> Volver al carrito
@@ -220,7 +310,25 @@ export default function Checkout() {
         </div>
 
         <div className="bg-white rounded-3xl p-6 sm:p-10 border border-slate-200 shadow-sm">
-          <form onSubmit={handleCheckout} className="space-y-6">
+          {showBricks ? (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-200">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Opciones de pago</h2>
+                  <p className="text-xs text-slate-500">Realiza tu pago de forma segura sin salir de la tienda.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowBricks(false)}
+                  className="text-xs font-bold text-fuchsia-600 hover:underline cursor-pointer"
+                >
+                  ← Volver
+                </button>
+              </div>
+              <div id="paymentBrick_container" className="min-h-[450px]"></div>
+            </div>
+          ) : (
+            <form onSubmit={handleCheckout} className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Departamento</label>
@@ -320,90 +428,136 @@ export default function Checkout() {
               </div>
             )}
 
-            <div className="border-t border-slate-100 pt-6 space-y-3">
-              <h3 className="font-bold text-slate-900 mb-2">Resumen de costos</h3>
-              <div className="flex justify-between text-slate-600 text-sm">
-                <span>Subtotal productos ({cartItems.length})</span>
-                <span className="font-semibold text-slate-800">{formatPrice(subtotal)}</span>
-              </div>
-               <div className="space-y-2">
-                  <div className="flex justify-between text-slate-600 text-sm items-center">
-                    <div>
+            <div className="border-t border-slate-200 pt-6 space-y-4">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-4 shadow-sm">
+                <div className="flex items-center gap-2.5 pb-3 border-b border-slate-200 text-slate-900 font-bold text-sm">
+                  <div className="p-2 bg-fuchsia-100 text-fuchsia-600 rounded-xl">
+                    <Truck size={18} />
+                  </div>
+                  <span>Resumen de Envío y Costos</span>
+                </div>
+
+                <div className="space-y-3 text-sm">
+                  <div className="flex items-center justify-between text-slate-700">
+                    <div className="flex items-center gap-2">
+                      <Package size={16} className="text-slate-500" />
+                      <span>Subtotal productos ({cartItems.length})</span>
+                    </div>
+                    <span className="font-bold text-slate-900">{formatPrice(subtotal)}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between text-slate-700">
+                    <div className="flex items-center gap-2">
+                      <Truck size={16} className="text-slate-500" />
                       {freeShippingFlag ? (
-                        <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full text-sm font-semibold">
-                          <Check size={14} /> Glopsy te regala el envío
-                        </div>
+                        <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full text-xs font-bold">
+                          <Check size={12} /> Glopsy te regala el envío
+                        </span>
                       ) : (
                         <span>Envío ({shippingMessage || 'ENVIA'})</span>
                       )}
                     </div>
-                    <span className="font-semibold text-slate-800">
+                    <span className="font-bold text-slate-900">
                       {loadingShipping ? 'Calculando...' : formatPrice(freeShippingFlag ? 0 : shippingCost)}
                     </span>
                   </div>
-                 {/* Show each shipment cost separately in muted/opaque style */}
-                {shipmentsGrouped.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {shipmentsGrouped.map((g, idx) => (
-                       <div key={g.key || idx} className="flex justify-between text-sm text-slate-500 opacity-70">
-                         <div>
-                           <div>Envío {idx + 1} {g.idbusiness ? `- Tienda ${g.idbusiness}` : ''}</div>
-                           {g.selected_carrier && (
-                             <div className="text-xs text-slate-400">{g.selected_carrier.carrier} · {g.selected_carrier.service}</div>
-                           )}
-                         </div>
-                         <span className="font-medium">{formatPrice(g.shippingCost)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+
+                  {shipmentsGrouped.length > 0 && (
+                    <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                      {shipmentsGrouped.map((g, idx) => {
+                        const isFree = Number(g.shippingCost || 0) === 0 || freeShippingFlag;
+                        return (
+                          <div key={g.key || idx} className="flex items-center justify-between text-xs text-slate-600 bg-slate-200/60 p-2.5 rounded-xl border border-slate-300/60">
+                            <div>
+                              <div className="font-semibold text-slate-800">Envío {idx + 1} {g.idbusiness ? `(Tienda ${g.idbusiness})` : ''}</div>
+                              {g.selected_carrier && (
+                                <div className="text-[11px] text-slate-500">{g.selected_carrier.carrier} · {g.selected_carrier.service}</div>
+                              )}
+                               {isFree && (
+                                 <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold mt-0.5 flex items-center gap-1">
+                                   <Check size={12} /> Glopsy te regala este envio
+                                 </div>
+                               )}
+                             </div>
+                             <span className="font-bold text-slate-800">
+                               {isFree ? <span className="text-emerald-600 dark:text-emerald-400">Gratis</span> : formatPrice(g.shippingCost)}
+                             </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 {/* Show per-item shipping breakdown including free items */}
-                {Array.isArray(per_item) || (shipmentsGrouped && shipmentsGrouped.length > 0) ? (
-                  <div className="mt-3">
-                    <div className="text-xs text-slate-500 mb-1">Detalle por producto</div>
-                    <div className="space-y-1">
-                      {perItem && perItem.length > 0 ? (
-                        // aggregate perItem by itemId
-                        (() => {
-                          const map = new Map();
-                          for (const pi of perItem) {
-                            const id = String(pi.itemId);
-                            const prev = map.get(id) || { itemId: pi.itemId, shippingCost: 0, qty: 0 };
-                            prev.shippingCost += Number(pi.shippingCost || 0);
-                            prev.qty += 1;
-                            map.set(id, prev);
-                          }
-                          const arr = Array.from(map.values());
-                          return arr.map(a => {
-                            const prod = cartItems.find(ci => String(ci.id) === String(a.itemId));
-                            const name = prod?.name || `Producto ${a.itemId}`;
-                            const qty = prod?.quantity || a.qty || 1;
-                            return (
-                              <div key={a.itemId} className="flex justify-between text-sm text-slate-600">
-                                <div>
-                                  <div className="font-medium">{name} {qty > 1 ? `x${qty}` : ''}</div>
-                                </div>
-                                <div>
-                                  {Number(a.shippingCost) === 0 ? (
-                                    <span className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-xs font-semibold"><Check size={12} /> Gratis</span>
-                                  ) : (
-                                    <span className="font-medium">{formatPrice(a.shippingCost)}</span>
+                {Array.isArray(perItem) || (shipmentsGrouped && shipmentsGrouped.length > 0) ? (
+                  <div className="pt-3 border-t border-slate-200">
+                    <div className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1.5">
+                      <Package size={14} className="text-fuchsia-600" />
+                      <span>Detalle por producto y envíos</span>
+                    </div>
+                    <div className="relative">
+                      <div className={`space-y-2 transition-all duration-300 ${!detailsExpanded ? 'max-h-32 overflow-hidden' : ''}`}>
+                        {perItem && perItem.length > 0 ? (
+                          // aggregate perItem by itemId
+                          (() => {
+                            const map = new Map();
+                            for (const pi of perItem) {
+                              const id = String(pi.itemId);
+                              const prev = map.get(id) || { itemId: pi.itemId, qty: 0, isFree: false };
+                              prev.qty += 1;
+                              if (pi.isFree) prev.isFree = true;
+                              map.set(id, prev);
+                            }
+                            const arr = Array.from(map.values());
+                            return arr.map(a => {
+                              const prod = cartItems.find(ci => String(ci.id) === String(a.itemId));
+                              const name = prod?.name || `Producto ${a.itemId}`;
+                              const qty = prod?.quantity || a.qty || 1;
+                              return (
+                                <div key={a.itemId} className="flex items-center gap-3 text-xs sm:text-sm bg-slate-200/60 p-3 rounded-xl border border-slate-300/60 shadow-sm">
+                                  {prod?.image && (
+                                    <img src={prod.image} alt="" className="w-10 h-10 object-cover rounded-lg border border-slate-200 shrink-0" />
                                   )}
+                                  <div>
+                                    <div className="font-bold text-slate-800 line-clamp-1">{name}</div>
+                                    <div className="text-slate-500 text-[11px]">Cantidad: {qty} {prod?.variant?.name ? `• ${prod.variant.name}` : ''}</div>
+                                     {a.isFree && (
+                                       <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold mt-0.5 flex items-center gap-1">
+                                         <Check size={12} /> Glopsy te regala este envio
+                                       </div>
+                                     )}
+                                  </div>
                                 </div>
-                              </div>
-                            );
-                          });
-                        })()
-                      ) : (
-                        <div className="text-xs text-slate-400">No hay detalles por producto.</div>
+                              );
+                            });
+                          })()
+                        ) : (
+                          <div className="text-xs text-slate-400">No hay detalles por producto.</div>
+                        )}
+                      </div>
+                      {!detailsExpanded && (
+                        <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-white dark:from-[#121212] to-transparent pointer-events-none"></div>
                       )}
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => setDetailsExpanded(!detailsExpanded)}
+                      className="mt-2 flex items-center gap-1 text-xs font-bold text-fuchsia-600 hover:text-fuchsia-700 transition-colors cursor-pointer"
+                    >
+                      <span>{detailsExpanded ? 'Ver menos' : 'Ver más detalles'}</span>
+                      {detailsExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
                   </div>
                 ) : null}
-               </div>
-              <div className="border-t border-slate-100 pt-3 flex justify-between text-lg font-extrabold text-slate-900">
-                <span>Total a pagar</span>
-                <span className="text-blue-600">{formatPrice(total)}</span>
+
+                <div className="border-t border-slate-200 pt-3 flex items-center justify-between text-base sm:text-lg font-extrabold text-slate-900">
+                  <span className="flex items-center gap-2">
+                    <DollarSign size={18} className="text-emerald-600" />
+                    <span>Total a pagar</span>
+                  </span>
+                  <span className="text-fuchsia-600">{formatPrice(total)}</span>
+                </div>
               </div>
             </div>
 
@@ -416,6 +570,7 @@ export default function Checkout() {
               {loadingCheckout ? 'Procesando pago con Mercado Pago...' : 'Pagar con Mercado Pago'}
             </button>
           </form>
+          )}
         </div>
       </div>
     </div>

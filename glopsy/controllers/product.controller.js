@@ -1,5 +1,5 @@
 import { obtenerProductoPorId } from '../services/mastershopService.js';
-import { saveProductForUser, getProductsForUser, searchQueryProducts, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, getTiposEmpaque, getFavoriteProductsDetails } from '../services/product.service.js';
+import { saveProductForUser, getProductsForUser, searchQueryProducts, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails } from '../services/product.service.js';
 
 export const getProductById = async (req, res) => {
   const productId = req.params.id;
@@ -192,6 +192,18 @@ export const createPreferenceController = async (req, res) => {
   } catch (error) {
     console.error('Error al crear preferencia de Mercado Pago:', error.message);
     res.status(400).json({ ok: false, message: error.message || 'Error al procesar el pago con Mercado Pago.' });
+  }
+};
+
+export const processMpPaymentController = async (req, res) => {
+  try {
+    const { formData, preferenceId, customer_info, guestHash } = req.body;
+    const userId = req.auth?.userId || 1;
+    const paymentRes = await processMpPaymentForCart(userId, formData, preferenceId, customer_info, guestHash);
+    res.json({ ok: true, payment: paymentRes });
+  } catch (error) {
+    console.error('Error al procesar pago con Mercado Pago Bricks:', error.message);
+    res.status(400).json({ ok: false, message: error.message || 'Error al procesar el pago.' });
   }
 };
 

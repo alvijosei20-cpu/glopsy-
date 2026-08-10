@@ -1,8 +1,12 @@
 .app-shell {
   min-height: 100vh;
   color: #334155;
-  background:white; 
-    
+  background: white;
+}
+
+html.dark .app-shell {
+  background: #000000 !important;
+  color: #f1f5f9 !important;
 }
 
 .app-content {
@@ -17,6 +21,10 @@
   color: black;
   font-size: clamp(1.75rem, 4vw, 2.5rem);
   font-weight: 700;
+}
+
+html.dark .app-content h1 {
+  color: #f1f5f9 !important;
 }
 
 @media (max-width: 640px) {

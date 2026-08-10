@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Search, Heart, MapPin, ShoppingCart, Star, ShieldCheck, Tag, Truck, RefreshCw, Filter, ArrowUpDown, Layers } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
+import { SkeletonList } from '../../components/SkeletonLoader';
 import './listpr.css';
 
 export default function Listpr() {
@@ -18,8 +19,72 @@ export default function Listpr() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [sortBy, setSortBy] = useState('relevance');
   const [favorites, setFavorites] = useState(new Set());
+  const [cartItemCount, setCartItemCount] = useState(0);
+  const [toastMessage, setToastMessage] = useState('');
 
-  const userCity = sessionStorage.getItem('location_city') || 'Bogotá D.C.';
+  useEffect(() => {
+    const updateCount = () => {
+      try {
+        const items = JSON.parse(localStorage.getItem('glopsy_cart') || '[]');
+        const totalCount = items.reduce((acc, item) => acc + Number(item.quantity || 1), 0);
+        setCartItemCount(totalCount);
+      } catch {
+        setCartItemCount(0);
+      }
+    };
+    updateCount();
+    window.addEventListener('storage', updateCount);
+    const interval = setInterval(updateCount, 500);
+    return () => {
+      window.removeEventListener('storage', updateCount);
+      clearInterval(interval);
+    };
+  }, []);
+
+  const handleAddToCart = (p, e) => {
+    e.stopPropagation();
+    try {
+      const existingCart = JSON.parse(localStorage.getItem('glopsy_cart') || '[]');
+      const baseP = Number(p.suggested_price || p.base_price || 0);
+      let finalPrice = baseP;
+      if (p.oferta_activa) {
+        if (p.oferta_activa.tipo === 'porcentaje') {
+          finalPrice = baseP * (1 - Number(p.oferta_activa.valor) / 100);
+        } else if (p.oferta_activa.tipo === 'monto_fijo') {
+          finalPrice = Math.max(0, baseP - Number(p.oferta_activa.valor));
+        }
+      }
+      const itemIndex = existingCart.findIndex(item => item.id === p.id);
+      if (itemIndex > -1) {
+        existingCart[itemIndex].quantity = (existingCart[itemIndex].quantity || 1) + 1;
+      } else {
+        existingCart.push({
+          id: p.id,
+          name: p.name,
+          price: finalPrice,
+          image: getProductImage(p),
+          quantity: 1,
+          tienda_id: p.tienda_id
+        });
+      }
+      localStorage.setItem('glopsy_cart', JSON.stringify(existingCart));
+      window.dispatchEvent(new Event('storage'));
+
+      setToastMessage('¡Producto agregado al carrito!');
+      setTimeout(() => setToastMessage(''), 3000);
+    } catch (err) {
+      console.error('Error al añadir al carrito:', err);
+    }
+  };
+
+  const getUserCity = () => {
+    try {
+      const data = JSON.parse(sessionStorage.getItem('location_data') || localStorage.getItem('location_data') || '{}');
+      if (data.city) return data.city;
+    } catch {}
+    return sessionStorage.getItem('location_city') || localStorage.getItem('location_city') || 'Bogotá D.C.';
+  };
+  const userCity = getUserCity();
 
   // Cargar categorías y favoritos al montar
   useEffect(() => {
@@ -265,10 +330,7 @@ export default function Listpr() {
 
         {/* Loading Initial */}
         {loading && products.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-24">
-            <div className="w-12 h-12 border-4 border-fuchsia-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-            <p className="text-slate-600 font-medium">Buscando productos y categorías...</p>
-          </div>
+          <SkeletonList count={8} />
         )}
 
         {/* Empty State */}
@@ -315,7 +377,7 @@ export default function Listpr() {
                 <div
                   key={p.id}
                   onClick={() => navigate(`/product/${p.public_id || p.id}`)}
-                  className="bg-white rounded-none shadow-sm hover:shadow-xl transition-all duration-300 border border-slate-200 flex flex-col sm:flex-row overflow-hidden group cursor-pointer relative sm:h-44"
+                  className="bg-white rounded-none shadow-sm hover:shadow-xl transition-all duration-300 border border-slate-200 flex flex-col sm:flex-row overflow-hidden group cursor-pointer relative min-h-[14rem] sm:min-h-[13rem]"
                 >
                   {/* Image Container */}
                   <div className="relative w-full sm:w-2/5 h-44 sm:h-full bg-slate-50 overflow-hidden flex items-center justify-center border-b sm:border-b-0 sm:border-r border-slate-200 shrink-0">
@@ -355,45 +417,57 @@ export default function Listpr() {
                   </div>
 
                   {/* Content Container */}
-                  <div className="w-full sm:w-3/5 p-3.5 sm:p-4 flex flex-col flex-grow justify-between text-left">
+                  <div className="w-full sm:w-3/5 p-3.5 sm:p-4 flex flex-col flex-grow justify-between text-left pr-12">
                     <div>
                       {/* 1. Nombre */}
                       <h2 className="text-xs sm:text-sm font-normal text-slate-800 line-clamp-2 group-hover:text-fuchsia-600 transition-colors mb-2 leading-snug">
                         {p.name}
                       </h2>
 
-                      {/* 2. Precio */}
-                      <div className="mb-2">
-                        {hasDiscount && (
-                          <span className="text-[11px] text-slate-400 line-through block">
-                            {formatPrice(baseP)}
-                          </span>
-                        )}
-                        <div className="flex items-baseline gap-1.5 flex-wrap">
-                          <span className="text-base sm:text-lg font-bold text-slate-900">
-                            {formatPrice(hasDiscount ? finalPrice : baseP)}
-                          </span>
+                      {/* 2. Precio y Botón Agregar al Carrito */}
+                      <div className="flex items-center justify-between gap-2 mt-2">
+                        <div>
                           {hasDiscount && (
-                            <span className="text-[11px] font-bold text-pink-600">
-                              {discountInfo.tipo === 'porcentaje' ? `${discountInfo.valor}% OFF` : ''}
+                            <span className="text-[11px] text-slate-400 line-through block">
+                              {formatPrice(baseP)}
                             </span>
                           )}
+                          <div className="flex items-baseline gap-1.5 flex-wrap">
+                            <span className="text-base sm:text-lg font-bold text-slate-900">
+                              {formatPrice(hasDiscount ? finalPrice : baseP)}
+                            </span>
+                            {hasDiscount && (
+                              <span className="text-[11px] font-bold text-pink-600">
+                                {discountInfo.tipo === 'porcentaje' ? `${discountInfo.valor}% OFF` : ''}
+                              </span>
+                            )}
+                          </div>
                         </div>
+
+                        <button
+                          type="button"
+                          onClick={(e) => handleAddToCart(p, e)}
+                          className="absolute bottom-3 right-3 z-20 bg-fuchsia-100 hover:bg-fuchsia-200 active:bg-fuchsia-300 text-fuchsia-700 w-9 h-9 rounded-full shadow-md transition-all duration-200 cursor-pointer hover:scale-110 active:scale-95 flex items-center justify-center"
+                          title="Agregar al carrito"
+                        >
+                          <ShoppingCart size={16} />
+                          <span className="absolute top-1 right-2 text-pink-600 text-[10px] font-black">+</span>
+                        </button>
                       </div>
                     </div>
 
-                    {/* 3. Último: Envio gratis y ofertas disponibles */}
+                    {/* 3. Envio gratis / ofertas */}
                     {(hasFreeShipping || hasDiscount) && (
-                      <div className="flex flex-col gap-1 pt-2 border-t border-fuchsia-50">
+                      <div className="flex flex-wrap gap-1 pt-2 border-t border-fuchsia-50 mt-2">
                         {hasFreeShipping && (
                           <div className="flex items-center gap-1 text-emerald-600 text-[11px] font-bold bg-emerald-50 px-2 py-0.5 rounded w-fit">
                             <Truck size={12} />
-                            <span>Envío gratis {p.ciudad_nombre ? `a ${p.ciudad_nombre}` : ''}</span>
+                            <span>Envío gratis</span>
                           </div>
                         )}
                         {hasDiscount && (
                           <div className="flex items-center gap-1 text-pink-600 text-[11px] font-bold bg-pink-50 px-2 py-0.5 rounded w-fit">
-                            <span>{discountInfo.tipo === 'porcentaje' ? `Oferta: ${discountInfo.valor}% OFF` : 'Oferta disponible'}</span>
+                            <span>Oferta</span>
                           </div>
                         )}
                       </div>
@@ -421,6 +495,28 @@ export default function Listpr() {
         )}
 
       </div>
+
+      {/* Floating Cart Button */}
+      <button
+        onClick={() => navigate('/cart')}
+        className="fixed bottom-6 right-6 z-50 bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white p-4 rounded-full shadow-2xl shadow-fuchsia-600/40 hover:scale-110 active:scale-95 transition-all duration-300 flex items-center justify-center group cursor-pointer"
+        title="Ver carrito de compras"
+      >
+        <ShoppingCart size={24} className="group-hover:rotate-12 transition-transform" />
+        {cartItemCount > 0 && (
+          <span className="absolute -top-1.5 -right-1.5 bg-pink-700 text-white text-xs w-6 h-6 rounded-full flex items-center justify-center font-bold shadow-lg shadow-pink-600/50 animate-bounce">
+            {cartItemCount}
+          </span>
+        )}
+      </button>
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-24 right-6 z-50 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl text-xs font-bold animate-in fade-in slide-in-from-bottom-3 flex items-center gap-2 border border-fuchsia-500/30">
+          <ShoppingCart size={16} className="text-fuchsia-400" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
     </div>
   );
 }

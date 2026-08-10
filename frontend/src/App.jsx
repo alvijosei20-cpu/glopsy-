@@ -14,6 +14,7 @@ import MarketConfig from './pages/market/MarketConfig';
 import Publish from './pages/publish/publish';
 import Listpr from './pages/listpr/listpr';
 import Favorites from './pages/favorites/favorites';
+import Profile from './pages/profile/profile';
 
 import { useState, useEffect } from 'react';
 import { LoadingScreen, ConfiguringScreen } from './components/LoadingScreen';
@@ -157,6 +158,14 @@ function MainApp() {
             element={
               <ProtectedRoute>
                 <Favorites />
+              </ProtectedRoute>
+            }
+          />
+          <Route 
+            path="/profile" 
+            element={
+              <ProtectedRoute>
+                <Profile />
               </ProtectedRoute>
             }
           />

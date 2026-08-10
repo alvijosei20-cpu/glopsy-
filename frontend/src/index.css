@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -21,7 +22,81 @@ body {
   min-height: 100vh;
 }
 
-/* src/index.css */
+/* Modo Día (Light) */
+html:not(.dark) nav {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  border-bottom: none !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+html:not(.dark) nav a:not(.bg-gradient-to-r):not(.text-white),
+html:not(.dark) nav span:not(.bg-clip-text) {
+  color: #000000 !important;
+}
+
+html:not(.dark) .bg-white {
+  background-color: #ffffff !important;
+}
+
+/* Modo Noche (Dark): Base negra (#000000), Tarjetas ligeramente más claras (#121212) */
+html.dark {
+  background-color: #000000 !important;
+  color: #f1f5f9 !important;
+}
+
+html.dark body,
+html.dark #root {
+  background-color: #000000 !important;
+  color: #f1f5f9 !important;
+}
+
+html.dark nav {
+  background-color: #000000 !important;
+  color: #f1f5f9 !important;
+  border-bottom: none !important;
+  box-shadow: 0 1px 3px rgba(255, 255, 255, 0.05);
+}
+
+html.dark .bg-white,
+html.dark .bg-slate-50,
+html.dark .bg-slate-100 {
+  background-color: #121212 !important;
+  color: #f1f5f9 !important;
+}
+
+html.dark .border-slate-200,
+html.dark .border-fuchsia-100,
+html.dark .border-fuchsia-200,
+html.dark .border-slate-100 {
+  border-color: #27272a !important;
+}
+
+html.dark .text-slate-800,
+html.dark .text-slate-900,
+html.dark .text-slate-950,
+html.dark .text-slate-700,
+html.dark .text-slate-600,
+html.dark .text-slate-500 {
+  color: #e2e8f0 !important;
+}
+
+html.dark .bg-fuchsia-50 {
+  background-color: #1e1b2e !important;
+}
+
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background-color: #1a1a1a !important;
+  color: #f1f5f9 !important;
+  border-color: #27272a !important;
+}
+
+/* Transiciones suaves para el cambio de tema */
+body, div, nav, button, input, select {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
 
 @keyframes spin {
   0% {

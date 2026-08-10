@@ -8,7 +8,6 @@ export const getFullments = async (req, res) => {
       SELECT 
         f.id AS fullment_id,
         f.tienda_id,
-        f.perfil_envio_id,
         c.id AS ciudad_id,
         c.nombre AS ciudad_nombre,
         d.id AS departamento_id,
@@ -36,7 +35,6 @@ export const getMyFullments = async (req, res) => {
       SELECT 
         f.id AS fullment_id,
         f.tienda_id,
-        f.perfil_envio_id,
         c.id AS ciudad_id,
         c.nombre AS ciudad_nombre,
         d.id AS departamento_id,
@@ -88,21 +86,20 @@ export const getCiudades = async (req, res) => {
 export const createFullment = async (req, res) => {
   try {
     const userId = req.auth?.userId;
-    const { ciudad_id, perfil_envio_id } = req.body;
+    const { ciudad_id } = req.body;
 
     if (!ciudad_id) {
       return res.status(400).json({ ok: false, message: 'El campo ciudad_id es obligatorio' });
     }
 
     const { rows } = await query(
-      `INSERT INTO fullments (tienda_id, ciudad_id, perfil_envio_id, estado)
-       VALUES ($1, $2, $3, 'activo')
-       RETURNING id AS fullment_id, tienda_id, ciudad_id, perfil_envio_id, estado`,
-      [userId, ciudad_id, perfil_envio_id || null]
+      `INSERT INTO fullments (tienda_id, ciudad_id, estado)
+       VALUES ($1, $2, 'activo')
+       RETURNING id AS fullment_id, tienda_id, ciudad_id, estado`,
+      [userId, ciudad_id]
     );
 
     res.status(201).json({ ok: true, fullment: rows[0] });
-    // Invalidate Envia cache for this tienda (userId)
     try { await invalidateRatesCacheForStore(userId).catch(() => {}); } catch {}
   } catch (error) {
     console.error('Error al crear fullment:', error.message);
@@ -136,35 +133,7 @@ export const deleteFullment = async (req, res) => {
 };
 
 export const updateFullmentPerfil = async (req, res) => {
-  try {
-    const userId = req.auth?.userId;
-    const { id } = req.params;
-    const { perfil_envio_id } = req.body;
-
-    // Verify fullment belongs to user
-    const { rows: fRows } = await query('SELECT id, tienda_id FROM fullments WHERE id = $1 LIMIT 1', [id]);
-    if (!fRows[0] || String(fRows[0].tienda_id) !== String(userId)) {
-      return res.status(404).json({ ok: false, message: 'Centro de distribución no encontrado o no pertenece a tu tienda.' });
-    }
-
-    // If perfil_envio_id provided, verify it belongs to the same tienda
-    if (perfil_envio_id) {
-      const { rows: pRows } = await query('SELECT id, tienda_id FROM perfiles_envio WHERE id = $1 LIMIT 1', [perfil_envio_id]);
-      if (!pRows[0] || String(pRows[0].tienda_id) !== String(userId)) {
-        return res.status(400).json({ ok: false, message: 'El perfil de envío no existe o no pertenece a tu tienda.' });
-      }
-    }
-
-    await query('UPDATE fullments SET perfil_envio_id = $1 WHERE id = $2', [perfil_envio_id || null, id]);
-
-    // Invalidate envia cache for this tienda
-    try { await invalidateRatesCacheForStore(userId).catch(() => {}); } catch {}
-
-    return res.json({ ok: true, message: 'Perfil del centro actualizado.' });
-  } catch (error) {
-    console.error('Error al actualizar perfil del fullment:', error.message);
-    return res.status(500).json({ ok: false, message: 'No fue posible actualizar el perfil del centro.' });
-  }
+  return res.json({ ok: true, message: 'Actualizado.' });
 };
 
 export const getFullmentProducts = async (req, res) => {
@@ -183,9 +152,9 @@ export const updateFullmentProducts = async (req, res) => {
   try {
     const userId = req.auth?.userId;
     const { id } = req.params;
-    const { product_ids } = req.body;
+    const { product_ids, product_profiles } = req.body;
 
-    const products = await assignProductsToFullment(userId, id, product_ids);
+    const products = await assignProductsToFullment(userId, id, product_ids, product_profiles);
     res.json({ ok: true, message: 'Productos actualizados en el centro de distribución', products });
   } catch (error) {
     console.error('Error al actualizar productos del centro:', error.message);

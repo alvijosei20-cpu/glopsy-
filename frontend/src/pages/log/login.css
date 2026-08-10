@@ -13,10 +13,49 @@
   max-width: 400px;
   padding: 2.5rem;
   border-radius: 1rem;
-  
- 
   box-shadow: 0 16px 35px #AFADAC;
   text-align: center;
+  background: #ffffff;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html.dark .login-card {
+  background: #121212 !important;
+  color: #f1f5f9 !important;
+  box-shadow: 0 16px 35px rgba(0, 0, 0, 0.8) !important;
+}
+
+html.dark .login-card h2 {
+  color: #ffffff !important;
+}
+
+html.dark .login-card p {
+  color: #94a3b8 !important;
+}
+
+html.dark .btn-google {
+  background-color: #1a1a1a !important;
+  color: #f1f5f9 !important;
+  border: 1px solid #27272a;
+}
+
+html.dark .btn-google:hover {
+  background-color: #27272a !important;
+}
+
+.auth-form-wrapper {
+  animation: authFadeSlide 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes authFadeSlide {
+  0% {
+    opacity: 0;
+    transform: translateY(15px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .login-card h2 {

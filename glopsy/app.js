@@ -12,6 +12,9 @@ import geoRoutes from './routes/geo.routes.js';
 
 const app = express();
 
+// Configuración trust proxy
+app.set('trust proxy', 1);
+
 // Middlewares Globales
 app.use(
   helmet({

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Store, Pencil, Plug, KeyRound, Send } from 'lucide-react';
+import { Pencil, Plug, KeyRound, Send } from 'lucide-react';
 import StoreCard from './StoreCard';
 import { useAuth } from '../../context/AuthContext';
 import { ApiLoadingModal } from '../../components/LoadingScreen';
@@ -105,7 +105,6 @@ const Market = () => {
           <h1 id="market-title">Mi tienda</h1>
           <p>Gestiona la disponibilidad de tu espacio comercial.</p>
         </div>
-        <Store aria-hidden="true" size={28} />
       </div>
 
       {error && <div className="panel__error" role="alert">{error}</div>}
@@ -137,7 +136,7 @@ const Market = () => {
                   <span className={`integration-logo ${integration.className}`} aria-hidden="true">{integration.mark}</span>
                   <div>
                     <h3>{integration.name}</h3>
-                    <span className="integration-card__state"><i /> API key</span>
+                    <span className="integration-card__state">API key</span>
                   </div>
                 </div>
                 <label className="integration-card__label" htmlFor={`${integration.id}-key`}>Clave de API</label>

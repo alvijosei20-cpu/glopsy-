@@ -2,7 +2,7 @@ import { pool } from '../db.js';
 import crypto from 'crypto';
 import axios from 'axios';
 import { getShippingOptionsFromEnvia, invalidateRatesCacheForStore } from './envia.service.js';
-import { MercadoPagoConfig, Preference } from 'mercadopago';
+import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
 import { obtenerProductoPorId } from './mastershopService.js';
 import { redisClient } from './redis.service.js';
 
@@ -244,7 +244,7 @@ export const saveProductForUser = async (userId, productData) => {
 
 export const getProductsForUser = async (userId) => {
   const { rows } = await pool.query(
-    `SELECT id, name, base_price, suggested_price, stock_total, fullm_id, selected_variant_id, selected_options, created_at
+    `SELECT id, name, base_price, suggested_price, stock_total, fullm_id, perfil_envio_id, selected_variant_id, selected_options, created_at
      FROM produc
      WHERE tienda_id = $1
      ORDER BY name`,
@@ -255,7 +255,7 @@ export const getProductsForUser = async (userId) => {
 
 export const getProductsByFullment = async (userId, fullmentId) => {
   const { rows } = await pool.query(
-    `SELECT id, name, base_price, suggested_price, stock_total, fullm_id, selected_variant_id, selected_options, created_at
+    `SELECT id, name, base_price, suggested_price, stock_total, fullm_id, perfil_envio_id, selected_variant_id, selected_options, created_at
      FROM produc
      WHERE tienda_id = $1 AND fullm_id = $2
      ORDER BY name`,
@@ -264,7 +264,7 @@ export const getProductsByFullment = async (userId, fullmentId) => {
   return rows;
 };
 
-export const assignProductsToFullment = async (userId, fullmentId, productIds) => {
+export const assignProductsToFullment = async (userId, fullmentId, productIds, productProfiles = {}) => {
   const fullmentCheck = await pool.query(
     `SELECT id FROM fullments WHERE id = $1 AND tienda_id = $2 LIMIT 1`,
     [fullmentId, userId]
@@ -277,16 +277,19 @@ export const assignProductsToFullment = async (userId, fullmentId, productIds) =
 
   if (ids.length > 0) {
     await pool.query(
-      `UPDATE produc SET fullm_id = NULL WHERE tienda_id = $1 AND fullm_id = $2 AND id NOT IN (SELECT unnest($3::int[]))`,
+      `UPDATE produc SET fullm_id = NULL, perfil_envio_id = NULL WHERE tienda_id = $1 AND fullm_id = $2 AND id NOT IN (SELECT unnest($3::int[]))`,
       [userId, fullmentId, ids]
     );
-    await pool.query(
-      `UPDATE produc SET fullm_id = $2 WHERE tienda_id = $1 AND id = ANY($3::int[])`,
-      [userId, fullmentId, ids]
-    );
+    for (const pid of ids) {
+      const perfilId = productProfiles[pid] ? Number(productProfiles[pid]) : null;
+      await pool.query(
+        `UPDATE produc SET fullm_id = $2, perfil_envio_id = $3 WHERE tienda_id = $1 AND id = $4`,
+        [userId, fullmentId, perfilId, pid]
+      );
+    }
   } else {
     await pool.query(
-      `UPDATE produc SET fullm_id = NULL WHERE tienda_id = $1 AND fullm_id = $2`,
+      `UPDATE produc SET fullm_id = NULL, perfil_envio_id = NULL WHERE tienda_id = $1 AND fullm_id = $2`,
       [userId, fullmentId]
     );
   }
@@ -383,13 +386,20 @@ export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadNam
       EXISTS (
         SELECT 1 
         FROM perfiles_envio pe
-        LEFT JOIN fullments pf ON pe.fullment_id = pf.id
+        LEFT JOIN fullments pf ON (pe.fullment_id = pf.id OR pf.perfil_envio_id = pe.id)
         LEFT JOIN ciudades ci ON pf.ciudad_id = ci.id
         WHERE pe.tienda_id = p.tienda_id 
           AND pe.tipo_envio = 'gratis'
           AND (
             pe.alcance = 'global' 
-            OR (pe.alcance = 'ciudad' AND (pf.ciudad_id = c.id OR ($2::text IS NOT NULL AND LOWER(ci.nombre) = LOWER($2::text)) OR ($2::text IS NOT NULL AND f.id IS NOT NULL)))
+            OR (
+              pe.alcance = 'ciudad' 
+              AND $2::text IS NOT NULL 
+              AND (
+                LOWER(ci.nombre) = LOWER($2::text)
+                OR ci.id::text = $2::text
+              )
+            )
           )
       ) AS envio_gratis
     FROM produc p
@@ -578,27 +588,34 @@ export const calculateShippingCost = async (items, destinationCiudadId) => {
     tiendaId = prodRows[0]?.tienda_id;
   }
 
-  if (tiendaId && destinationCiudadId) {
-    // 1) Check store-level free shipping (global)
+  let storeFree = false;
+  if (tiendaId) {
     const { rows: storeGlobal } = await pool.query(`
       SELECT 1 FROM perfiles_envio WHERE tienda_id = $1 AND tipo_envio = 'gratis' AND alcance = 'global' LIMIT 1
     `, [tiendaId]);
     if (storeGlobal.length > 0) {
-      // all items free
-      const perItem = items.map(it => ({ itemId: it.id, shippingCost: 0 }));
-      return { shipping_cost: 0, free_shipping: true, message: 'Envío gratis aplicado para toda la tienda.', grouped: [], per_item: perItem };
+      storeFree = true;
     }
+  }
 
-    // 2) Check store-level free shipping by city
-    const { rows: storeCity } = await pool.query(`
-      SELECT 1 FROM perfiles_envio pe
-      LEFT JOIN fullments pf ON pe.fullment_id = pf.id
-      WHERE pe.tienda_id = $1 AND pe.tipo_envio = 'gratis' AND pe.alcance = 'ciudad' AND pf.ciudad_id = $2 LIMIT 1
-    `, [tiendaId, destinationCiudadId]);
-    if (storeCity.length > 0) {
-      const perItem = items.map(it => ({ itemId: it.id, shippingCost: 0 }));
-      return { shipping_cost: 0, free_shipping: true, message: 'Envío gratis aplicado para esta ciudad.', grouped: [], per_item: perItem };
+  if (storeFree) {
+    const perItem = items.map(it => ({ itemId: it.id, shippingCost: 0, isFree: true }));
+    let productsTotal = 0;
+    for (const it of items) {
+      const price = Number(it.price || 0) || 0;
+      const qty = Number(it.quantity || 1) || 1;
+      productsTotal += price * qty;
     }
+    return {
+      shipping_cost: 0,
+      shipments_count: 1,
+      shipments_message: 'Envío gratis global aplicado para toda la tienda.',
+      grouped: [],
+      per_item: perItem,
+      products_total: productsTotal,
+      grand_total: productsTotal,
+      free_shipping: true
+    };
   }
 
   // We'll produce grouped quotes and per-item quotes.
@@ -609,7 +626,7 @@ export const calculateShippingCost = async (items, destinationCiudadId) => {
   const productIds = items.filter(i => i.id).map(i => Number(i.id)).filter(Boolean);
   let productRows = [];
   if (productIds.length > 0) {
-    const { rows } = await pool.query(`SELECT id, product_owner, fullm_id, tienda_id, peso, largo, alto, ancho, tipo_empaque_id FROM produc WHERE id = ANY($1::int[])`, [productIds]);
+    const { rows } = await pool.query(`SELECT id, product_owner, fullm_id, tienda_id, peso, largo, alto, ancho, tipo_empaque_id, perfil_envio_id FROM produc WHERE id = ANY($1::int[])`, [productIds]);
     productRows = rows;
     // If any product references tipo_empaque_id, fetch those packagings
     const tipoIds = Array.from(new Set(productRows.map(p => p.tipo_empaque_id).filter(Boolean)));
@@ -637,44 +654,24 @@ export const calculateShippingCost = async (items, destinationCiudadId) => {
   for (const p of productRows) prodMap.set(p.id, p);
 
   // Build groups by idbusiness + originCiudadId
-  // Precompute fullment-based free-shipping info
-  const fullmentIds = Array.from(new Set(items.map(it => {
-    const p = prodMap.get(Number(it.id));
-    return p?.fullm_id || it.fullm_id || null;
-  }).filter(Boolean)));
-  const freeFullmentSet = new Set();
-  if (fullmentIds.length > 0) {
-    // 1) perfiles_envio linked directly by fullment_id
-    const { rows: pfRows } = await pool.query(`
-      SELECT pe.fullment_id, pe.alcance, f.ciudad_id
+  // Precompute fullment-based free-shipping info and product-level free-shipping info
+  const perfilEnvioIds = Array.from(new Set(productRows.map(p => p.perfil_envio_id).filter(Boolean)));
+  const freePerfilSet = new Set();
+  if (perfilEnvioIds.length > 0) {
+    const { rows: peRows } = await pool.query(`
+      SELECT pe.id, pe.alcance, pe.fullment_id, f.ciudad_id
       FROM perfiles_envio pe
       LEFT JOIN fullments f ON pe.fullment_id = f.id
-      WHERE pe.fullment_id = ANY($1::int[]) AND pe.tipo_envio = 'gratis'
-    `, [fullmentIds]);
-    for (const r of pfRows) {
-      if (r.alcance === 'global') freeFullmentSet.add(r.fullment_id);
-      if (r.alcance === 'ciudad' && Number(r.ciudad_id) === Number(destinationCiudadId)) freeFullmentSet.add(r.fullment_id);
-    }
-
-    // 2) perfiles assigned via fullments.perfil_envio_id -> perfiles_envio.id
-    const { rows: viaRows } = await pool.query(`
-      SELECT f.id AS fullment_id, pe.alcance, f.ciudad_id
-      FROM fullments f
-      JOIN perfiles_envio pe ON f.perfil_envio_id = pe.id
-      WHERE f.id = ANY($1::int[]) AND pe.tipo_envio = 'gratis'
-    `, [fullmentIds]);
-    for (const r of viaRows) {
-      if (r.alcance === 'global') freeFullmentSet.add(r.fullment_id);
-      if (r.alcance === 'ciudad' && Number(r.ciudad_id) === Number(destinationCiudadId)) freeFullmentSet.add(r.fullment_id);
+      WHERE pe.id = ANY($1::int[]) AND pe.tipo_envio = 'gratis'
+    `, [perfilEnvioIds]);
+    for (const r of peRows) {
+      if (r.alcance === 'global') freePerfilSet.add(r.id);
+      if (r.alcance === 'ciudad' && Number(r.ciudad_id) === Number(destinationCiudadId)) freePerfilSet.add(r.id);
     }
   }
 
-  // collect items that are free by fullment into freeGroups (keyed same as grouped key)
-  const freeGroups = {};
-
   for (const item of items) {
     const p = prodMap.get(Number(item.id));
-    // product_owner may be JSON stored as string; prefer parsed _productOwner
     let idbusiness = 'unknown';
     if (p?._productOwner) {
       idbusiness = p._productOwner.idbusiness || p._productOwner.idBusiness || p._productOwner.id || idbusiness;
@@ -684,29 +681,19 @@ export const calculateShippingCost = async (items, destinationCiudadId) => {
         idbusiness = io?.idbusiness || io?.idBusiness || io?.id || idbusiness;
       } catch (e) {}
     }
-    // Resolve origin ciudad from fullments
     let originCiudadId = null;
     if (p?.fullm_id) {
       const { rows } = await pool.query(`SELECT ciudad_id FROM fullments WHERE id = $1 LIMIT 1`, [p.fullm_id]);
       originCiudadId = rows[0]?.ciudad_id || null;
     }
-    // fallback to item.fullm_id or null
     if (!originCiudadId) originCiudadId = item.fullm_id || null;
 
-    // if this item's fullment is marked free for this city, mark item as free and add to freeGroups (but don't include in chargeable grouped)
-    const itemFullmId = p?.fullm_id || item.fullm_id || null;
-    if (itemFullmId && freeFullmentSet.has(Number(itemFullmId))) {
-      // mark item as free, still include in grouping
-      const freeItem = { ...item, _productRow: p, _isFree: true };
-      perItemResults.push({ itemId: item.id, shippingCost: 0, shippingOptions: [] });
-      if (!grouped[key]) grouped[key] = { idbusiness, originCiudadId, destinationCiudadId, items: [] };
-      grouped[key].items.push(freeItem);
-      continue;
-    }
+    const itemPerfilId = p?.perfil_envio_id || null;
+    const isFree = storeFree || (itemPerfilId && freePerfilSet.has(Number(itemPerfilId)));
 
     const key = `${String(idbusiness)}::${String(originCiudadId)}::${String(destinationCiudadId)}`;
     if (!grouped[key]) grouped[key] = { idbusiness, originCiudadId, destinationCiudadId, items: [] };
-    grouped[key].items.push({ ...item, _productRow: p });
+    grouped[key].items.push({ ...item, _productRow: p, _isFree: Boolean(isFree) });
   }
 
   const groupedResults = [];
@@ -734,7 +721,7 @@ export const calculateShippingCost = async (items, destinationCiudadId) => {
       const weight = Number(it.weight || (tipo?.peso) || it._productRow?.peso || process.env.ENVIA_DEFAULT_WEIGHT || 1);
       for (let i = 0; i < qty; i++) {
         const dims = [l, w, h].sort((a, b) => b - a); // allow rotation
-        units.push({ id: it.id, name: it.name, l: dims[0], w: dims[1], h: dims[2], weight, volume: dims[0] * dims[1] * dims[2], tipoId: it._productRow?.tipo_empaque_id || null });
+        units.push({ id: it.id, name: it.name, l: dims[0], w: dims[1], h: dims[2], weight, volume: dims[0] * dims[1] * dims[2], tipoId: it._productRow?.tipo_empaque_id || null, _isFree: Boolean(it._isFree) });
       }
     }
     units.sort((a, b) => b.volume - a.volume);
@@ -766,47 +753,65 @@ export const calculateShippingCost = async (items, destinationCiudadId) => {
 
   const groupPromises = groupKeys.map(async (key) => {
     const grp = grouped[key];
-    // build packages
-    const packages = packItemsIntoBoxes(grp.items);
-    // quote each package in parallel
-    const pkgPromises = packages.map(async (pkg) => {
-      const pkgItem = [{ id: pkg.id, name: 'Paquete', quantity: 1, weight: pkg.weight, length: pkg.length, height: pkg.height, width: pkg.width, tienda_id: grp.items[0]?.tienda_id }];
-      try {
-        const { shippingOptions, shippingCost } = await getShippingOptionsFromEnvia(pkgItem, grp.destinationCiudadId, grp.items[0]?.tienda_id || tiendaId);
-        return { pkg, shippingOptions, shippingCost };
-      } catch (err) {
-        console.error('Error cotizando paquete Envia:', err.message);
-        return { pkg, shippingOptions: [], shippingCost: Number(process.env.DEFAULT_SHIPPING_COST || 15000) };
-      }
-    });
-    const pkgResults = await Promise.all(pkgPromises);
+    const freeItems = grp.items.filter(it => it._isFree);
+    const nonFreeItems = grp.items.filter(it => !it._isFree);
 
-    const shippingCost = pkgResults.reduce((s, r) => s + Number(r.shippingCost || 0), 0);
-    // distribute per-item cost by package weight share
-    for (const r of pkgResults) {
-      const pkg = r.pkg;
-      const pkgItems = pkg.items;
-      const pkgWeightSum = pkgItems.reduce((s, ii) => s + (ii.weight || 0), 0) || 1;
-      for (const ii of pkgItems) {
-        const share = (ii.weight || 0) / pkgWeightSum;
-        const itemCost = Math.round((r.shippingCost || 0) * share);
-        perItemResultsLocal.push({ itemId: ii.id, shippingCost: itemCost, shippingOptions: r.shippingOptions });
-      }
-    }
-    const groupOptions = pkgResults.flatMap(r => r.shippingOptions || []);
-    // choose cheapest option across package results
+    let groupOptions = [];
     let selectedCarrier = null;
-    if (groupOptions.length > 0) {
-      const sorted = groupOptions.slice().sort((a, b) => (Number(a.price || a.prize || a.total || a.servicePrice || a.basePrice || 0) - Number(b.price || b.prize || b.total || b.servicePrice || b.basePrice || 0)));
-      const best = sorted[0];
-      selectedCarrier = {
-        carrier: best.carrier || best.carrierDescription || best.provider || best.name || null,
-        service: best.service || best.serviceName || best.serviceDescription || null,
-        price: Number(best.price || best.totalprice || best.totalPrice || best.rate || best.cost || best.total || best.servicePrice || best.basePrice || 0)
-      };
-    }
 
-    groupedResultsLocal.push({ key, idbusiness: grp.idbusiness, originCiudadId: grp.originCiudadId, destinationCiudadId: grp.destinationCiudadId, items: grp.items, shippingCost, shippingOptions: groupOptions, selected_carrier: selectedCarrier });
+    if (storeFree || nonFreeItems.length === 0) {
+      // All items in group are free or store has global free shipping -> no quotation needed
+      for (const it of grp.items) {
+        perItemResultsLocal.push({ itemId: it.id, shippingCost: 0, shippingOptions: [], isFree: true });
+      }
+      const shippingCost = 0;
+      groupedResultsLocal.push({ key, idbusiness: grp.idbusiness, originCiudadId: grp.originCiudadId, destinationCiudadId: grp.destinationCiudadId, items: grp.items, shippingCost, shippingOptions: [], selected_carrier: null });
+    } else {
+      // Some or all items are not free -> quote ONLY nonFreeItems
+      for (const it of freeItems) {
+        perItemResultsLocal.push({ itemId: it.id, shippingCost: 0, shippingOptions: [], isFree: true });
+      }
+
+      const packages = packItemsIntoBoxes(nonFreeItems);
+      const pkgPromises = packages.map(async (pkg) => {
+        const pkgItem = [{ id: pkg.id, name: 'Paquete', quantity: 1, weight: pkg.weight, length: pkg.length, height: pkg.height, width: pkg.width, tienda_id: grp.items[0]?.tienda_id }];
+        try {
+          const { shippingOptions, shippingCost } = await getShippingOptionsFromEnvia(pkgItem, grp.destinationCiudadId, grp.items[0]?.tienda_id || tiendaId);
+          return { pkg, shippingOptions, shippingCost };
+        } catch (err) {
+          console.error('Error cotizando paquete Envia:', err.message);
+          return { pkg, shippingOptions: [], shippingCost: Number(process.env.DEFAULT_SHIPPING_COST || 15000) };
+        }
+      });
+      const pkgResults = await Promise.all(pkgPromises);
+
+      for (const r of pkgResults) {
+        const pkg = r.pkg;
+        const pkgItems = pkg.items;
+        const pkgWeightSum = pkgItems.reduce((s, ii) => s + (ii.weight || 0), 0) || 1;
+        for (const ii of pkgItems) {
+          const share = (ii.weight || 0) / pkgWeightSum;
+          const itemCost = Math.round((r.shippingCost || 0) * share);
+          perItemResultsLocal.push({ itemId: ii.id, shippingCost: itemCost, shippingOptions: r.shippingOptions, isFree: false });
+        }
+      }
+
+      groupOptions = pkgResults.flatMap(r => r.shippingOptions || []);
+      if (groupOptions.length > 0) {
+        const sorted = groupOptions.slice().sort((a, b) => (Number(a.price || a.prize || a.total || a.servicePrice || a.basePrice || 0) - Number(b.price || b.prize || b.total || b.servicePrice || b.basePrice || 0)));
+        const best = sorted[0];
+        selectedCarrier = {
+          carrier: best.carrier || best.carrierDescription || best.provider || best.name || null,
+          service: best.service || best.serviceName || best.serviceDescription || null,
+          price: Number(best.price || best.totalprice || best.totalPrice || best.rate || best.cost || best.total || best.servicePrice || best.basePrice || 0)
+        };
+      }
+
+      const groupItemCosts = perItemResultsLocal.filter(pi => nonFreeItems.some(gi => String(gi.id) === String(pi.itemId))).reduce((s, pi) => s + pi.shippingCost, 0);
+      const shippingCost = groupItemCosts;
+
+      groupedResultsLocal.push({ key, idbusiness: grp.idbusiness, originCiudadId: grp.originCiudadId, destinationCiudadId: grp.destinationCiudadId, items: grp.items, shippingCost, shippingOptions: groupOptions, selected_carrier: selectedCarrier });
+    }
   });
 
   await Promise.all(groupPromises);
@@ -837,6 +842,8 @@ export const calculateShippingCost = async (items, destinationCiudadId) => {
   const shipmentsCount = groupedResults.length || 0;
   const shipmentsMessage = `Recibirás un total de ${shipmentsCount} envío${shipmentsCount === 1 ? '' : 's'}.`;
 
+  const allFree = perItemResults.length > 0 && perItemResults.every(pi => Number(pi.shippingCost || 0) === 0);
+
   return {
     shipping_cost: overallCost,
     shipments_count: shipmentsCount,
@@ -845,7 +852,7 @@ export const calculateShippingCost = async (items, destinationCiudadId) => {
     per_item: perItemResults,
     products_total: productsTotal,
     grand_total: grandTotal,
-    free_shipping: false
+    free_shipping: allFree
   };
 };
 
@@ -900,16 +907,34 @@ export const createMercadoPagoPreferenceForCart = async (userId, items, shipping
         success: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/cart?status=success`,
         failure: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/cart?status=failure`,
         pending: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/cart?status=pending`
-      },
-      auto_return: 'approved'
+      }
     }
   });
 
   return {
     init_point: prefResponse.init_point,
     sandbox_init_point: prefResponse.sandbox_init_point,
-    preferenceId: prefResponse.id
+    preferenceId: prefResponse.id,
+    public_key: mpInt.public_key,
+    mode: mpInt.mode
   };
+};
+
+export const processMpPaymentForCart = async (userId, formData, preferenceId, customerInfo, guestHash) => {
+  const { rows: mpRows } = await pool.query(
+    `SELECT access_token, public_key, mode FROM checkout_integrations WHERE provider = 'mercadopago' ORDER BY (mode = 'produccion') DESC LIMIT 1`
+  );
+  const mpInt = mpRows[0];
+
+  if (!mpInt?.access_token) {
+    throw new Error('La tienda no tiene configurada la integración de Mercado Pago.');
+  }
+
+  const client = new MercadoPagoConfig({ accessToken: mpInt.access_token });
+  const payment = new Payment(client);
+
+  const paymentResponse = await payment.create({ body: formData });
+  return paymentResponse;
 };
 
 export const getFavoriteProductsDetails = async (userId) => {

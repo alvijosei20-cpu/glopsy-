@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Heart, ShoppingBag, ArrowLeft, Star, MapPin, Store as StoreIcon } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../../services/api';
+import { SkeletonList } from '../../components/SkeletonLoader';
 
 export default function Favorites() {
   const navigate = useNavigate();
@@ -39,8 +40,9 @@ export default function Favorites() {
 
   if (loading) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-fuchsia-600"></div>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        <div className="h-10 bg-slate-200 rounded-xl w-1/3 animate-pulse"></div>
+        <SkeletonList count={4} />
       </div>
     );
   }

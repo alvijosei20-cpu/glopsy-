@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ShoppingCart, Zap, Heart, ArrowLeft, Truck, ShieldCheck, Check, Star, MapPin } from 'lucide-react';
+import { ShoppingCart, Zap, Heart, ArrowLeft, Truck, ShieldCheck, Check, Star, MapPin, Store, Shield, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
 import api from '../../services/api';
 import './product.css';
 
@@ -15,10 +15,16 @@ export default function ProductDetail() {
   const [selectedMainOption, setSelectedMainOption] = useState('');
   const [selectedSubOption, setSelectedSubOption] = useState('');
   const [addedToast, setAddedToast] = useState(false);
+  const [relatedProducts, setRelatedProducts] = useState([]);
+  
+  // Fold/Unfold states for long texts
+  const [warrantyExpanded, setWarrantyExpanded] = useState(false);
+  const [descExpanded, setDescExpanded] = useState(false);
 
   const userCity = sessionStorage.getItem('location_city') || 'Bogotá D.C.';
 
   useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     if (!id) return;
     setLoading(true);
     api.get(`/product/${id}`)
@@ -36,6 +42,19 @@ export default function ProductDetail() {
       })
       .finally(() => setLoading(false));
   }, [id]);
+
+  useEffect(() => {
+    if (!product) return;
+    const catId = product.categoria_id;
+    api.get('/product', { params: { categoria_id: catId, limit: 12 } })
+      .then(res => {
+        if (res.data.ok) {
+          const list = (res.data.products || []).filter(p => Number(p.id) !== Number(product.id));
+          setRelatedProducts(list);
+        }
+      })
+      .catch(err => console.error('Error al cargar relacionados:', err));
+  }, [product]);
 
   const formatPrice = (val) => {
     const num = Number(val || 0);
@@ -58,6 +77,29 @@ export default function ProductDetail() {
     return ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60'];
   };
 
+  const getProductOwner = (p) => {
+    try {
+      if (p.product_owner) {
+        if (typeof p.product_owner === 'object') return p.product_owner;
+        return JSON.parse(p.product_owner);
+      }
+    } catch {}
+    return null;
+  };
+
+  const getWarranties = (p) => {
+    try {
+      if (p.warranties) {
+        if (typeof p.warranties === 'object') return p.warranties;
+        return JSON.parse(p.warranties);
+      }
+    } catch {}
+    return null;
+  };
+
+  const owner = product ? getProductOwner(product) : null;
+  const warranties = product ? getWarranties(product) : null;
+
   const getVariants = (p) => {
     try {
       if (Array.isArray(p.variants)) return p.variants;
@@ -70,7 +112,6 @@ export default function ProductDetail() {
 
   const variants = product ? getVariants(product) : [];
 
-  // Dividir la variante usando '/' (ej: marron/42 -> partes[0] = marron, partes[1] = 42)
   const parsedVariants = variants.map((v, idx) => {
     const rawName = v.name || v.title || `Variante ${idx + 1}`;
     const parts = rawName.split('/').map(s => s.trim());
@@ -281,10 +322,9 @@ export default function ProductDetail() {
                 </p>
               </div>
 
-              {/* Cascading Variants Selects split by '/' (e.g. marron/42) */}
+              {/* Cascading Variants Selects split by '/' */}
               {variants.length > 0 && (
                 <div className="mb-6 space-y-4">
-                  {/* Select 1: Parte 1 antes del '/' (ej. marron) */}
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-2">
                       Opción Principal (Color / Estilo):
@@ -302,7 +342,6 @@ export default function ProductDetail() {
                     </select>
                   </div>
 
-                  {/* Select 2: Parte 2 después del '/' en cascada (ej. 42) */}
                   {uniqueSubOptions.length > 0 && (
                     <div>
                       <label className="block text-sm font-bold text-slate-700 mb-2">
@@ -352,14 +391,27 @@ export default function ProductDetail() {
                 </div>
               </div>
 
-              {/* Description */}
+              {/* Description with Fold/Unfold & Gradient Fade */}
               {product.description && (
                 <div className="mb-6 border-t border-fuchsia-100 pt-4">
                   <h3 className="text-sm font-bold text-slate-800 mb-2">Descripción del producto</h3>
-                  <div 
-                    className="text-xs sm:text-sm text-slate-600 leading-relaxed prose max-none"
-                    dangerouslySetInnerHTML={{ __html: product.description }}
-                  />
+                  <div className="relative">
+                    <div 
+                      className={`text-xs sm:text-sm text-slate-600 leading-relaxed prose max-none transition-all duration-300 ${!descExpanded ? 'max-h-24 overflow-hidden' : ''}`}
+                      dangerouslySetInnerHTML={{ __html: product.description }}
+                    />
+                    {!descExpanded && (
+                      <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-white dark:from-[#121212] to-transparent pointer-events-none"></div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDescExpanded(!descExpanded)}
+                    className="mt-2 flex items-center gap-1 text-xs font-bold text-fuchsia-600 hover:text-fuchsia-700 transition-colors"
+                  >
+                    <span>{descExpanded ? 'Ver menos' : 'Ver más descripción'}</span>
+                    {descExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  </button>
                 </div>
               )}
             </div>
@@ -387,6 +439,110 @@ export default function ProductDetail() {
           </div>
 
         </div>
+
+        {/* Tarjetas de Proveedor y Garantía con efecto plegue/despliegue degradante */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+          {/* Proveedor */}
+          {owner && (
+            <div className="bg-gradient-to-br from-fuchsia-50/70 to-pink-50/70 rounded-3xl border border-fuchsia-200 p-6 sm:p-8 shadow-sm hover:shadow-md transition-all flex items-start gap-5">
+              <div className="p-3.5 bg-fuchsia-600 text-white rounded-2xl shadow-md shadow-fuchsia-600/35 shrink-0">
+                <Store size={26} />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-fuchsia-700 uppercase tracking-wider mb-1">Proveedor / Vendedor</h4>
+                <h3 className="text-lg font-extrabold text-slate-900 mb-1">{owner.publicName || owner.name || 'Proveedor Verificado'}</h3>
+                {owner.idBusiness && (
+                  <p className="text-xs text-slate-500 font-medium mb-3">ID de Negocio: <span className="font-mono text-slate-700 font-bold">{owner.idBusiness}</span></p>
+                )}
+                <div className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+                  <ShieldCheck size={14} />
+                  <span>Vendedor Oficial Verificado</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Garantías con Fold/Unfold & Gradient Fade */}
+          {warranties && (
+            <div className="bg-gradient-to-br from-purple-50/70 to-fuchsia-50/70 rounded-3xl border border-fuchsia-200 p-6 sm:p-8 shadow-sm hover:shadow-md transition-all flex items-start gap-5">
+              <div className="p-3.5 bg-gradient-to-tr from-fuchsia-600 to-pink-500 text-white rounded-2xl shadow-md shadow-fuchsia-500/35 shrink-0">
+                <Shield size={26} />
+              </div>
+              <div className="flex-1">
+                <h4 className="text-xs font-bold text-fuchsia-700 uppercase tracking-wider mb-1">Garantía del Producto</h4>
+                <h3 className="text-lg font-extrabold text-slate-900 mb-2">
+                  {warranties.period ? `${warranties.period} Días de Garantía` : 'Garantía Directa'}
+                </h3>
+                <div className="relative">
+                  <p className={`text-xs sm:text-sm text-slate-600 leading-relaxed whitespace-pre-line transition-all duration-300 ${!warrantyExpanded ? 'max-h-20 overflow-hidden' : ''}`}>
+                    {warranties.conditions || 'Este producto cuenta con respaldo y garantía por defectos de fábrica.'}
+                  </p>
+                  {!warrantyExpanded && (
+                    <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-fuchsia-50/90 dark:from-[#1e1b2e]/90 to-transparent pointer-events-none"></div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setWarrantyExpanded(!warrantyExpanded)}
+                  className="mt-2 flex items-center gap-1 text-xs font-bold text-fuchsia-600 hover:text-fuchsia-700 transition-colors"
+                >
+                  <span>{warrantyExpanded ? 'Ver menos' : 'Ver más detalles'}</span>
+                  {warrantyExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Slider Horizontal de Productos Relacionados (Tarjetas achicadas estilo listpr) */}
+        {relatedProducts.length > 0 && (
+          <div className="mt-12 bg-white rounded-3xl border border-fuchsia-100 p-6 sm:p-8 shadow-sm">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 bg-fuchsia-100 text-fuchsia-600 rounded-xl">
+                  <Sparkles size={22} />
+                </div>
+                <h2 className="text-xl font-extrabold text-slate-950">Productos Relacionados</h2>
+              </div>
+              <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">{relatedProducts.length} disponibles</span>
+            </div>
+
+            <div className="flex gap-4 overflow-x-auto pb-4 pt-2 snap-x snap-mandatory scrollbar-thin">
+              {relatedProducts.map(rp => {
+                const rpPrice = Number(rp.suggested_price || rp.base_price || 0);
+                const rpImg = getImages(rp)[0];
+                return (
+                  <div
+                    key={rp.id}
+                    onClick={() => {
+                      navigate(`/product/${rp.public_id || rp.id}`);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="w-48 sm:w-52 shrink-0 snap-start bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 flex flex-col cursor-pointer group"
+                  >
+                    <div className="relative w-full h-36 bg-slate-100 overflow-hidden">
+                      <img src={rpImg} alt={rp.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                      {rp.categoria_nombre && (
+                        <span className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-fuchsia-700 text-[10px] font-bold px-2 py-0.5 rounded-md shadow-sm">
+                          {rp.categoria_nombre}
+                        </span>
+                      )}
+                    </div>
+                    <div className="p-3 flex flex-col flex-1 justify-between">
+                      <h3 className="font-normal text-slate-800 text-xs line-clamp-2 group-hover:text-fuchsia-600 transition-colors mb-2">
+                        {rp.name}
+                      </h3>
+                      <div className="text-sm font-bold text-slate-950">
+                        {formatPrice(rpPrice)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );

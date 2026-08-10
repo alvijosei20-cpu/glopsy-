@@ -192,3 +192,30 @@
     grid-template-columns: 1fr;
   }
 }
+
+html.dark .config-sidebar,
+html.dark .config-content,
+html.dark .config-item-card {
+  background: #121212 !important;
+  color: #f1f5f9 !important;
+  border-color: #27272a !important;
+}
+
+html.dark .config-section-header h3,
+html.dark .config-item-card h4,
+html.dark .config-form-group label {
+  color: #ffffff !important;
+}
+
+html.dark .config-sidebar__header {
+  border-bottom-color: #27272a !important;
+}
+
+html.dark .config-nav__item {
+  color: #cbd5e1 !important;
+}
+
+html.dark .config-nav__item:hover {
+  background: #1e1b2e !important;
+  color: #f472b6 !important;
+}

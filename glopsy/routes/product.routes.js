@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { getProductById, saveProduct, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, createPreferenceController, getTiposEmpaqueController } from '../controllers/product.controller.js';
+import { getProductById, saveProduct, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, createPreferenceController, processMpPaymentController, getTiposEmpaqueController } from '../controllers/product.controller.js';
 import { requireAuth } from '../middlewares/auth.js';
-import { tiendaLimiter } from '../middlewares/limiters.js';
+import { tiendaLimiter, heavyLimiter } from '../middlewares/limiters.js';
 
 const router = Router();
 
@@ -27,7 +27,8 @@ router.post('/reserve-stock', reserveStockController);
 router.post('/release-stock', releaseStockController);
 router.post('/migrate-cart', requireAuth, migrateCartController);
 router.get('/tipos-empaque', getTiposEmpaqueController);
-router.post('/calculate-shipping', calculateShippingController);
-router.post('/create-preference', createPreferenceController);
+router.post('/calculate-shipping', heavyLimiter, calculateShippingController);
+router.post('/create-preference', heavyLimiter, createPreferenceController);
+router.post('/process-mp-payment', heavyLimiter, processMpPaymentController);
 
 export default router;

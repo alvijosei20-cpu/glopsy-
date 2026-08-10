@@ -275,6 +275,7 @@ const MarketConfig = () => {
   const [selectedProductIds, setSelectedProductIds] = useState([]);
   const [initialSelectedProductIds, setInitialSelectedProductIds] = useState([]);
   const [productAssignments, setProductAssignments] = useState({});
+  const [productProfiles, setProductProfiles] = useState({});
   const [loadingProducts, setLoadingProducts] = useState(false);
 
   const handleOpenEditFullment = async (fullment) => {
@@ -290,9 +291,14 @@ const MarketConfig = () => {
       const resProducts = results[0];
       const fullmentProductResponses = results.slice(1);
 
+      const profilesMap = {};
       if (resProducts.data && resProducts.data.products) {
         setStoreProducts(resProducts.data.products);
+        resProducts.data.products.forEach(p => {
+          if (p.perfil_envio_id) profilesMap[p.id] = p.perfil_envio_id;
+        });
       }
+      setProductProfiles(profilesMap);
 
       const assignments = {};
       fullments.forEach((f, idx) => {
@@ -322,9 +328,7 @@ const MarketConfig = () => {
   };
 
   const hasProductChanges = () => {
-    if (selectedProductIds.length !== initialSelectedProductIds.length) return true;
-    const setInit = new Set(initialSelectedProductIds);
-    return !selectedProductIds.every(id => setInit.has(id));
+    return true;
   };
 
   const handleToggleProductSelection = (productId) => {
@@ -342,9 +346,10 @@ const MarketConfig = () => {
     if (!editingFullment) return;
     try {
       await api.put(`/geo/fullments/${editingFullment.fullment_id}/products`, {
-        product_ids: selectedProductIds
+        product_ids: selectedProductIds,
+        product_profiles: productProfiles
       });
-      setNotice('Productos actualizados correctamente en el centro de distribución.');
+      setNotice('Productos y perfiles de envío actualizados correctamente en el centro de distribución.');
       setTimeout(() => setNotice(''), 3000);
       setEditingFullment(null);
     } catch (err) {
@@ -354,15 +359,34 @@ const MarketConfig = () => {
     }
   };
 
-  const handleToggleEnvioGratis = (checked) => {
-    setEnvioGratisTienda(checked);
-    if (checked) {
-      const globalProfile = { id: 'store-wide-gratis', nombre: 'Envío Gratis en Toda la Tienda', tipo: 'gratis', isGlobal: true, fullment_id: null };
-      setPerfilesEnvio(prev => [globalProfile, ...prev.filter(p => !p.isGlobal)]);
-      setNotice('Envío gratis en toda la tienda activado. Los demás perfiles quedan congelados.');
-    } else {
-      setPerfilesEnvio(prev => prev.filter(p => !p.isGlobal));
-      setNotice('Envío gratis en toda la tienda desactivado.');
+  const handleToggleEnvioGratis = async (checked) => {
+    try {
+      if (checked) {
+        const res = await api.post('/tienda/perfiles-envio', {
+          nombre: 'Envío Gratis en Toda la Tienda',
+          tipo: 'gratis',
+          alcance: 'global',
+          costo: 0
+        });
+        if (res.data?.ok) {
+          const pp = res.data.perfil;
+          const globalProfile = { id: pp.id, nombre: pp.nombre, tipo: pp.tipo, fullment_id: pp.fullment_id, costo: pp.costo, isGlobal: true };
+          setPerfilesEnvio(prev => [globalProfile, ...prev.filter(p => !p.isGlobal)]);
+          setEnvioGratisTienda(true);
+          setNotice('Envío gratis en toda la tienda activado. Los demás perfiles quedan congelados.');
+        }
+      } else {
+        const globalProfile = perfilesEnvio.find(p => p.isGlobal);
+        if (globalProfile && globalProfile.id && globalProfile.id !== 'store-wide-gratis') {
+          await api.delete(`/tienda/perfiles-envio/${globalProfile.id}`);
+        }
+        setPerfilesEnvio(prev => prev.filter(p => !p.isGlobal));
+        setEnvioGratisTienda(false);
+        setNotice('Envío gratis en toda la tienda desactivado.');
+      }
+    } catch (err) {
+      console.error('Error al alternar envío gratis global:', err);
+      setNotice(err.response?.data?.message || 'Error al actualizar el estado de envío gratis.');
     }
     setTimeout(() => setNotice(''), 4000);
   };
@@ -958,38 +982,61 @@ const MarketConfig = () => {
                           const isAssignedElsewhere = assignment && assignment.fullment_id !== editingFullment.fullment_id;
                           const isChecked = selectedProductIds.includes(p.id);
                           return (
-                            <label
+                            <div
                               key={p.id}
                               style={{
                                 display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
+                                flexDirection: 'column',
                                 padding: '0.75rem 1rem',
                                 background: isAssignedElsewhere ? '#f1f5f9' : (isChecked ? '#f3e8ff' : 'white'),
                                 border: `1px solid ${isAssignedElsewhere ? '#cbd5e1' : (isChecked ? '#d8b4fe' : '#e2e8f0')}`,
                                 borderRadius: '0.75rem',
-                                cursor: isAssignedElsewhere ? 'not-allowed' : 'pointer',
                                 opacity: isAssignedElsewhere ? 0.7 : 1,
-                                transition: 'all 0.2s'
+                                transition: 'all 0.2s',
+                                gap: '0.5rem'
                               }}
                             >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  disabled={isAssignedElsewhere}
-                                  onChange={() => handleToggleProductSelection(p.id)}
-                                  style={{ width: '18px', height: '18px', accentColor: '#7e22ce', cursor: isAssignedElsewhere ? 'not-allowed' : 'pointer' }}
-                                />
-                                <div>
-                                  <strong style={{ color: '#1e293b' }}>{p.name}</strong>
-                                  <div style={{ fontSize: '0.85rem', color: '#64748b' }}>Precio base: ${Number(p.base_price || 0).toFixed(2)} | Stock: {p.stock_total || 0}</div>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flex: 1 }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    disabled={isAssignedElsewhere}
+                                    onChange={() => handleToggleProductSelection(p.id)}
+                                    style={{ width: '18px', height: '18px', accentColor: '#7e22ce', cursor: isAssignedElsewhere ? 'not-allowed' : 'pointer' }}
+                                  />
+                                  <div>
+                                    <strong style={{ color: '#1e293b' }}>{p.name}</strong>
+                                    <div style={{ fontSize: '0.85rem', color: '#64748b' }}>Precio sugerido: ${Number(p.suggested_price || p.base_price || 0).toFixed(2)} | Stock: {p.stock_total || 0}</div>
+                                  </div>
                                 </div>
+                                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: isAssignedElsewhere ? '#b91c1c' : (isChecked ? '#7e22ce' : '#64748b') }}>
+                                  {isAssignedElsewhere ? `Asignado en ${assignment.ciudad_nombre}` : (isChecked ? 'Asignado' : 'No asignado')}
+                                </span>
                               </div>
-                              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: isAssignedElsewhere ? '#b91c1c' : (isChecked ? '#7e22ce' : '#64748b') }}>
-                                {isAssignedElsewhere ? `Asignado en ${assignment.ciudad_nombre}` : (isChecked ? 'Asignado' : 'No asignado')}
-                              </span>
-                            </label>
+                              {isChecked && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', paddingLeft: '2rem' }}>
+                                  <label style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Perfil de envío:</label>
+                                  <select
+                                    value={productProfiles[p.id] || ''}
+                                    onChange={(e) => {
+                                      const val = e.target.value ? Number(e.target.value) : '';
+                                      setProductProfiles(prev => ({ ...prev, [p.id]: val }));
+                                    }}
+                                    className="config-select"
+                                    style={{ fontSize: '0.85rem', padding: '0.3rem 0.5rem' }}
+                                  >
+                                    <option value="">Predeterminado del Centro</option>
+                                    {perfilesEnvio
+                                      .filter(pe => pe.isGlobal || Number(pe.fullment_id) === Number(editingFullment.fullment_id))
+                                      .map(pe => (
+                                        <option key={pe.id} value={pe.id}>{pe.nombre} {pe.isGlobal ? '(Global)' : ''}</option>
+                                      ))
+                                    }
+                                  </select>
+                                </div>
+                              )}
+                            </div>
                           );
                         })}
                       </div>
@@ -1072,34 +1119,6 @@ const MarketConfig = () => {
                           </div>
                         </div>
                         <p style={{ margin: '0.2rem 0' }}>Departamento: <strong>{f.departamento_nombre}</strong> ({f.pais_nombre})</p>
-                        <div style={{ marginTop: '0.5rem' }}>
-                          <label style={{ fontSize: '0.85rem', color: '#64748b' }}>Perfil de envío asignado</label>
-                          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem', alignItems: 'center' }}>
-                            <select
-                              value={f.perfil_envio_id || ''}
-                              onChange={async (e) => {
-                                const val = e.target.value || null;
-                                try {
-                                  await api.put(`/geo/fullments/${f.fullment_id}/perfil`, { perfil_envio_id: val });
-                                  // update local state
-                                  setFullments(prev => prev.map(ff => ff.fullment_id === f.fullment_id ? { ...ff, perfil_envio_id: val ? Number(val) : null } : ff));
-                                  setNotice('Perfil asignado actualizado.');
-                                  setTimeout(() => setNotice(''), 3000);
-                                } catch (err) {
-                                  console.error('Error actualizando perfil del centro:', err);
-                                  setNotice(err.response?.data?.message || 'Error al actualizar perfil.');
-                                  setTimeout(() => setNotice(''), 3000);
-                                }
-                              }}
-                              className="config-select"
-                            >
-                              <option value="">Ninguno</option>
-                              {perfilesEnvio.map(p => (
-                                <option key={p.id} value={p.id}>{p.nombre} {p.isGlobal ? '(Global)' : ''}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
                       </div>
                     </div>
                   ))

@@ -1,6 +1,6 @@
 import axios from 'axios';
 // Importamos el servicio independiente de autenticación
-import { processOAuthUser, revokeSession } from '../services/auth.service.js';
+import { processOAuthUser, revokeSession, registerWithEmail, loginWithEmail, savePushSubscriptionService, saveBiometricCredentialService } from '../services/auth.service.js';
 import { pool } from '../db.js';
 
 // ==========================================
@@ -134,7 +134,7 @@ export const discordCallback = async (req, res) => {
 export const getCurrentUser = async (req, res) => {
   try {
     const { rows } = await pool.query(
-      'SELECT id, email, name, avatar_url FROM users WHERE id = $1',
+      'SELECT id, email, name, avatar_url, phone, TO_CHAR(birthdate, \'YYYY-MM-DD\') AS birthdate, document_type, document_number, gender FROM users WHERE id = $1',
       [req.auth.userId]
     );
 
@@ -149,6 +149,142 @@ export const getCurrentUser = async (req, res) => {
   }
 };
 
+export const updateCurrentUser = async (req, res) => {
+  try {
+    const userId = req.auth.userId;
+    const { name, phone, birthdate, document_type, document_number, gender, avatar_url } = req.body;
+
+    const { rows } = await pool.query(
+      `UPDATE users SET 
+        name = COALESCE($1, name),
+        phone = COALESCE($2, phone),
+        birthdate = COALESCE($3, birthdate),
+        document_type = COALESCE($4, document_type),
+        document_number = COALESCE($5, document_number),
+        gender = COALESCE($6, gender),
+        avatar_url = COALESCE($7, avatar_url),
+        updated_at = NOW()
+       WHERE id = $8
+       RETURNING id, email, name, avatar_url, phone, birthdate, document_type, document_number, gender`,
+      [name, phone, birthdate || null, document_type, document_number, gender, avatar_url, userId]
+    );
+
+    if (!rows[0]) {
+      return res.status(404).json({ ok: false, message: 'Usuario no encontrado.' });
+    }
+
+    return res.json({ ok: true, user: rows[0] });
+  } catch (error) {
+    console.error('Error al actualizar perfil de usuario:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible actualizar el perfil.' });
+  }
+};
+
+export const getAddresses = async (req, res) => {
+  try {
+    const userId = req.auth.userId;
+    const { rows } = await pool.query(
+      'SELECT id, type, title, street, city, state, zip_code, country, phone, notes FROM user_addresses WHERE user_id = $1 ORDER BY id DESC',
+      [userId]
+    );
+    return res.json({ ok: true, addresses: rows });
+  } catch (error) {
+    console.error('Error al obtener direcciones:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible obtener las direcciones.' });
+  }
+};
+
+export const saveAddress = async (req, res) => {
+  try {
+    const userId = req.auth.userId;
+    const { type, title, street, city, state, zip_code, country, phone, notes } = req.body;
+    if (!street || !city) {
+      return res.status(400).json({ ok: false, message: 'Calle y ciudad son obligatorias.' });
+    }
+
+    const { rows } = await pool.query(
+      `INSERT INTO user_addresses (user_id, type, title, street, city, state, zip_code, country, phone, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING id, type, title, street, city, state, zip_code, country, phone, notes`,
+      [userId, type || 'envio', title || 'Dirección principal', street, city, state || '', zip_code || '', country || 'Colombia', phone || '', notes || '']
+    );
+
+    return res.status(201).json({ ok: true, address: rows[0] });
+  } catch (error) {
+    console.error('Error al guardar dirección:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible guardar la dirección.' });
+  }
+};
+
+export const deleteAddress = async (req, res) => {
+  try {
+    const userId = req.auth.userId;
+    const id = Number(req.params.id);
+    const { rowCount } = await pool.query('DELETE FROM user_addresses WHERE id = $1 AND user_id = $2', [id, userId]);
+    if (rowCount === 0) {
+      return res.status(404).json({ ok: false, message: 'Dirección no encontrada.' });
+    }
+    return res.json({ ok: true, message: 'Dirección eliminada.' });
+  } catch (error) {
+    console.error('Error al eliminar dirección:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible eliminar la dirección.' });
+  }
+};
+
+export const getCards = async (req, res) => {
+  try {
+    const userId = req.auth.userId;
+    const { rows } = await pool.query(
+      'SELECT id, card_holder, last_four, card_brand, expiry_month, expiry_year FROM user_cards WHERE user_id = $1 ORDER BY id DESC',
+      [userId]
+    );
+    return res.json({ ok: true, cards: rows });
+  } catch (error) {
+    console.error('Error al obtener tarjetas:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible obtener las tarjetas.' });
+  }
+};
+
+export const saveCard = async (req, res) => {
+  try {
+    const userId = req.auth.userId;
+    const { card_holder, card_number, expiry_month, expiry_year, card_brand } = req.body;
+    if (!card_number || card_number.length < 4) {
+      return res.status(400).json({ ok: false, message: 'Número de tarjeta inválido.' });
+    }
+
+    const last_four = card_number.slice(-4);
+    const brand = card_brand || 'Visa';
+
+    const { rows } = await pool.query(
+      `INSERT INTO user_cards (user_id, card_holder, last_four, card_brand, expiry_month, expiry_year)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, card_holder, last_four, card_brand, expiry_month, expiry_year`,
+      [userId, card_holder || 'Titular', last_four, brand, expiry_month || '12', expiry_year || '28']
+    );
+
+    return res.status(201).json({ ok: true, card: rows[0] });
+  } catch (error) {
+    console.error('Error al guardar tarjeta:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible guardar la tarjeta.' });
+  }
+};
+
+export const deleteCard = async (req, res) => {
+  try {
+    const userId = req.auth.userId;
+    const id = Number(req.params.id);
+    const { rowCount } = await pool.query('DELETE FROM user_cards WHERE id = $1 AND user_id = $2', [id, userId]);
+    if (rowCount === 0) {
+      return res.status(404).json({ ok: false, message: 'Tarjeta no encontrada.' });
+    }
+    return res.json({ ok: true, message: 'Tarjeta eliminada.' });
+  } catch (error) {
+    console.error('Error al eliminar tarjeta:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible eliminar la tarjeta.' });
+  }
+};
+
 export const logout = async (req, res) => {
   try {
     await revokeSession(req.auth.userId);
@@ -156,5 +292,57 @@ export const logout = async (req, res) => {
   } catch (error) {
     console.error('Error al cerrar sesión:', error.message);
     return res.status(500).json({ ok: false, message: 'No fue posible cerrar sesión.' });
+  }
+};
+
+export const registerEmail = async (req, res) => {
+  try {
+    const { email, password, name } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ ok: false, message: 'Correo y contraseña son obligatorios.' });
+    }
+    const { user, token } = await registerWithEmail({ email, password, name });
+    res.status(201).json({ ok: true, user, token });
+  } catch (error) {
+    console.error('Error en registro con email:', error.message);
+    res.status(400).json({ ok: false, message: error.message || 'Error al registrar usuario.' });
+  }
+};
+
+export const loginEmail = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ ok: false, message: 'Correo y contraseña son obligatorios.' });
+    }
+    const { user, token } = await loginWithEmail({ email, password });
+    res.json({ ok: true, user, token });
+  } catch (error) {
+    console.error('Error en login con email:', error.message);
+    res.status(401).json({ ok: false, message: error.message || 'Correo o contraseña incorrectos.' });
+  }
+};
+
+export const savePushSubscriptionController = async (req, res) => {
+  try {
+    const userId = req.auth.userId;
+    const { subscription } = req.body;
+    await savePushSubscriptionService(userId, subscription);
+    return res.json({ ok: true, message: 'Suscripción push guardada con éxito.' });
+  } catch (error) {
+    console.error('Error al guardar suscripción push:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible guardar la suscripción push.' });
+  }
+};
+
+export const saveBiometricCredentialController = async (req, res) => {
+  try {
+    const userId = req.auth.userId;
+    const { credential } = req.body;
+    await saveBiometricCredentialService(userId, credential);
+    return res.json({ ok: true, message: 'Credencial biométrica asociada con éxito.' });
+  } catch (error) {
+    console.error('Error al asociar biométrica:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible asociar la huella biométrica.' });
   }
 };
