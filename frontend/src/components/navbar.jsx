@@ -15,10 +15,12 @@ import {
   Sun,
   Moon,
   Bell,
-  Fingerprint
+  Fingerprint,
+  Package
 } from 'lucide-react';
 
 import { useAuth } from '../context/AuthContext';
+import api from '../services/api';
 
 export default function Navbar() {
   const { user, logout, tienda, tiendaLoading } = useAuth();
@@ -43,10 +45,39 @@ export default function Navbar() {
   };
 
   const [isNotifOpen, setIsNotifOpen] = useState(false);
-  const [notifications, setNotifications] = useState([
-    { id: 1, title: '¡Bienvenido a StoreApp!', time: 'Hace un momento', read: false },
-    { id: 2, title: 'Catálogo actualizado con éxito', time: 'Hace 1 hora', read: false }
-  ]);
+  const [notifications, setNotifications] = useState(() => {
+    try {
+      const saved = localStorage.getItem('glopsy_notifications');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('glopsy_notifications', JSON.stringify(notifications));
+    } catch {}
+  }, [notifications]);
+
+  useEffect(() => {
+    const handleStorage = () => {
+      try {
+        const saved = localStorage.getItem('glopsy_notifications');
+        if (saved) setNotifications(JSON.parse(saved));
+      } catch {}
+    };
+    window.addEventListener('storage', handleStorage);
+    const handleCustomNotif = (e) => {
+      if (e.detail) {
+        setNotifications(prev => [e.detail, ...prev]);
+      }
+    };
+    window.addEventListener('glopsy_notification', handleCustomNotif);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('glopsy_notification', handleCustomNotif);
+    };
+  }, []);
   const [pushPermission, setPushPermission] = useState(() => 
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
   );
@@ -62,7 +93,7 @@ export default function Navbar() {
       window.crypto.getRandomValues(challenge);
       const publicKeyCredentialCreationOptions = {
         challenge,
-        rp: { name: "StoreApp Glopsy", id: window.location.hostname },
+        rp: { name: "Glopsy", id: window.location.hostname },
         user: {
           id: Uint8Array.from(String(user.id), c => c.charCodeAt(0)),
           name: user.email,
@@ -85,12 +116,24 @@ export default function Navbar() {
       setTimeout(() => setBiometricStatus(''), 4000);
     } catch (err) {
       console.error('Error registrando huella biométrica:', err);
+      const serverMsg = err.response?.data?.message;
+      if (serverMsg === 'Ya posees una huella') {
+        setBiometricStatus('Ya posees una huella');
+        setTimeout(() => setBiometricStatus(''), 4000);
+        return;
+      }
       try {
         await api.post('/auth/biometric', { credential: { simulated: true, userId: user.id } });
         setBiometricStatus('¡Huella biométrica asociada con éxito!');
         setTimeout(() => setBiometricStatus(''), 4000);
       } catch (e) {
-        alert('No se pudo registrar la huella biométrica.');
+        const simMsg = e.response?.data?.message;
+        if (simMsg === 'Ya posees una huella') {
+          setBiometricStatus('Ya posees una huella');
+          setTimeout(() => setBiometricStatus(''), 4000);
+          return;
+        }
+        alert(simMsg || 'No se pudo registrar la huella biométrica.');
       }
     }
   };
@@ -173,10 +216,10 @@ export default function Navbar() {
           {/* Logo */}
           <Link to="/" className="flex-shrink-0 flex items-center gap-2 cursor-pointer group">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-fuchsia-600 to-pink-500 flex items-center justify-center font-bold text-xl text-white shadow-md shadow-fuchsia-500/20 group-hover:scale-105 transition-transform">
-              S
+              G
             </div>
             <span className="font-bold text-xl tracking-wide bg-gradient-to-r from-fuchsia-600 to-pink-600 bg-clip-text text-transparent">
-              StoreApp
+              Glopsy
             </span>
           </Link>
 
@@ -286,6 +329,14 @@ export default function Navbar() {
                     >
                       <Heart size={16} className="text-fuchsia-500" />
                       <span>Favoritos</span>
+                    </Link>
+                    <Link 
+                      to="/compras" 
+                      onClick={() => setIsUserMenuOpen(false)}
+                      className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-black dark:text-slate-200 hover:bg-fuchsia-50 dark:hover:bg-zinc-800 hover:text-fuchsia-600 transition-colors"
+                    >
+                      <Package size={16} className="text-fuchsia-500" />
+                      <span>Compras</span>
                     </Link>
                     <hr className="my-1 border-slate-100 dark:border-zinc-800" />
                     <button 
@@ -415,6 +466,14 @@ export default function Navbar() {
                   <Heart size={20} className="text-fuchsia-500" />
                   Favoritos
                 </Link>
+                <Link
+                  to="/compras"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center gap-3 px-3 py-2 rounded-lg text-black font-semibold dark:text-white hover:text-fuchsia-600 hover:bg-fuchsia-50 dark:hover:bg-zinc-800 text-base"
+                >
+                  <Package size={20} className="text-fuchsia-500" />
+                  Compras
+                </Link>
                 <button
                   onClick={handleLogout}
                   className="flex items-center gap-3 w-full text-left px-3 py-2 rounded-lg text-pink-600 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-zinc-800 text-base font-medium cursor-pointer"
@@ -459,13 +518,22 @@ export default function Navbar() {
                 style={{ borderColor: isDark ? '#27272a' : '#e2e8f0' }}
               >
                 <h4 className="font-bold text-sm" style={{ color: isDark ? '#ffffff' : '#0f172a' }}>Notificaciones</h4>
-                <button 
-                  type="button"
-                  onClick={() => setNotifications(notifications.map(n => ({ ...n, read: true })))}
-                  className="text-[11px] text-fuchsia-600 dark:text-fuchsia-400 font-semibold hover:underline cursor-pointer"
-                >
-                  Marcar leídas
-                </button>
+                <div className="flex items-center gap-2.5">
+                  <button 
+                    type="button"
+                    onClick={() => setNotifications(notifications.map(n => ({ ...n, read: true })))}
+                    className="text-[11px] text-fuchsia-600 dark:text-fuchsia-400 font-semibold hover:underline cursor-pointer"
+                  >
+                    Marcar leídas
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setNotifications([])}
+                    className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold hover:underline cursor-pointer"
+                  >
+                    Limpiar
+                  </button>
+                </div>
               </div>
 
               {pushPermission !== 'granted' && (
@@ -478,7 +546,7 @@ export default function Navbar() {
                   }}
                 >
                   <p className="font-semibold mb-1" style={{ color: isDark ? '#ffffff' : '#0f172a' }}>Activa las notificaciones push</p>
-                  <p className="text-[11px] mb-2" style={{ color: isDark ? '#a1a1aa' : '#475569' }}>Recibe alertas y avisos importantes de StoreApp.</p>
+                  <p className="text-[11px] mb-2" style={{ color: isDark ? '#a1a1aa' : '#475569' }}>Recibe alertas y avisos importantes de Glopsy.</p>
                   <button
                     type="button"
                     onClick={async () => {
@@ -486,7 +554,7 @@ export default function Navbar() {
                         const res = await Notification.requestPermission();
                         setPushPermission(res);
                         if (res === 'granted') {
-                          new Notification('¡StoreApp!', { body: '¡Notificaciones push activadas correctamente!' });
+                          new Notification('¡Glopsy!', { body: '¡Notificaciones push activadas correctamente!' });
                         }
                       } else {
                         alert('Tu navegador no soporta notificaciones push.');

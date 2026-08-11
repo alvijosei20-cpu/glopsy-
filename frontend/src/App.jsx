@@ -14,10 +14,13 @@ import MarketConfig from './pages/market/MarketConfig';
 import Publish from './pages/publish/publish';
 import Listpr from './pages/listpr/listpr';
 import Favorites from './pages/favorites/favorites';
+import Compras from './pages/compras/compras';
+import CompraDetail from './pages/compras/compraDetail';
 import Profile from './pages/profile/profile';
 
 import { useState, useEffect } from 'react';
 import { LoadingScreen, ConfiguringScreen } from './components/LoadingScreen';
+import ErrorBoundary from './components/ErrorBoundary';
 // 1. IMPORTAR useAuth JUNTO A AuthProvider
 import { AuthProvider, useAuth } from './context/AuthContext';
 
@@ -141,8 +144,8 @@ function MainApp() {
           {/* RUTAS PÚBLICAS */}
           <Route path="/" element={<Home />} />
           <Route path="/products" element={<Products />} />
-          <Route path="/product/:id" element={<ProductDetail />} />
-          <Route path="/products/:id" element={<ProductDetail />} />
+          <Route path="/product/:id" element={<ErrorBoundary><ProductDetail /></ErrorBoundary>} />
+          <Route path="/products/:id" element={<ErrorBoundary><ProductDetail /></ErrorBoundary>} />
           <Route path="/cart" element={<Cart />} />
           <Route path="/checkout" element={<Checkout />} />
           
@@ -158,6 +161,22 @@ function MainApp() {
             element={
               <ProtectedRoute>
                 <Favorites />
+              </ProtectedRoute>
+            }
+          />
+          <Route 
+            path="/compras" 
+            element={
+              <ProtectedRoute>
+                <Compras />
+              </ProtectedRoute>
+            }
+          />
+          <Route 
+            path="/compras/:hash" 
+            element={
+              <ProtectedRoute>
+                <CompraDetail />
               </ProtectedRoute>
             }
           />

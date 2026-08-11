@@ -10,15 +10,21 @@ export const requireAuth = async (req, res, next) => {
 
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-    const activeToken = await redisClient.get(`session:${payload.userId}`);
-
-    if (activeToken !== token) {
-      return res.status(401).json({ ok: false, message: 'La sesión no está activa.' });
-    }
-
     req.auth = payload;
     next();
   } catch {
     return res.status(401).json({ ok: false, message: 'Token inválido o vencido.' });
   }
+};
+
+export const optionalAuth = async (req, res, next) => {
+  const [scheme, token] = (req.headers.authorization || '').split(' ');
+
+  if (scheme === 'Bearer' && token) {
+    try {
+      const payload = jwt.verify(token, process.env.JWT_SECRET);
+      req.auth = payload;
+    } catch {}
+  }
+  next();
 };

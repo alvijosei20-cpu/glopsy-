@@ -1,5 +1,5 @@
 import { obtenerProductoPorId } from '../services/mastershopService.js';
-import { saveProductForUser, getProductsForUser, searchQueryProducts, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails } from '../services/product.service.js';
+import { saveProductForUser, getProductsForUser, searchQueryProducts, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, cancelOrderForUser, updateOrderAddressForUser } from '../services/product.service.js';
 
 export const getProductById = async (req, res) => {
   const productId = req.params.id;
@@ -197,13 +197,24 @@ export const createPreferenceController = async (req, res) => {
 
 export const processMpPaymentController = async (req, res) => {
   try {
-    const { formData, preferenceId, customer_info, guestHash } = req.body;
+    const { formData, preferenceId, customer_info, guestHash, shipping_cost, shipping_payload, items } = req.body;
     const userId = req.auth?.userId || 1;
-    const paymentRes = await processMpPaymentForCart(userId, formData, preferenceId, customer_info, guestHash);
+    const paymentRes = await processMpPaymentForCart(userId, formData, preferenceId, customer_info, guestHash, shipping_cost, shipping_payload, items);
     res.json({ ok: true, payment: paymentRes });
   } catch (error) {
     console.error('Error al procesar pago con Mercado Pago Bricks:', error.message);
     res.status(400).json({ ok: false, message: error.message || 'Error al procesar el pago.' });
+  }
+};
+
+export const processSavedCardPaymentController = async (req, res) => {
+  try {
+    const userId = req.auth?.userId;
+    const paymentRes = await processSavedCardPaymentForCart(userId, req.body);
+    res.json({ ok: true, payment: paymentRes });
+  } catch (error) {
+    console.error('Error al procesar pago con tarjeta guardada (1-Click):', error.message);
+    res.status(400).json({ ok: false, message: error.message || 'Error al procesar el pago con tarjeta guardada.' });
   }
 };
 
@@ -214,5 +225,59 @@ export const getTiposEmpaqueController = async (req, res) => {
   } catch (error) {
     console.error('Error al obtener tipos de empaque:', error.message);
     res.status(500).json({ ok: false, message: 'Error al obtener tipos de empaque.' });
+  }
+};
+
+export const getUserComprasController = async (req, res) => {
+  try {
+    const userId = req.auth?.userId || null;
+    const guestHash = req.query.guestHash || req.headers['x-guest-hash'] || null;
+    const products = await getUserPurchasesDetails(userId, guestHash);
+    res.json({ ok: true, products });
+  } catch (error) {
+    console.error('Error al obtener compras del usuario:', error.message);
+    res.status(500).json({ ok: false, message: 'Error al obtener las compras.' });
+  }
+};
+
+export const recordPurchaseController = async (req, res) => {
+  try {
+    const userId = req.auth?.userId;
+    const { items } = req.body;
+    if (!userId || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ ok: false, message: 'Datos inválidos para registrar compra' });
+    }
+    await recordPurchaseForUser(userId, items);
+    res.json({ ok: true, message: 'Compra registrada con éxito' });
+  } catch (error) {
+    console.error('Error al registrar compra:', error.message);
+    res.status(500).json({ ok: false, message: 'Error al registrar la compra.' });
+  }
+};
+
+export const cancelOrderController = async (req, res) => {
+  try {
+    const orderHash = req.params.hash;
+    const userId = req.auth?.userId || null;
+    const guestHash = req.query.guestHash || req.headers['x-guest-hash'] || null;
+    const updated = await cancelOrderForUser(orderHash, userId, guestHash);
+    res.json({ ok: true, order: updated });
+  } catch (error) {
+    console.error('Error al cancelar la orden:', error.message);
+    res.status(400).json({ ok: false, message: error.message || 'Error al cancelar la orden.' });
+  }
+};
+
+export const updateOrderAddressController = async (req, res) => {
+  try {
+    const orderHash = req.params.hash;
+    const { direccion, telefono } = req.body;
+    const userId = req.auth?.userId || null;
+    const guestHash = req.query.guestHash || req.headers['x-guest-hash'] || null;
+    const updated = await updateOrderAddressForUser(orderHash, userId, guestHash, direccion, telefono);
+    res.json({ ok: true, order: updated });
+  } catch (error) {
+    console.error('Error al actualizar dirección:', error.message);
+    res.status(400).json({ ok: false, message: error.message || 'Error al actualizar la dirección.' });
   }
 };

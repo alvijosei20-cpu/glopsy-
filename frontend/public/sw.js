@@ -7,7 +7,7 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('push', (event) => {
-  const data = event.data ? event.data.json() : { title: 'StoreApp', body: 'Nueva notificación' };
+  const data = event.data ? event.data.json() : { title: 'Glopsy', body: 'Nueva notificación' };
   const options = {
     body: data.body,
     icon: '/favicon.svg',

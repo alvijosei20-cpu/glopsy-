@@ -386,9 +386,9 @@ export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadNam
       EXISTS (
         SELECT 1 
         FROM perfiles_envio pe
-        LEFT JOIN fullments pf ON (pe.fullment_id = pf.id OR pf.perfil_envio_id = pe.id)
+        LEFT JOIN fullments pf ON pe.fullment_id = pf.id
         LEFT JOIN ciudades ci ON pf.ciudad_id = ci.id
-        WHERE pe.tienda_id = p.tienda_id 
+        WHERE (pe.tienda_id = p.tienda_id OR pe.id = p.perfil_envio_id)
           AND pe.tipo_envio = 'gratis'
           AND (
             pe.alcance = 'global' 
@@ -920,7 +920,7 @@ export const createMercadoPagoPreferenceForCart = async (userId, items, shipping
   };
 };
 
-export const processMpPaymentForCart = async (userId, formData, preferenceId, customerInfo, guestHash) => {
+export const processMpPaymentForCart = async (userId, formData, preferenceId, customerInfo, guestHash, shippingCost, shippingPayload, inputItems) => {
   const { rows: mpRows } = await pool.query(
     `SELECT access_token, public_key, mode FROM checkout_integrations WHERE provider = 'mercadopago' ORDER BY (mode = 'produccion') DESC LIMIT 1`
   );
@@ -934,6 +934,51 @@ export const processMpPaymentForCart = async (userId, formData, preferenceId, cu
   const payment = new Payment(client);
 
   const paymentResponse = await payment.create({ body: formData });
+
+  const status = paymentResponse?.status;
+  const isSuccessful = status === 'approved' || status === 'pending' || status === 'in_process' || status === 'authorized' || (paymentResponse && !['rejected', 'cancelled', 'refunded', 'charged_back'].includes(status));
+
+  if (paymentResponse && isSuccessful) {
+    let items = Array.isArray(inputItems) && inputItems.length > 0 ? inputItems : null;
+    let foundKey = null;
+
+    if (!items) {
+      const identifiers = [
+        guestHash ? `cart:reserve:${guestHash}` : null,
+        userId ? `cart:reserve:user_${userId}` : null,
+        `cart:reserve:guest_anonymous`
+      ].filter(Boolean);
+
+      for (const key of identifiers) {
+        const data = await redisClient.get(key);
+        if (data) {
+          try {
+            const parsed = JSON.parse(data);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              items = parsed;
+              foundKey = key;
+              break;
+            }
+          } catch {}
+        }
+      }
+    }
+
+    if (items && items.length > 0) {
+      await recordPurchaseForUser(userId, items, {
+        preferenceId,
+        paymentResponse,
+        customerInfo,
+        guestHash,
+        shippingCost,
+        shippingPayload
+      });
+      if (foundKey) {
+        await redisClient.del(foundKey);
+      }
+    }
+  }
+
   return paymentResponse;
 };
 
@@ -948,3 +993,515 @@ export const getFavoriteProductsDetails = async (userId) => {
   );
   return rows;
 };
+
+export const recordPurchaseForUser = async (userId, items, options = {}) => {
+  const {
+    preferenceId = null,
+    paymentResponse = null,
+    customerInfo = {},
+    guestHash = null,
+    shippingCost = 0,
+    shippingPayload = null
+  } = options;
+
+  let tiendaId = items[0]?.tienda_id;
+  if (!tiendaId && items[0]?.id) {
+    const { rows: prodRows } = await pool.query(`SELECT tienda_id FROM produc WHERE id = $1 LIMIT 1`, [items[0].id]);
+    tiendaId = prodRows[0]?.tienda_id;
+  }
+  if (!tiendaId) {
+    const { rows: tiendaRows } = await pool.query(`SELECT usrid FROM tiendas LIMIT 1`);
+    tiendaId = tiendaRows[0]?.usrid || 1;
+  }
+
+  const mercadopagoPaymentId = paymentResponse?.id ? String(paymentResponse.id) : null;
+  const status = paymentResponse?.status === 'approved' ? 'Completado' : (paymentResponse?.status || 'Completado');
+  const payloadJson = paymentResponse ? JSON.stringify(paymentResponse) : null;
+
+  const departamentoId = customerInfo.departamento_id ? Number(customerInfo.departamento_id) : null;
+  const ciudadId = customerInfo.ciudad_id ? Number(customerInfo.ciudad_id) : null;
+  const direccion = customerInfo.direccion || null;
+  const telefono = customerInfo.telefono || null;
+  const customerName = customerInfo.customer_name || paymentResponse?.payer?.first_name || null;
+  const identificationType = customerInfo.identification_type || paymentResponse?.payer?.identification?.type || null;
+  const identificationNumber = customerInfo.identification_number || paymentResponse?.payer?.identification?.number || null;
+
+  const totalAmount = items.reduce((acc, item) => acc + (Number(item.price || 0) * Number(item.quantity || 1)), 0) + Number(shippingCost || 0);
+  const orderHash = `ord_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+  const { rows: orderRows } = await pool.query(
+    `INSERT INTO orders (
+       tienda_id, user_id, guest_hash, preference_id, mercadopago_payment_id,
+       status, amount, payload, departamento_id, ciudad_id, direccion, telefono,
+       shipping_cost, shipping_payload, customer_name, identification_type, identification_number,
+       order_hash, created_at
+     ) VALUES (
+       $1, $2, $3, $4, $5,
+       $6, $7, $8::jsonb, $9, $10, $11, $12,
+       $13, $14::jsonb, $15, $16, $17,
+       $18, NOW()
+     ) RETURNING id`,
+    [
+      tiendaId, userId, guestHash, preferenceId, mercadopagoPaymentId,
+      status, totalAmount, payloadJson, departamentoId, ciudadId, direccion, telefono,
+      shippingCost, shippingPayload ? JSON.stringify(shippingPayload) : null, customerName, identificationType, identificationNumber,
+      orderHash
+    ]
+  );
+
+  const orderId = orderRows[0].id;
+  const shipmentsList = shippingPayload?.grouped || shippingPayload?.shipments || (Array.isArray(shippingPayload) ? shippingPayload : null);
+
+  if (Array.isArray(shipmentsList) && shipmentsList.length > 0) {
+    let shipmentNumber = 1;
+    for (const sh of shipmentsList) {
+      const carrier = sh.selected_carrier?.carrier || sh.carrier || 'Envío Estándar';
+      const service = sh.selected_carrier?.service || sh.service || 'Estándar';
+      const shCost = Number(sh.shippingCost || sh.price || 0);
+      const groupKey = sh.key || null;
+      const idbusiness = sh.idbusiness ? String(sh.idbusiness) : null;
+      const originCiudadId = sh.originCiudadId ? Number(sh.originCiudadId) : null;
+      const destinationCiudadId = sh.destinationCiudadId ? Number(sh.destinationCiudadId) : ciudadId;
+
+      const { rows: shipRows } = await pool.query(
+        `INSERT INTO order_shipments (
+           order_id, shipment_number, carrier, service, shipping_cost, payload,
+           group_key, idbusiness, origin_ciudad_id, destination_ciudad_id, created_at
+         ) VALUES (
+           $1, $2, $3, $4, $5, $6::jsonb,
+           $7, $8, $9, $10, NOW()
+         ) RETURNING id`,
+        [
+          orderId, shipmentNumber, carrier, service, shCost, JSON.stringify(sh),
+          groupKey, idbusiness, originCiudadId, destinationCiudadId
+        ]
+      );
+      const shipmentId = shipRows[0].id;
+      shipmentNumber++;
+
+      const groupItems = sh.items || items;
+      for (const item of groupItems) {
+        await pool.query(
+          `INSERT INTO order_items (order_id, shipment_id, product_id, product_name, quantity, unit_price, line_total)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [orderId, shipmentId, item.id, item.name || 'Producto', item.quantity || 1, item.price || 0, (Number(item.price || 0) * Number(item.quantity || 1))]
+        );
+      }
+    }
+  } else {
+    const { rows: shipRows } = await pool.query(
+      `INSERT INTO order_shipments (
+         order_id, shipment_number, carrier, service, shipping_cost, destination_ciudad_id, created_at
+       ) VALUES (
+         $1, 1, 'Envío Estándar', 'Estándar', $2, $3, NOW()
+       ) RETURNING id`,
+      [orderId, shippingCost, ciudadId]
+    );
+    const shipmentId = shipRows[0].id;
+
+    for (const item of items) {
+      await pool.query(
+        `INSERT INTO order_items (order_id, shipment_id, product_id, product_name, quantity, unit_price, line_total)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [orderId, shipmentId, item.id, item.name || 'Producto', item.quantity || 1, item.price || 0, (Number(item.price || 0) * Number(item.quantity || 1))]
+      );
+    }
+  }
+};
+
+export const getUserPurchasesDetails = async (userId, guestHash) => {
+  const { rows: orderRows } = await pool.query(
+    `SELECT o.* 
+     FROM orders o
+     WHERE ($1::bigint IS NOT NULL AND (o.user_id = $1 OR o.user_id IS NULL)) 
+        OR ($2::text IS NOT NULL AND o.guest_hash = $2)
+        OR ($1::bigint IS NULL AND $2::text IS NULL)
+     ORDER BY o.created_at DESC`,
+    [userId || null, guestHash || null]
+  );
+
+  const ordersWithDetails = [];
+  for (const order of orderRows) {
+    const { rows: itemRows } = await pool.query(
+      `SELECT oi.*, p.images, p.public_id, p.description, p.base_price, p.suggested_price
+       FROM order_items oi
+       LEFT JOIN produc p ON oi.product_id = p.id
+       WHERE oi.order_id = $1`,
+      [order.id]
+    );
+
+    const { rows: shipmentRows } = await pool.query(
+      `SELECT * FROM order_shipments WHERE order_id = $1`,
+      [order.id]
+    );
+
+    ordersWithDetails.push({
+      ...order,
+      items: itemRows,
+      shipments: shipmentRows
+    });
+  }
+
+  return ordersWithDetails;
+};
+
+export const cancelMastershopOrderOrShipments = async (order, shipmentIds, totalCancel) => {
+  try {
+    const { rows: integrationRows } = await pool.query(
+      `SELECT api_key FROM tienda_integraciones WHERE tienda_id = $1 AND provider = 'mastershop' LIMIT 1`,
+      [order.tienda_id || 1]
+    );
+    if (!integrationRows[0] || !integrationRows[0].api_key) return;
+
+    const apiKey = integrationRows[0].api_key;
+    const baseUrl = process.env.MASTERSHOP_API_URL || 'https://prod.api.mastershop.com/api';
+
+    const endpoint = totalCancel ? `${baseUrl}/orders/${order.id}/cancel` : `${baseUrl}/orders/${order.id}/shipments/cancel`;
+    await axios.post(endpoint, {
+      shipment_ids: shipmentIds,
+      total_cancel: totalCancel
+    }, {
+      headers: { 'ms-api-key': apiKey, 'Content-Type': 'application/json' },
+      timeout: 5000
+    }).catch(async () => {
+      await axios.put(`${baseUrl}/orders/${order.id}`, { status: 'cancelled' }, {
+        headers: { 'ms-api-key': apiKey, 'Content-Type': 'application/json' },
+        timeout: 5000
+      }).catch(() => {});
+    });
+  } catch (err) {
+    console.warn('[Mastershop] Error notificando cancelación:', err.message);
+  }
+};
+
+export const createNotification = async (userId, guestHash, orderId, title, message) => {
+  try {
+    await pool.query(
+      `INSERT INTO notifications (user_id, guest_hash, order_id, title, message, created_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())`,
+      [userId || null, guestHash || null, orderId || null, title, message]
+    );
+  } catch (err) {
+    console.error('Error creando notificación en DB:', err.message);
+  }
+};
+
+export const cancelOrderForUser = async (orderHash, userId, guestHash) => {
+  const { rows: orderRows } = await pool.query(
+    `SELECT * FROM orders WHERE order_hash = $1 AND (($2::bigint IS NOT NULL AND user_id = $2) OR ($3::text IS NOT NULL AND guest_hash = $3) OR ($2::bigint IS NULL AND $3::text IS NULL))`,
+    [orderHash, userId || null, guestHash || null]
+  );
+  if (orderRows.length === 0) {
+    throw new Error('Orden no encontrada o no autorizada para cancelar');
+  }
+  const order = orderRows[0];
+  const orderId = order.id;
+
+  const { rows: shipmentRows } = await pool.query(
+    `SELECT * FROM order_shipments WHERE order_id = $1`,
+    [orderId]
+  );
+
+  let cancelledCount = 0;
+  let activeCount = 0;
+  const cancelledShipmentIds = [];
+
+  for (const sh of shipmentRows) {
+    const st = String(sh.status || '').toLowerCase();
+    const isEligible = !st || st.includes('pend') || st.includes('confirm') || st.includes('cread') || st.includes('nuevo');
+    
+    if (isEligible) {
+      await pool.query(`UPDATE order_shipments SET status = 'cancelled', updated_at = NOW() WHERE id = $1`, [sh.id]);
+      cancelledShipmentIds.push(sh.id);
+      cancelledCount++;
+    } else {
+      activeCount++;
+    }
+  }
+
+  if (cancelledCount === 0 && shipmentRows.length > 0) {
+    throw new Error('No es posible cancelar ningún envío de este pedido porque ya se encuentran procesados o con guía generada.');
+  }
+
+  // Liberar stock y actualizar items de los envíos cancelados
+  for (const shipId of cancelledShipmentIds) {
+    const { rows: itemRows } = await pool.query(
+      `SELECT * FROM order_items WHERE shipment_id = $1`,
+      [shipId]
+    );
+    for (const item of itemRows) {
+      if (item.product_id && item.quantity) {
+        await pool.query(
+          `UPDATE produc SET stock_total = stock_total + $1 WHERE id = $2`,
+          [Number(item.quantity), Number(item.product_id)]
+        );
+      }
+      await pool.query(
+        `UPDATE order_items SET line_total = 0, quantity = 0 WHERE id = $1`,
+        [item.id]
+      );
+    }
+  }
+
+  // Recalcular el monto total del pedido basado en los envíos e ítems activos restantes
+  const { rows: activeShipments } = await pool.query(
+    `SELECT * FROM order_shipments WHERE order_id = $1 AND status != 'cancelled'`,
+    [orderId]
+  );
+  
+  let newAmount = 0;
+  for (const activeSh of activeShipments) {
+    newAmount += Number(activeSh.shipping_cost || 0);
+    const { rows: actItems } = await pool.query(
+      `SELECT line_total FROM order_items WHERE shipment_id = $1`,
+      [activeSh.id]
+    );
+    for (const ai of actItems) {
+      newAmount += Number(ai.line_total || 0);
+    }
+  }
+
+  const totalCancel = activeCount === 0;
+  const newOrderStatus = totalCancel ? 'cancelled' : 'partially_cancelled';
+
+  await pool.query(
+    `UPDATE orders SET status = $1, amount = $2, updated_at = NOW() WHERE id = $3`,
+    [newOrderStatus, newAmount, orderId]
+  );
+
+  await cancelMastershopOrderOrShipments(order, cancelledShipmentIds, totalCancel);
+
+  // Registrar notificación en la tabla `notifications`
+  const notifTitle = totalCancel ? `Pedido #${orderId} cancelado` : `Pedido #${orderId} cancelado parcialmente`;
+  const notifMsg = totalCancel ? `Tu pedido ha sido cancelado en su totalidad y el stock ha sido liberado.` : `Se han cancelado ${cancelledCount} envíos de tu pedido.`;
+  await createNotification(order.user_id, order.guest_hash, order.id, notifTitle, notifMsg);
+
+  return {
+    order_id: orderId,
+    status: newOrderStatus,
+    amount: newAmount,
+    cancelled_shipments: cancelledCount,
+    active_shipments: activeCount
+  };
+};
+
+export const checkIfMastershopGuideGenerated = async (order) => {
+  try {
+    // PASO 1: Consultar primero en la base de datos local (actualizada previamente por el webhook)
+    const { rows: shipRows } = await pool.query(
+      `SELECT payload FROM order_shipments WHERE order_id = $1`,
+      [order.id]
+    );
+    for (const sh of shipRows) {
+      if (sh.payload) {
+        const p = typeof sh.payload === 'string' ? JSON.parse(sh.payload) : sh.payload;
+        if (p.guide || p.tracking || p.waybill || p.guide_number || p.guideNumber || p.tracking_id || p.trackingId) {
+          return true; // Encontrado localmente (vía webhook)
+        }
+      }
+    }
+
+    // PASO 2: Si aún no está generada localmente, verificamos en Mastershop como respaldo
+    const { rows: integrationRows } = await pool.query(
+      `SELECT api_key FROM tienda_integraciones WHERE tienda_id = $1 AND provider = 'mastershop' LIMIT 1`,
+      [order.tienda_id || 1]
+    );
+    if (!integrationRows[0] || !integrationRows[0].api_key) {
+      return false;
+    }
+
+    const apiKey = integrationRows[0].api_key;
+    const baseUrl = process.env.MASTERSHOP_API_URL || 'https://prod.api.mastershop.com/api';
+    
+    const response = await axios.get(`${baseUrl}/orders/${order.id}`, {
+      headers: { 'ms-api-key': apiKey },
+      timeout: 5000
+    }).catch(() => null);
+
+    if (response && response.data) {
+      const orderData = response.data;
+      const shipments = orderData.shipments || orderData.envios || [];
+      for (const sh of shipments) {
+        if (sh.guide || sh.tracking || sh.waybill || sh.guide_number || sh.guideNumber || sh.tracking_id || sh.trackingId || sh.status === 'shipped' || sh.status === 'guia_generada') {
+          return true;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Mastershop] Error consultando guías:', err.message);
+  }
+  return false;
+};
+
+export const updateMastershopOrderAddress = async (order, direccion, telefono) => {
+  try {
+    const { rows: integrationRows } = await pool.query(
+      `SELECT api_key FROM tienda_integraciones WHERE tienda_id = $1 AND provider = 'mastershop' LIMIT 1`,
+      [order.tienda_id || 1]
+    );
+    if (!integrationRows[0] || !integrationRows[0].api_key) {
+      return false;
+    }
+
+    const apiKey = integrationRows[0].api_key;
+    const baseUrl = process.env.MASTERSHOP_API_URL || 'https://prod.api.mastershop.com/api';
+    
+    await axios.put(`${baseUrl}/orders/${order.id}`, {
+      address: direccion,
+      phone: telefono,
+      shipping_address: direccion,
+      telefono: telefono
+    }, {
+      headers: { 
+        'ms-api-key': apiKey,
+        'Content-Type': 'application/json'
+      },
+      timeout: 5000
+    }).catch(async () => {
+      await axios.patch(`${baseUrl}/orders/${order.id}`, {
+        address: direccion,
+        phone: telefono,
+        shipping_address: direccion,
+        telefono: telefono
+      }, {
+        headers: { 
+          'ms-api-key': apiKey,
+          'Content-Type': 'application/json'
+        },
+        timeout: 5000
+      }).catch(err => {
+        console.warn('[Mastershop] No se pudo sincronizar la actualización de dirección con Mastershop:', err.message);
+      });
+    });
+
+    return true;
+  } catch (err) {
+    console.warn('[Mastershop] Error al actualizar dirección en Mastershop:', err.message);
+    return false;
+  }
+};
+
+export const updateOrderAddressForUser = async (orderHash, userId, guestHash, direccion, telefono) => {
+  const { rows: orderRows } = await pool.query(
+    `SELECT * FROM orders WHERE order_hash = $1 AND (($2::bigint IS NOT NULL AND user_id = $2) OR ($3::text IS NOT NULL AND guest_hash = $3) OR ($2::bigint IS NULL AND $3::text IS NULL))`,
+    [orderHash, userId || null, guestHash || null]
+  );
+  if (orderRows.length === 0) {
+    throw new Error('Orden no encontrada o no autorizada para actualizar');
+  }
+  const order = orderRows[0];
+  const orderId = order.id;
+
+  const guideGenerated = await checkIfMastershopGuideGenerated(order);
+  if (guideGenerated) {
+    throw new Error('No es posible actualizar la dirección: ya se ha generado una guía de envío para este pedido.');
+  }
+
+  const { rows } = await pool.query(
+    `UPDATE orders SET direccion = $1, telefono = $2, updated_at = NOW()
+     WHERE id = $3
+     RETURNING *`,
+    [direccion, telefono, orderId]
+  );
+
+  // Sincronizar la nueva dirección con Mastershop para que la guía salga con la nueva dirección
+  await updateMastershopOrderAddress(order, direccion, telefono);
+
+  return rows[0];
+};
+
+export const processSavedCardPaymentForCart = async (userId, payload) => {
+  const { card_id, items: inputItems, shipping_cost, shipping_payload, customer_info, guestHash } = payload;
+  
+  if (!userId) {
+    throw new Error('Debes iniciar sesión para pagar con tarjetas guardadas (1-Click).');
+  }
+
+  const { rows: cardRows } = await pool.query(
+    `SELECT * FROM user_cards WHERE id = $1 AND user_id = $2 LIMIT 1`,
+    [card_id, userId]
+  );
+  const card = cardRows[0];
+  if (!card || !card.token_mp) {
+    throw new Error('Tarjeta no encontrada o no válida para pagos de 1 clic.');
+  }
+
+  const { rows: mpRows } = await pool.query(
+    `SELECT access_token, public_key, mode FROM checkout_integrations WHERE provider = 'mercadopago' ORDER BY (mode = 'produccion') DESC LIMIT 1`
+  );
+  const mpInt = mpRows[0];
+  if (!mpInt?.access_token) {
+    throw new Error('La tienda no tiene configurada la integración de Mercado Pago.');
+  }
+
+  const { rows: userRows } = await pool.query(`SELECT email, name FROM users WHERE id = $1 LIMIT 1`, [userId]);
+  const userEmail = userRows[0]?.email || 'cliente@glopsy.com';
+
+  let items = Array.isArray(inputItems) && inputItems.length > 0 ? inputItems : [];
+  const subtotal = items.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0);
+  const total = subtotal + Number(shipping_cost || 0);
+
+  const client = new MercadoPagoConfig({ accessToken: mpInt.access_token });
+  const payment = new Payment(client);
+
+  const paymentData = {
+    transaction_amount: Number(total),
+    token: card.token_mp,
+    description: `Compra Glopsy 1-Click - ${items.length} productos`,
+    installments: 1,
+    payment_method_id: card.card_brand ? card.card_brand.toLowerCase().includes('visa') ? 'visa' : (card.card_brand.toLowerCase().includes('master') ? 'master' : 'credit_card') : 'credit_card',
+    payer: {
+      email: userEmail,
+      first_name: card.card_holder || userRows[0]?.name || 'Cliente'
+    }
+  };
+
+  const paymentResponse = await payment.create({ body: paymentData });
+
+  const status = paymentResponse?.status;
+  const isSuccessful = status === 'approved' || status === 'pending' || status === 'in_process' || status === 'authorized' || (paymentResponse && !['rejected', 'cancelled', 'refunded', 'charged_back'].includes(status));
+
+  if (paymentResponse && isSuccessful) {
+    let resolvedItems = items;
+    let foundKey = null;
+
+    if (!resolvedItems || resolvedItems.length === 0) {
+      const identifiers = [
+        guestHash ? `cart:reserve:${guestHash}` : null,
+        userId ? `cart:reserve:user_${userId}` : null,
+        `cart:reserve:guest_anonymous`
+      ].filter(Boolean);
+
+      for (const key of identifiers) {
+        const data = await redisClient.get(key);
+        if (data) {
+          try {
+            const parsed = JSON.parse(data);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              resolvedItems = parsed;
+              foundKey = key;
+              break;
+            }
+          } catch {}
+        }
+      }
+    }
+
+    if (resolvedItems && resolvedItems.length > 0) {
+      await recordPurchaseForUser(userId, resolvedItems, {
+        preferenceId: `1click_${card.id}_${Date.now()}`,
+        paymentResponse,
+        customerInfo: customer_info,
+        guestHash,
+        shippingCost: shipping_cost,
+        shippingPayload: shipping_payload
+      });
+      if (foundKey) {
+        await redisClient.del(foundKey);
+      }
+    }
+  }
+
+  return paymentResponse;
+};
+

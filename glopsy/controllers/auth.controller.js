@@ -1,6 +1,17 @@
 import axios from 'axios';
 // Importamos el servicio independiente de autenticación
-import { processOAuthUser, revokeSession, registerWithEmail, loginWithEmail, savePushSubscriptionService, saveBiometricCredentialService } from '../services/auth.service.js';
+import {
+  processOAuthUser,
+  revokeSession,
+  registerWithEmail,
+  loginWithEmail,
+  savePushSubscriptionService,
+  saveBiometricCredentialService,
+  getBiometricRegistrationOptionsService,
+  verifyBiometricRegistrationService,
+  getBiometricLoginOptionsService,
+  verifyBiometricLoginService,
+} from '../services/auth.service.js';
 import { pool } from '../db.js';
 
 // ==========================================
@@ -201,6 +212,9 @@ export const saveAddress = async (req, res) => {
     if (!street || !city) {
       return res.status(400).json({ ok: false, message: 'Calle y ciudad son obligatorias.' });
     }
+    if (phone && !/^3\d{9}$/.test(phone)) {
+      return res.status(400).json({ ok: false, message: 'El número móvil debe tener 10 dígitos y empezar por 3 (Ej: 3001234567).' });
+    }
 
     const { rows } = await pool.query(
       `INSERT INTO user_addresses (user_id, type, title, street, city, state, zip_code, country, phone, notes)
@@ -343,6 +357,58 @@ export const saveBiometricCredentialController = async (req, res) => {
     return res.json({ ok: true, message: 'Credencial biométrica asociada con éxito.' });
   } catch (error) {
     console.error('Error al asociar biométrica:', error.message);
+    if (error.message === 'Ya posees una huella') {
+      return res.status(400).json({ ok: false, message: 'Ya posees una huella' });
+    }
     return res.status(500).json({ ok: false, message: 'No fue posible asociar la huella biométrica.' });
+  }
+};
+
+export const biometricRegistrationOptionsController = async (req, res) => {
+  try {
+    const userId = req.auth.userId;
+    const options = await getBiometricRegistrationOptionsService(userId);
+    return res.json({ ok: true, options });
+  } catch (error) {
+    console.error('Error al generar opciones de registro biométrico:', error.message);
+    if (error.message === 'Ya posees una huella') {
+      return res.status(400).json({ ok: false, message: 'Ya posees una huella' });
+    }
+    return res.status(500).json({ ok: false, message: error.message || 'Error al generar opciones de registro.' });
+  }
+};
+
+export const biometricRegistrationVerifyController = async (req, res) => {
+  try {
+    const userId = req.auth.userId;
+    const response = req.body;
+    const reqOrigin = req.get('origin');
+    await verifyBiometricRegistrationService(userId, response, reqOrigin);
+    return res.json({ ok: true, message: 'Huella biométrica registrada y verificada correctamente.' });
+  } catch (error) {
+    console.error('Error al verificar registro biométrico:', error.message);
+    return res.status(400).json({ ok: false, message: error.message || 'Error al verificar el registro biométrico.' });
+  }
+};
+
+export const biometricLoginOptionsController = async (req, res) => {
+  try {
+    const options = await getBiometricLoginOptionsService();
+    return res.json({ ok: true, options });
+  } catch (error) {
+    console.error('Error al generar opciones de inicio de sesión biométrico:', error.message);
+    return res.status(500).json({ ok: false, message: error.message || 'Error al generar opciones de login biométrico.' });
+  }
+};
+
+export const biometricLoginVerifyController = async (req, res) => {
+  try {
+    const response = req.body;
+    const reqOrigin = req.get('origin');
+    const { user, token } = await verifyBiometricLoginService(response, reqOrigin);
+    return res.json({ ok: true, user, token });
+  } catch (error) {
+    console.error('Error al verificar inicio de sesión biométrico:', error.message);
+    return res.status(401).json({ ok: false, message: error.message || 'Autenticación biométrica fallida.' });
   }
 };

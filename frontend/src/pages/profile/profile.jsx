@@ -109,6 +109,10 @@ export default function Profile() {
 
   const handleAddAddress = async (e) => {
     e.preventDefault();
+    if (newAddress.phone && !/^3\d{9}$/.test(newAddress.phone)) {
+      setMessage({ text: 'El número móvil debe tener 10 dígitos y empezar por 3 (Ej. 3001234567).', type: 'error' });
+      return;
+    }
     try {
       const res = await api.post('/auth/addresses', newAddress);
       if (res.data.ok) {
@@ -187,23 +191,23 @@ export default function Profile() {
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Encabezado */}
-      <div className="mb-8 flex items-center gap-4 bg-gradient-to-r from-fuchsia-600 to-pink-600 p-6 rounded-2xl text-white shadow-lg shadow-fuchsia-600/25">
+      <div className="mb-8 flex items-center gap-4 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 p-6 rounded-2xl text-slate-900 dark:text-white shadow-sm">
         <div className="relative">
           {formData.avatar_url ? (
             <img 
               src={formData.avatar_url} 
               alt={formData.name} 
-              className="w-16 h-16 rounded-full object-cover ring-4 ring-white/30 shadow-md"
+              className="w-16 h-16 rounded-full object-cover ring-4 ring-slate-200 dark:ring-zinc-700 shadow-md"
             />
           ) : (
-            <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center text-white ring-4 ring-white/30">
+            <div className="w-16 h-16 rounded-full bg-slate-200 dark:bg-zinc-700 flex items-center justify-center text-slate-600 dark:text-slate-300 ring-4 ring-slate-200 dark:ring-zinc-700">
               <User size={32} />
             </div>
           )}
         </div>
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold">{formData.name || 'Mi Perfil'}</h1>
-          <p className="text-fuchsia-100 text-sm mt-0.5">{formData.email}</p>
+          <p className="text-slate-500 dark:text-slate-400 text-sm mt-0.5">{formData.email}</p>
         </div>
       </div>
 
@@ -214,27 +218,27 @@ export default function Profile() {
       )}
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-200 mb-8 space-x-8">
+      <div className="flex border-b border-slate-200 dark:border-zinc-800 mb-8 space-x-8">
         <button
           onClick={() => setActiveTab('personal')}
-          className={`flex items-center gap-2 pb-4 font-semibold text-sm transition-colors border-b-2 ${activeTab === 'personal' ? 'border-fuchsia-600 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+          className={`flex items-center gap-2 pb-4 font-semibold text-sm transition-colors border-b-2 ${activeTab === 'personal' ? 'border-fuchsia-600 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}`}
         >
           <User size={18} />
-          Información Personal
+          Información
         </button>
         <button
           onClick={() => setActiveTab('addresses')}
-          className={`flex items-center gap-2 pb-4 font-semibold text-sm transition-colors border-b-2 ${activeTab === 'addresses' ? 'border-fuchsia-600 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+          className={`flex items-center gap-2 pb-4 font-semibold text-sm transition-colors border-b-2 ${activeTab === 'addresses' ? 'border-fuchsia-600 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}`}
         >
           <MapPin size={18} />
-          Direcciones de Envío ({addresses.length})
+          Direcciones
         </button>
         <button
           onClick={() => setActiveTab('cards')}
-          className={`flex items-center gap-2 pb-4 font-semibold text-sm transition-colors border-b-2 ${activeTab === 'cards' ? 'border-fuchsia-600 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+          className={`flex items-center gap-2 pb-4 font-semibold text-sm transition-colors border-b-2 ${activeTab === 'cards' ? 'border-fuchsia-600 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}`}
         >
           <CreditCard size={18} />
-          Métodos de Pago ({cards.length})
+          Pagos
         </button>
       </div>
 
@@ -365,14 +369,23 @@ export default function Profile() {
       {activeTab === 'addresses' && (
         <div className="space-y-6">
           <div className="flex justify-between items-center">
-            <h2 className="text-lg font-bold text-slate-900">Mis Direcciones de Envío</h2>
-            <button
-              onClick={() => setShowAddressForm(!showAddressForm)}
-              className="flex items-center gap-2 bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-md shadow-fuchsia-600/20 hover:from-fuchsia-500 hover:to-pink-500 transition-all"
-            >
-              <Plus size={16} />
-              Nueva Dirección
-            </button>
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">Mis Direcciones</h2>
+            {addresses.length < 2 ? (
+              <button
+                onClick={() => {
+                  setNewAddress(prev => ({ ...prev, title: addresses.length === 0 ? 'Principal' : 'Opcional' }));
+                  setShowAddressForm(!showAddressForm);
+                }}
+                className="flex items-center gap-2 bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-md shadow-fuchsia-600/20 hover:from-fuchsia-500 hover:to-pink-500 transition-all cursor-pointer"
+              >
+                <Plus size={16} />
+                Nueva Dirección
+              </button>
+            ) : (
+              <span className="text-xs text-slate-500 font-semibold bg-slate-100 dark:bg-zinc-800 px-3 py-1.5 rounded-xl">
+                Máximo 2 direcciones (Principal y Opcional)
+              </span>
+            )}
           </div>
 
           {showAddressForm && (
@@ -389,7 +402,7 @@ export default function Profile() {
                 />
                 <input
                   type="text"
-                  placeholder="Calle / Dirección"
+                  placeholder="Calle / Carrera / Transversal / Diagonal # N° - N° (Ej. Calle 100 # 15-20)"
                   value={newAddress.street}
                   onChange={e => setNewAddress({ ...newAddress, street: e.target.value })}
                   className="px-4 py-2 rounded-xl border border-slate-200 text-sm"
@@ -418,8 +431,8 @@ export default function Profile() {
                   className="px-4 py-2 rounded-xl border border-slate-200 text-sm"
                 />
                 <input
-                  type="text"
-                  placeholder="Teléfono de contacto"
+                  type="tel"
+                  placeholder="Móvil / Celular (Ej. 3001234567)"
                   value={newAddress.phone}
                   onChange={e => setNewAddress({ ...newAddress, phone: e.target.value })}
                   className="px-4 py-2 rounded-xl border border-slate-200 text-sm"
@@ -481,14 +494,20 @@ export default function Profile() {
       {activeTab === 'cards' && (
         <div className="space-y-6">
           <div className="flex justify-between items-center">
-            <h2 className="text-lg font-bold text-slate-900">Tarjetas y Métodos de Pago</h2>
-            <button
-              onClick={() => setShowCardForm(!showCardForm)}
-              className="flex items-center gap-2 bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-md shadow-fuchsia-600/20 hover:from-fuchsia-500 hover:to-pink-500 transition-all"
-            >
-              <Plus size={16} />
-              Nueva Tarjeta
-            </button>
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">Pagos</h2>
+            {cards.length < 4 ? (
+              <button
+                onClick={() => setShowCardForm(!showCardForm)}
+                className="flex items-center gap-2 bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-md shadow-fuchsia-600/20 hover:from-fuchsia-500 hover:to-pink-500 transition-all cursor-pointer"
+              >
+                <Plus size={16} />
+                Nueva Tarjeta
+              </button>
+            ) : (
+              <span className="text-xs text-slate-500 font-semibold bg-slate-100 dark:bg-zinc-800 px-3 py-1.5 rounded-xl">
+                Máximo 4 tarjetas permitidas
+              </span>
+            )}
           </div>
 
           {showCardForm && (

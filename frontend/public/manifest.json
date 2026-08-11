@@ -1,6 +1,6 @@
 {
-  "name": "StoreApp - Glopsy",
-  "short_name": "StoreApp",
+  "name": "Glopsy",
+  "short_name": "Glopsy",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000000",

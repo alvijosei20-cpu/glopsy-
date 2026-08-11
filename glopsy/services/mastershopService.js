@@ -54,6 +54,10 @@ const obtenerProductoPorId = async (id) => {
         return productoData;
 
     } catch (error) {
+        if (error.response && error.response.status === 404) {
+            console.warn(`[Mastershop] Producto ${id} no encontrado (404).`);
+            return null;
+        }
         console.error('Error en el servicio de productos:', error.message);
         throw error;
     }

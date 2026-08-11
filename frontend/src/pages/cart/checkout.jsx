@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { ShoppingCart, ArrowLeft, ShieldCheck, Phone, Home, Check, ChevronDown, ChevronUp, Truck, Package, DollarSign } from 'lucide-react';
+import { ShoppingCart, ArrowLeft, ShieldCheck, Phone, Home, Check, ChevronDown, ChevronUp, Truck, Package, DollarSign, CreditCard } from 'lucide-react';
 import api from '../../services/api';
 import './cart.css';
 
@@ -45,6 +45,22 @@ export default function Checkout() {
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [showBricks, setShowBricks] = useState(false);
   const [preferenceData, setPreferenceData] = useState(null);
+  const [savedCards, setSavedCards] = useState([]);
+  const [selectedCardId, setSelectedCardId] = useState('');
+  const [loadingSavedCard, setLoadingSavedCard] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      api.get('/auth/cards')
+        .then(res => {
+          if (res.data.ok && Array.isArray(res.data.cards)) {
+            setSavedCards(res.data.cards);
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
 
   useEffect(() => {
     if (!showBricks || !preferenceData) return;
@@ -79,6 +95,9 @@ export default function Checkout() {
                   formData,
                   preferenceId: preferenceData.preferenceId,
                   guestHash,
+                  shipping_cost: shippingCost,
+                  shipping_payload: { grouped: shipmentsGrouped },
+                  items: cartItems,
                   customer_info: {
                     departamento_id: selectedDepartamentoId,
                     ciudad_id: selectedCiudadId,
@@ -118,7 +137,6 @@ export default function Checkout() {
               debitCard: 'all',
               ticket: 'all',
               bankTransfer: 'all',
-              mercadoPago: 'all',
             }
           }
         });
@@ -221,6 +239,10 @@ export default function Checkout() {
       alert('Por favor completa todos los datos de envío (Departamento, Ciudad, Dirección y Número Móvil).');
       return;
     }
+    if (!/^3\d{9}$/.test(telefono)) {
+      alert('El número móvil debe tener 10 dígitos y empezar por 3 (Ej. 3001234567).');
+      return;
+    }
 
     setLoadingCheckout(true);
     try {
@@ -250,6 +272,47 @@ export default function Checkout() {
       alert(err.response?.data?.message || 'Error al procesar el pago o apartar el stock.');
     } finally {
       setLoadingCheckout(false);
+    }
+  };
+
+  const handleSavedCardCheckout = async (cardId) => {
+    if (!selectedDepartamentoId || !selectedCiudadId || !direccion.trim() || !telefono.trim()) {
+      alert('Por favor completa todos los datos de envío (Departamento, Ciudad, Dirección y Número Móvil).');
+      return;
+    }
+    if (!/^3\d{9}$/.test(telefono)) {
+      alert('El número móvil debe tener 10 dígitos y empezar por 3 (Ej. 3001234567).');
+      return;
+    }
+
+    setLoadingSavedCard(true);
+    try {
+      const res = await api.post('/product/process-saved-card-payment', {
+        card_id: cardId,
+        items: cartItems,
+        shipping_cost: shippingCost,
+        shipping_payload: { grouped: shipmentsGrouped },
+        customer_info: {
+          departamento_id: selectedDepartamentoId,
+          ciudad_id: selectedCiudadId,
+          direccion,
+          telefono
+        },
+        guestHash
+      });
+
+      if (res.data.ok) {
+        setCheckoutSuccess(true);
+        localStorage.removeItem('glopsy_cart');
+        window.dispatchEvent(new Event('storage'));
+      } else {
+        alert(res.data.message || 'Error en el pago 1-clic');
+      }
+    } catch (err) {
+      console.error('Error al procesar pago 1-clic:', err);
+      alert(err.response?.data?.message || 'Error al procesar el pago con la tarjeta guardada.');
+    } finally {
+      setLoadingSavedCard(false);
     }
   };
 
@@ -376,7 +439,7 @@ export default function Checkout() {
                   <Home size={16} className="absolute left-3 top-3.5 text-slate-400" />
                   <input
                     type="text"
-                    placeholder="Calle, número, barrio..."
+                    placeholder="Calle / Carrera / Transversal / Diagonal # N° - N° (Ej. Calle 100 # 15-20, Apto 301)"
                     value={direccion}
                     onChange={(e) => setDireccion(e.target.value)}
                     required
@@ -391,7 +454,7 @@ export default function Checkout() {
                   <Phone size={16} className="absolute left-3 top-3.5 text-slate-400" />
                   <input
                     type="tel"
-                    placeholder="Ej. 3001234567"
+                    placeholder="Móvil (Ej. 3001234567 - 10 dígitos)"
                     value={telefono}
                     onChange={(e) => setTelefono(e.target.value)}
                     required
@@ -560,6 +623,50 @@ export default function Checkout() {
                 </div>
               </div>
             </div>
+
+            {savedCards.length > 0 && (
+              <div className="bg-gradient-to-r from-fuchsia-900/10 to-blue-900/10 p-5 rounded-2xl border border-fuchsia-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
+                    <div className="p-2 bg-fuchsia-600 text-white rounded-xl">
+                      <CreditCard size={18} />
+                    </div>
+                    <span>Pagar con 1 Clic (Tarjetas Guardadas)</span>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {savedCards.map(card => (
+                    <div key={card.id} className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer text-sm transition-all bg-white shadow-sm ${selectedCardId === card.id ? 'border-fuchsia-600 ring-2 ring-fuchsia-600/20' : 'border-slate-200 hover:border-slate-300'}`} onClick={() => setSelectedCardId(card.id)}>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="radio"
+                          name="saved_card_selection"
+                          checked={selectedCardId === card.id}
+                          onChange={() => setSelectedCardId(card.id)}
+                          className="text-fuchsia-600 focus:ring-fuchsia-500"
+                        />
+                        <div>
+                          <p className="font-bold text-slate-800">{card.card_brand || 'Tarjeta'} •••• {card.last_four}</p>
+                          <p className="text-xs text-slate-500">Titular: {card.card_holder} • Exp: {card.expiry_month}/{card.expiry_year}</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={loadingSavedCard}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedCardId(card.id);
+                          handleSavedCardCheckout(card.id);
+                        }}
+                        className="bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-700 hover:to-pink-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs shadow-md transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        {loadingSavedCard && selectedCardId === card.id ? 'Pagando...' : 'Pagar'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <button
               type="submit"

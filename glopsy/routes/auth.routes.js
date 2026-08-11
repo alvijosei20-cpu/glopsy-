@@ -17,6 +17,10 @@ import {
   loginEmail,
   savePushSubscriptionController,
   saveBiometricCredentialController,
+  biometricRegistrationOptionsController,
+  biometricRegistrationVerifyController,
+  biometricLoginOptionsController,
+  biometricLoginVerifyController,
 } from '../controllers/auth.controller.js';
 import { authLimiter } from '../middlewares/limiters.js';
 import { requireAuth } from '../middlewares/auth.js';
@@ -45,5 +49,9 @@ router.delete('/cards/:id', requireAuth, deleteCard);
 router.post('/logout', requireAuth, logout);
 router.post('/push-subscription', requireAuth, savePushSubscriptionController);
 router.post('/biometric', requireAuth, saveBiometricCredentialController);
+router.post('/biometric/register-options', requireAuth, biometricRegistrationOptionsController);
+router.post('/biometric/register-verify', requireAuth, biometricRegistrationVerifyController);
+router.post('/biometric/login-options', authLimiter, biometricLoginOptionsController);
+router.post('/biometric/login-verify', authLimiter, biometricLoginVerifyController);
 
 export default router;

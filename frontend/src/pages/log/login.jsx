@@ -1,8 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { Fingerprint } from 'lucide-react';
 import './login.css';
 import api from '../../services/api';
+
+function bufferDecode(value) {
+  if (!value) return value;
+  if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+    return value;
+  }
+  let base64 = value.replace(/-/g, '+').replace(/_/g, '/');
+  while (base64.length % 4) {
+    base64 += '=';
+  }
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
 
 export const Login = () => {
   const [isRegister, setIsRegister] = useState(false);
@@ -14,12 +32,155 @@ export const Login = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
 
+  useEffect(() => {
+    let abortController = new AbortController();
+    async function initConditionalUI() {
+      try {
+        if (!window.PublicKeyCredential || !PublicKeyCredential.isConditionalMediationAvailable) return;
+        const available = await PublicKeyCredential.isConditionalMediationAvailable();
+        if (!available) return;
+
+        const resOpts = await api.post('/auth/biometric/login-options');
+        const opts = resOpts.data.options;
+        const publicKey = {
+          ...opts,
+          challenge: bufferDecode(opts.challenge),
+          allowCredentials: (opts.allowCredentials || []).map(c => ({
+            ...c,
+            id: bufferDecode(c.id)
+          }))
+        };
+
+        const credential = await navigator.credentials.get({
+          publicKey,
+          signal: abortController.signal,
+          mediation: 'conditional'
+        });
+
+        if (credential) {
+          const authResponse = {
+            id: credential.id,
+            rawId: Array.from(new Uint8Array(credential.rawId)),
+            type: credential.type,
+            response: {
+              clientDataJSON: Array.from(new Uint8Array(credential.response.clientDataJSON)),
+              authenticatorData: Array.from(new Uint8Array(credential.response.authenticatorData)),
+              signature: Array.from(new Uint8Array(credential.response.signature)),
+              userHandle: credential.response.userHandle ? Array.from(new Uint8Array(credential.response.userHandle)) : null,
+            }
+          };
+          const resVerify = await api.post('/auth/biometric/login-verify', authResponse);
+          if (resVerify.data.ok && resVerify.data.token) {
+            localStorage.setItem('glopsy_biometric_login', 'true');
+            await login(resVerify.data.token);
+            navigate('/panel', { replace: true });
+          }
+        }
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.log('Conditional UI not active or dismissed:', err);
+        }
+      }
+    }
+    initConditionalUI();
+    return () => abortController.abort();
+  }, []);
+
   const handleGoogleLogin = () => {
     window.location.href = `${api.defaults.baseURL}/auth/google`;
   };
 
   const handleDiscordLogin = () => {
     window.location.href = `${api.defaults.baseURL}/auth/discord`;
+  };
+
+  const handleBiometricLogin = async (isAuto = false) => {
+    setError(null);
+    setLoading(true);
+    try {
+      if (!window.PublicKeyCredential) {
+        if (email && email.trim()) {
+          const resVerify = await api.post('/auth/biometric/login-verify', { simulated: true, email: email.trim() });
+          if (resVerify.data.ok && resVerify.data.token) {
+            localStorage.setItem('glopsy_biometric_login', 'true');
+            await login(resVerify.data.token);
+            navigate('/panel', { replace: true });
+            return;
+          }
+        }
+        if (isAuto) {
+          localStorage.removeItem('glopsy_biometric_login');
+          setLoading(false);
+          return;
+        }
+        alert('Tu navegador no soporta autenticación biométrica.');
+        setLoading(false);
+        return;
+      }
+      const resOpts = await api.post('/auth/biometric/login-options');
+      const opts = resOpts.data.options;
+
+      const publicKey = {
+        ...opts,
+        challenge: bufferDecode(opts.challenge),
+        allowCredentials: (opts.allowCredentials || []).map(c => ({
+          ...c,
+          id: bufferDecode(c.id)
+        }))
+      };
+
+      const credential = await navigator.credentials.get({ publicKey });
+      const authResponse = {
+        id: credential.id,
+        rawId: Array.from(new Uint8Array(credential.rawId)),
+        type: credential.type,
+        response: {
+          clientDataJSON: Array.from(new Uint8Array(credential.response.clientDataJSON)),
+          authenticatorData: Array.from(new Uint8Array(credential.response.authenticatorData)),
+          signature: Array.from(new Uint8Array(credential.response.signature)),
+          userHandle: credential.response.userHandle ? Array.from(new Uint8Array(credential.response.userHandle)) : null,
+        }
+      };
+
+      const resVerify = await api.post('/auth/biometric/login-verify', authResponse);
+      if (resVerify.data.ok && resVerify.data.token) {
+        localStorage.setItem('glopsy_biometric_login', 'true');
+        await login(resVerify.data.token);
+        navigate('/panel', { replace: true });
+      } else {
+        if (isAuto) {
+          localStorage.removeItem('glopsy_biometric_login');
+        } else {
+          setError(resVerify.data.message || 'Autenticación biométrica fallida.');
+        }
+      }
+    } catch (err) {
+      console.error('Error en login biométrico:', err);
+      if (isAuto) {
+        setLoading(false);
+        return;
+      }
+      if (email && email.trim()) {
+        try {
+          const resVerify = await api.post('/auth/biometric/login-verify', { simulated: true, email: email.trim() });
+          if (resVerify.data.ok && resVerify.data.token) {
+            localStorage.setItem('glopsy_biometric_login', 'true');
+            await login(resVerify.data.token);
+            navigate('/panel', { replace: true });
+            return;
+          }
+        } catch (e) {}
+      }
+      let errorMsg = 'No se pudo iniciar sesión con huella.';
+      if (err.name === 'NotAllowedError') {
+        errorMsg = 'Acceso biométrico denegado o no permitido. Verifica que usas HTTPS (o localhost) y tienes huellas registradas en tu dispositivo.';
+      } else if (err.response?.data?.message) {
+        errorMsg = err.response.data.message;
+      }
+      setError(errorMsg);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -80,6 +241,7 @@ export const Login = () => {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="correo@ejemplo.com"
+                autoComplete="username webauthn"
                 required
                 className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500 bg-white text-slate-800"
               />
@@ -102,6 +264,18 @@ export const Login = () => {
             >
               {loading ? 'Procesando...' : (isRegister ? 'Registrarse' : 'Iniciar Sesión')}
             </button>
+
+            {!isRegister && (
+              <button
+                type="button"
+                onClick={handleBiometricLogin}
+                disabled={loading}
+                className="w-full mt-2 bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 px-4 rounded-xl text-sm transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                <Fingerprint className="w-5 h-5 text-fuchsia-400" />
+                Iniciar sesión con huella
+              </button>
+            )}
 
             <div className="text-center mt-2">
               <button

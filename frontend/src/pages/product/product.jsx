@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ShoppingCart, Zap, Heart, ArrowLeft, Truck, ShieldCheck, Check, Star, MapPin, Store, Shield, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
+import { ShoppingCart, Zap, Heart, ArrowLeft, Truck, ShieldCheck, Check, Star, MapPin, Store, Shield, Sparkles, ChevronDown, ChevronUp, Maximize2, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../../services/api';
 import './product.css';
 
@@ -20,6 +20,44 @@ export default function ProductDetail() {
   // Fold/Unfold states for long texts
   const [warrantyExpanded, setWarrantyExpanded] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
+  const [fullscreenOpen, setFullscreenOpen] = useState(false);
+
+  const getImages = (p) => {
+    try {
+      if (!p) return [];
+      if (Array.isArray(p.images) && p.images.length > 0) {
+        return p.images.map(img => img.src || img).filter(Boolean);
+      }
+      if (typeof p.images === 'string') {
+        const parsed = JSON.parse(p.images);
+        if (Array.isArray(parsed)) {
+          return parsed.map(img => img.src || img).filter(Boolean);
+        }
+      }
+    } catch {}
+    if (p?.urlImageProduct) return [p.urlImageProduct];
+    return ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60'];
+  };
+
+  const images = product ? getImages(product) : [];
+  const safeImages = images.length > 0 ? images : ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60'];
+  const currentImageIdx = selectedImage < safeImages.length ? selectedImage : 0;
+
+  // Keyboard navigation for fullscreen
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (!fullscreenOpen) return;
+      if (e.key === 'Escape') setFullscreenOpen(false);
+      if (e.key === 'ArrowRight') {
+        setSelectedImage((prev) => (prev + 1) % safeImages.length);
+      }
+      if (e.key === 'ArrowLeft') {
+        setSelectedImage((prev) => (prev - 1 + safeImages.length) % safeImages.length);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [fullscreenOpen, safeImages.length]);
 
   const userCity = sessionStorage.getItem('location_city') || 'Bogotá D.C.';
 
@@ -61,21 +99,7 @@ export default function ProductDetail() {
     return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(num);
   };
 
-  const getImages = (p) => {
-    try {
-      if (Array.isArray(p.images) && p.images.length > 0) {
-        return p.images.map(img => img.src || img).filter(Boolean);
-      }
-      if (typeof p.images === 'string') {
-        const parsed = JSON.parse(p.images);
-        if (Array.isArray(parsed)) {
-          return parsed.map(img => img.src || img).filter(Boolean);
-        }
-      }
-    } catch {}
-    if (p.urlImageProduct) return [p.urlImageProduct];
-    return ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60'];
-  };
+
 
   const getProductOwner = (p) => {
     try {
@@ -154,12 +178,15 @@ export default function ProductDetail() {
 
   const handleAddToCart = () => {
     if (!product) return;
+    const imgs = getImages(product);
+    const safeImgs = imgs.length > 0 ? imgs : ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60'];
+    const idx = selectedImage < safeImgs.length ? selectedImage : 0;
     const cartItem = {
       id: product.id || id,
       external_id: product.external_product_id || product.id,
       name: product.name,
       price: Number(product.suggested_price || product.base_price || 0),
-      image: getImages(product)[selectedImage] || getImages(product)[0],
+      image: safeImgs[idx] || safeImgs[0],
       quantity: Number(quantity),
       variant: currentVariant,
       options: { main: selectedMainOption, sub: selectedSubOption },
@@ -220,7 +247,6 @@ export default function ProductDetail() {
     );
   }
 
-  const images = getImages(product);
   const mainPrice = Number(product.suggested_price || product.base_price || 0);
 
   return (
@@ -258,31 +284,40 @@ export default function ProductDetail() {
           {/* Column 1: Horizontally Scrollable Image Banner (5 cols) */}
           <div className="lg:col-span-5 flex flex-col gap-4">
             <div className="w-full flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-thin">
-              {images.map((img, idx) => (
+              {safeImages.map((img, idx) => (
                 <div 
                   key={idx} 
-                  className="w-full shrink-0 snap-center h-80 sm:h-96 bg-slate-50 rounded-2xl border border-fuchsia-100 overflow-hidden flex items-center justify-center relative shadow-inner cursor-pointer"
-                  onClick={() => setSelectedImage(idx)}
+                  className="w-full shrink-0 snap-center h-80 sm:h-96 bg-slate-50 rounded-2xl border border-fuchsia-100 overflow-hidden flex items-center justify-center relative shadow-inner cursor-pointer group"
+                  onClick={() => {
+                    setSelectedImage(idx);
+                    setFullscreenOpen(true);
+                  }}
                 >
                   <img
                     src={img}
                     alt={`${product.name} ${idx + 1}`}
-                    className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                    <span className="opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 backdrop-blur-sm text-slate-800 text-xs font-bold px-3 py-2 rounded-xl shadow-md flex items-center gap-1.5">
+                      <Maximize2 size={16} className="text-fuchsia-600" />
+                      Pantalla completa
+                    </span>
+                  </div>
                   <span className="absolute bottom-3 right-3 bg-white/90 backdrop-blur-sm text-fuchsia-700 text-xs font-bold px-3 py-1 rounded-lg shadow-sm border border-fuchsia-100">
-                    {idx + 1} / {images.length}
+                    {idx + 1} / {safeImages.length}
                   </span>
                 </div>
               ))}
             </div>
-            {images.length > 1 && (
+            {safeImages.length > 1 && (
               <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                {images.map((img, idx) => (
+                {safeImages.map((img, idx) => (
                   <button
                     key={idx}
                     onClick={() => setSelectedImage(idx)}
                     className={`w-14 h-14 rounded-xl border-2 overflow-hidden shrink-0 transition-all ${
-                      selectedImage === idx ? 'border-fuchsia-600 ring-2 ring-fuchsia-500/30' : 'border-slate-200 opacity-60 hover:opacity-100'
+                      currentImageIdx === idx ? 'border-fuchsia-600 ring-2 ring-fuchsia-500/30' : 'border-slate-200 opacity-60 hover:opacity-100'
                     }`}
                   >
                     <img src={img} alt="" className="w-full h-full object-cover" />
@@ -544,6 +579,78 @@ export default function ProductDetail() {
         )}
 
       </div>
+
+      {/* Fullscreen Image Modal */}
+      {fullscreenOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col justify-between p-4 sm:p-6 animate-fadeIn">
+          {/* Top Bar */}
+          <div className="flex items-center justify-between text-white max-w-7xl mx-auto w-full">
+            <div className="flex items-center gap-3">
+              <span className="bg-fuchsia-600 text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-md">
+                {currentImageIdx + 1} / {safeImages.length}
+              </span>
+              <span className="text-sm font-medium text-slate-300 truncate max-w-xs sm:max-w-md">
+                {product.name}
+              </span>
+            </div>
+            <button
+              onClick={() => setFullscreenOpen(false)}
+              className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+              title="Cerrar (Esc)"
+            >
+              <X size={22} />
+            </button>
+          </div>
+
+          {/* Main Content Area with Image & Arrows */}
+          <div className="relative flex-1 flex items-center justify-center my-4 max-w-7xl mx-auto w-full">
+            {safeImages.length > 1 && (
+              <button
+                onClick={() => setSelectedImage((prev) => (prev - 1 + safeImages.length) % safeImages.length)}
+                className="absolute left-2 sm:left-6 z-10 p-3.5 rounded-full bg-black/60 hover:bg-black/90 text-white transition-all backdrop-blur-sm cursor-pointer shadow-xl border border-white/10"
+                title="Imagen anterior"
+              >
+                <ChevronLeft size={26} />
+              </button>
+            )}
+
+            <div className="max-w-5xl max-h-[75vh] flex items-center justify-center overflow-hidden px-16">
+              <img
+                src={safeImages[currentImageIdx]}
+                alt={`${product.name} ${currentImageIdx + 1}`}
+                className="max-h-[75vh] max-w-full object-contain rounded-2xl shadow-2xl select-none"
+              />
+            </div>
+
+            {safeImages.length > 1 && (
+              <button
+                onClick={() => setSelectedImage((prev) => (prev + 1) % safeImages.length)}
+                className="absolute right-2 sm:right-6 z-10 p-3.5 rounded-full bg-black/60 hover:bg-black/90 text-white transition-all backdrop-blur-sm cursor-pointer shadow-xl border border-white/10"
+                title="Siguiente imagen"
+              >
+                <ChevronRight size={26} />
+              </button>
+            )}
+          </div>
+
+          {/* Bottom Thumbnails Strip */}
+          {safeImages.length > 1 && (
+            <div className="flex items-center justify-center gap-2 overflow-x-auto pb-2 max-w-7xl mx-auto w-full">
+              {safeImages.map((img, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setSelectedImage(idx)}
+                  className={`w-14 h-14 rounded-xl border-2 overflow-hidden shrink-0 transition-all cursor-pointer ${
+                    currentImageIdx === idx ? 'border-fuchsia-500 scale-105 ring-2 ring-fuchsia-500/50' : 'border-white/20 opacity-50 hover:opacity-100'
+                  }`}
+                >
+                  <img src={img} alt="" className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

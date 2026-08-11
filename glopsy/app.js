@@ -9,6 +9,7 @@ import authRoutes from './routes/auth.routes.js';
 import tiendaRoutes from './routes/tienda.routes.js';
 import integracionRoutes from './routes/integracion.routes.js';
 import geoRoutes from './routes/geo.routes.js';
+import mastershopWebhookRoutes from './routes/mastershopWebhook.routes.js';
 
 const app = express();
 
@@ -22,7 +23,17 @@ app.use(
   })
 );
 app.use(apiLimiter);
-app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
+const allowedOrigin = process.env.FRONTEND_URL;
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || origin === allowedOrigin || origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+      callback(null, true);
+    } else {
+      callback(new Error('Bloqueado por política CORS'));
+    }
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '2mb' }));
 
 // Registro de Módulos de Rutas
@@ -31,5 +42,6 @@ app.use('/api/auth', authRoutes);
 app.use('/api/tienda', tiendaRoutes);
 app.use('/api/tienda/integraciones', integracionRoutes);
 app.use('/api/geo', geoRoutes);
+app.use('/api/webhooks', mastershopWebhookRoutes);
 
 export default app;
