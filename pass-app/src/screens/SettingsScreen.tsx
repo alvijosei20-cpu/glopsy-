@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, Linking, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AppHeader from '../components/AppHeader';
 import { SectionTitle, SettingRow } from '../components/ui';
@@ -77,6 +77,17 @@ export default function SettingsScreen({ navigation }: MainTabScreenProps<'Setti
     ]);
   };
 
+  const onSupport = async () => {
+    const channel = '1332457717821866046/1537960195550875718';
+    try {
+      await Linking.openURL(`discord://-/channels/${channel}`);
+    } catch {
+      try {
+        await Linking.openURL(`https://discord.com/channels/${channel}`);
+      } catch {}
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.wrap, { backgroundColor: c.bg }]} edges={['top', 'left', 'right']}>
       <AppHeader />
@@ -126,6 +137,9 @@ export default function SettingsScreen({ navigation }: MainTabScreenProps<'Setti
 
         <SectionTitle>{t('settings.danger')}</SectionTitle>
         <SettingRow icon="trash" title={t('settings.wipe')} subtitle={t('settings.wipe.sub')} danger onPress={onWipe} />
+
+        <SectionTitle>{t('settings.support')}</SectionTitle>
+        <SettingRow icon="logo-discord" title="Discord" subtitle={t('settings.support.sub')} onPress={onSupport} />
 
         <SectionTitle>{t('settings.legal')}</SectionTitle>
         <SettingRow icon="document-text" title={t('settings.terms')} subtitle={t('settings.terms.sub')} onPress={() => navigation.navigate('Terms')} />

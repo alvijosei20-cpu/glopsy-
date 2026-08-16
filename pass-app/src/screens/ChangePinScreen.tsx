@@ -12,11 +12,13 @@ import { Store } from '../lib/store';
 import * as Crypto from '../lib/crypto';
 import { lockRemaining, registerFailedAttempt, formatLockTime } from '../lib/persist';
 import { t } from '../i18n';
+import { useSecureScreen } from '../components/useSecureScreen';
 import type { RootStackScreenProps } from '../navigation/types';
 
 type Step = 'old' | 'new' | 'confirm';
 
 export default function ChangePinScreen({ navigation }: RootStackScreenProps<'ChangePin'>) {
+  useSecureScreen();
   const { state, verifyPin, changePin } = useAuth();
   const { showToast } = useToast();
   const c = usePalette();

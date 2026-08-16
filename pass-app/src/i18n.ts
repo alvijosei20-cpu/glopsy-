@@ -173,8 +173,10 @@ const es: Dict = {
   'settings.wipe': 'Borrar todo',
   'settings.wipe.sub': 'Elimina la cuenta y todos los datos',
   'settings.legal': 'Legal',
-  'settings.terms': 'Términos y condiciones',
+  'settings.terms': 'Términos y Condiciones',
   'settings.terms.sub': 'Responsabilidad y uso de la app',
+  'settings.support': 'Soporte',
+  'settings.support.sub': '¿Problemas? Únete a nuestro grupo de Discord',
   'settings.exported': 'Copia de seguridad exportada',
   'settings.err.db': 'No se pudo guardar la base de datos',
   'settings.err.nobio': 'Este dispositivo no tiene sensor de huellas',
@@ -278,9 +280,6 @@ const es: Dict = {
   'terms.11.title': '11. Legislación aplicable y jurisdicción',
   'terms.11.body':
     'Estos Términos y Condiciones se regirán por la legislación aplicable. Para cualquier controversia que surja en relación con la Aplicación o con estos Términos, las partes se someten a los tribunales competentes, con renuncia expresa a cualquier otro fuero.',
-  'terms.12.title': 'Aviso',
-  'terms.12.body':
-    'Este texto es de carácter informativo y no constituye asesoramiento legal. Se recomienda su revisión por un profesional del derecho. La disponibilidad de estos Términos no genera, por sí misma, obligación de aceptación previa al uso de la Aplicación.',
 
   // vault.ts (tipos, categorías, metadatos)
   'type.password': 'Contraseña',
@@ -456,6 +455,8 @@ const en: Dict = {
   'settings.legal': 'Legal',
   'settings.terms': 'Terms and Conditions',
   'settings.terms.sub': 'Liability and usage of the app',
+  'settings.support': 'Support',
+  'settings.support.sub': 'Problems? Join our Discord group',
   'settings.exported': 'Backup exported',
   'settings.err.db': 'Could not save the database',
   'settings.err.nobio': 'This device has no fingerprint sensor',
@@ -556,9 +557,6 @@ const en: Dict = {
   'terms.11.title': '11. Applicable law and jurisdiction',
   'terms.11.body':
     'These Terms and Conditions shall be governed by applicable law. For any dispute arising in connection with the Application or these Terms, the parties submit to the competent courts, expressly waiving any other jurisdiction.',
-  'terms.12.title': 'Notice',
-  'terms.12.body':
-    'This text is for informational purposes and does not constitute legal advice. Review by a legal professional is recommended. The availability of these Terms does not, by itself, create an obligation of prior acceptance to use the Application.',
 
   'type.password': 'Password',
   'type.seed': 'Crypto seed',

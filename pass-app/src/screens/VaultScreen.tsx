@@ -9,9 +9,11 @@ import { usePalette } from '../context/ThemeContext';
 import { VAULT, CATEGORIES, IoniconName } from '../lib/vault';
 import { t } from '../i18n';
 import { VaultItem } from '../types';
+import { useSecureScreen } from '../components/useSecureScreen';
 import type { MainTabScreenProps } from '../navigation/types';
 
 export default function VaultScreen({ navigation }: MainTabScreenProps<'Vault'>) {
+  useSecureScreen();
   const { state } = useAuth();
   const c = usePalette();
   const vault = state.vault!;
@@ -37,6 +39,8 @@ export default function VaultScreen({ navigation }: MainTabScreenProps<'Vault'>)
             value={q}
             onChangeText={setQ}
             autoCorrect={false}
+            autoComplete="off"
+            importantForAutofill="no"
           />
         </View>
         <FlatList

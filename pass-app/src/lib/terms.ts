@@ -5,7 +5,7 @@ export interface TermsSection {
   body: string;
 }
 
-export const TERMS_SECTIONS: TermsSection[] = Array.from({ length: 13 }, (_, i) => ({
+export const TERMS_SECTIONS: TermsSection[] = Array.from({ length: 12 }, (_, i) => ({
   title: t(`terms.${i}.title`),
   body: t(`terms.${i}.body`),
 }));

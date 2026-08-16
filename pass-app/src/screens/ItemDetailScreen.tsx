@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from '../components/Icon';
 import ProtectedText from '../components/ProtectedText';
 import { Button } from '../components/ui';
+import { useSecureScreen } from '../components/useSecureScreen';
 import { useAuth } from '../context/AuthContext';
 import { usePalette } from '../context/ThemeContext';
 import { TYPES, VAULT, IoniconName } from '../lib/vault';
@@ -11,6 +12,7 @@ import { t } from '../i18n';
 import type { RootStackScreenProps } from '../navigation/types';
 
 export default function ItemDetailScreen({ navigation, route }: RootStackScreenProps<'ItemDetail'>) {
+  useSecureScreen();
   const { state, persistVault } = useAuth();
   const c = usePalette();
   const vault = state.vault!;

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { BackHandler, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { BackHandler, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from '../components/Icon';
 import { Button } from '../components/ui';
@@ -24,8 +24,13 @@ function matches(item: VaultItem, ctx: FillContext | null): boolean {
   const domain = (ctx.webDomain || '').toLowerCase().replace(/^www\./, '');
   const pkg = (ctx.packageName || '').toLowerCase();
 
-  if (domain && (host === domain || host.endsWith('.' + domain) || url.includes(domain))) return true;
-  if (pkg && (url.includes(pkg) || name.includes(pkg) || user.includes(pkg))) return true;
+  if (domain) {
+    if (host && (host === domain || host.endsWith('.' + domain) || domain.endsWith('.' + host))) return true;
+    if (url.includes(domain) || (host && domain.includes(host)) || name.includes(domain)) return true;
+  }
+  if (pkg) {
+    if (url.includes(pkg) || name.includes(pkg) || user.includes(pkg)) return true;
+  }
   return false;
 }
 
@@ -36,6 +41,7 @@ export default function AutofillScreen() {
 
   const [ctx, setCtx] = useState<FillContext | null>(null);
   const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState('');
 
   useEffect(() => {
     getFillContext().then(setCtx);
@@ -51,7 +57,19 @@ export default function AutofillScreen() {
     () => (ctx ? candidates.filter((i) => matches(i, ctx)) : []),
     [candidates, ctx]
   );
-  const list = matched.length ? matched : candidates;
+
+  const baseList = matched.length ? matched : candidates;
+
+  const list = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return baseList;
+    return candidates.filter((i) => {
+      const name = String(i.name || '').toLowerCase();
+      const user = String(i.username || '').toLowerCase();
+      const url = String(i.url || '').toLowerCase();
+      return name.includes(q) || user.includes(q) || url.includes(q);
+    });
+  }, [baseList, candidates, query]);
 
   const target = ctx ? ctx.webDomain || ctx.packageName : '';
 
@@ -102,11 +120,32 @@ export default function AutofillScreen() {
         </View>
       </View>
 
+      {candidates.length > 3 ? (
+        <View style={[styles.searchBox, { backgroundColor: c.card, borderColor: c.border }]}>
+          <Icon name="search" size={18} color={c.text3} />
+          <TextInput
+            style={[styles.searchInput, { color: c.text }]}
+            placeholder={t('common.search') || 'Buscar...'}
+            placeholderTextColor={c.text3}
+            value={query}
+            onChangeText={setQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {query ? (
+            <TouchableOpacity onPress={() => setQuery('')}>
+              <Icon name="close-circle" size={18} color={c.text3} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : null}
+
       {list.length ? (
         <FlatList
           data={list}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
+          keyboardShouldPersistTaps="handled"
           renderItem={({ item }: { item: VaultItem }) => (
             <TouchableOpacity
               style={[styles.row, { backgroundColor: c.card }]}
@@ -172,7 +211,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginHorizontal: 16,
-    marginBottom: 12,
+    marginBottom: 10,
     gap: 12,
   },
   targetBody: {
@@ -186,6 +225,22 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     marginTop: 1,
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginHorizontal: 16,
+    marginBottom: 10,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    padding: 0,
   },
   listContent: {
     paddingHorizontal: 16,

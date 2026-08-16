@@ -7,8 +7,8 @@ type GateState = 'checking' | 'ok' | 'rooted' | 'overlay';
 
 /**
  * Bloquea la app si el dispositivo tiene root o si hay superposiciones
- * (overlays) de terceros activas. También evita capturas de pantalla vía
- * FLAG_SECURE (se aplica a nivel nativo en MainActivity).
+ * (overlays) de terceros activas. FLAG_SECURE se aplica por pantalla sensible
+ * vía useSecureScreen (no en login/autofill, para no bloquear gestores externos).
  */
 export default function SecurityGate({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<GateState>('checking');

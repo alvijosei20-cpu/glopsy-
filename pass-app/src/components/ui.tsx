@@ -12,10 +12,10 @@ interface FieldProps extends TextInputProps {
   label?: string;
 }
 
-export function Field({ label, style, ...rest }: FieldProps) {
+export const Field = React.forwardRef<View, FieldProps>(function Field({ label, style, ...rest }, ref) {
   const c = usePalette();
   return (
-    <View style={styles.field}>
+    <View ref={ref} style={styles.field}>
       {label ? <Text style={[styles.fieldLabel, { color: c.text2 }]}>{label}</Text> : null}
       <TextInput
         placeholderTextColor={c.text3}
@@ -32,7 +32,7 @@ export function Field({ label, style, ...rest }: FieldProps) {
       />
     </View>
   );
-}
+});
 
 interface ButtonProps {
   title: string;

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from '../components/Icon';
@@ -9,6 +9,7 @@ import { usePalette } from '../context/ThemeContext';
 import { VAULT, TYPES, CATEGORIES, sanitizeValue, IoniconName } from '../lib/vault';
 import * as Crypto from '../lib/crypto';
 import { t } from '../i18n';
+import { useSecureScreen } from '../components/useSecureScreen';
 import { ItemType, VaultItem } from '../types';
 import type { RootStackScreenProps } from '../navigation/types';
 
@@ -70,6 +71,7 @@ const sanitizeMap: Record<string, string> = {
 };
 
 export default function AddEditScreen({ navigation, route }: RootStackScreenProps<'AddEdit'>) {
+  useSecureScreen();
   const { state, persistVault } = useAuth();
   const { showToast } = useToast();
   const c = usePalette();
@@ -88,6 +90,32 @@ export default function AddEditScreen({ navigation, route }: RootStackScreenProp
   };
 
   const isNote = form.type === 'note';
+
+  // Scroll del formulario: al enfocar un campo, lo centra en la parte visible
+  // por encima del teclado.
+  const scrollRef = useRef<ScrollView>(null);
+  const fieldRefs = useRef<Record<string, View | null>>({});
+
+  const focusField = (key: string) => {
+    const field = fieldRefs.current[key];
+    const scroller = scrollRef.current;
+    if (!field || !scroller) return;
+    const node = scroller.getNativeScrollRef();
+    if (node == null) return;
+    setTimeout(() => {
+      field.measureLayout(
+        node,
+        (_x, y) => {
+          scroller.scrollTo({ y: Math.max(0, y - 150), animated: true });
+        },
+        () => {}
+      );
+    }, 220);
+  };
+
+  const fieldRef = (key: string) => (r: View | null) => {
+    fieldRefs.current[key] = r;
+  };
 
   const onSave = async () => {
     if (saving) return;
@@ -144,7 +172,7 @@ export default function AddEditScreen({ navigation, route }: RootStackScreenProp
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.bg }]} edges={['top', 'left', 'right']}>
-      <KeyboardAvoidingView style={styles.wrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.wrap} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
         <View style={[styles.header, { borderBottomColor: c.border }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={8}>
           <Icon name="close" size={24} color={c.text} />
@@ -152,7 +180,7 @@ export default function AddEditScreen({ navigation, route }: RootStackScreenProp
         <Text style={[styles.headerTitle, { color: c.text }]}>{editing ? t('addedit.edit') : t('addedit.new')}</Text>
         <View style={{ width: 24 }} />
       </View>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollRef} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         <View style={styles.segmented}>{Object.keys(TYPES).map((id) => typeButton(id as ItemType))}</View>
 
         <Text style={[styles.catLabel, { color: c.text2 }]}>{t('addedit.category')}</Text>
@@ -172,48 +200,53 @@ export default function AddEditScreen({ navigation, route }: RootStackScreenProp
           })}
         </View>
 
-        <Field label={t('addedit.name')} placeholder={t('addedit.namePh')} maxLength={60} value={form.name} onChangeText={(v) => set('name', v)} />
+        <Field label={t('addedit.name')} placeholder={t('addedit.namePh')} maxLength={60} value={form.name} onChangeText={(v) => set('name', v)} ref={fieldRef('name')} onFocus={() => focusField('name')} />
 
         {form.type === 'password' && (
           <>
-            <Field label={t('addedit.username')} maxLength={128} value={form.username} onChangeText={(v) => set('username', v)} />
+            <Field label={t('addedit.username')} maxLength={128} autoComplete="username" textContentType="username" importantForAutofill="yes" value={form.username} onChangeText={(v) => set('username', v)} ref={fieldRef('username')} onFocus={() => focusField('username')} />
             <View style={styles.passRow}>
               <Field
                 label={t('addedit.password')}
                 maxLength={200}
                 secureTextEntry={!showPass}
+                autoComplete="password"
+                textContentType="password"
+                importantForAutofill="yes"
                 value={form.password}
                 onChangeText={(v) => set('password', v)}
                 style={styles.passField}
+                ref={fieldRef('password')}
+                onFocus={() => focusField('password')}
               />
               <TouchableOpacity style={[styles.eyeBtn, { backgroundColor: c.card2 }]} onPress={() => setShowPass((s) => !s)}>
                 <Icon name={showPass ? 'eye-off' : 'eye'} size={20} color={c.text2} />
               </TouchableOpacity>
             </View>
             <Button title={t('addedit.generate')} variant="ghost" icon="refresh" onPress={generatePass} />
-            <Field label={t('addedit.url')} placeholder={t('addedit.urlPh')} maxLength={2048} value={form.url} onChangeText={(v) => set('url', v)} keyboardType="url" />
+            <Field label={t('addedit.url')} placeholder={t('addedit.urlPh')} maxLength={2048} value={form.url} onChangeText={(v) => set('url', v)} keyboardType="url" ref={fieldRef('url')} onFocus={() => focusField('url')} />
           </>
         )}
 
         {form.type === 'seed' && (
-          <Field label={t('addedit.seed')} placeholder={t('addedit.seedPh')} maxLength={300} value={form.seed} onChangeText={(v) => set('seed', v)} multiline style={{ minHeight: 84 }} />
+          <Field label={t('addedit.seed')} placeholder={t('addedit.seedPh')} maxLength={300} value={form.seed} onChangeText={(v) => set('seed', v)} multiline style={{ minHeight: 84 }} ref={fieldRef('seed')} onFocus={() => focusField('seed')} />
         )}
 
         {form.type === 'card' && (
           <>
-            <Field label={t('addedit.card')} placeholder={t('addedit.cardPh')} maxLength={19} value={form.cardNumber} onChangeText={(v) => set('cardNumber', v)} keyboardType="number-pad" />
+            <Field label={t('addedit.card')} placeholder={t('addedit.cardPh')} maxLength={19} value={form.cardNumber} onChangeText={(v) => set('cardNumber', v)} keyboardType="number-pad" ref={fieldRef('cardNumber')} onFocus={() => focusField('cardNumber')} />
             <View style={styles.pair}>
-              <Field label={t('addedit.cvv')} maxLength={4} value={form.cvv} onChangeText={(v) => set('cvv', v)} keyboardType="number-pad" style={styles.pairItem} />
-              <Field label={t('addedit.expiry')} placeholder={t('addedit.expiryPh')} maxLength={5} value={form.expiry} onChangeText={(v) => set('expiry', v)} keyboardType="number-pad" style={styles.pairItem} />
+              <Field label={t('addedit.cvv')} maxLength={4} value={form.cvv} onChangeText={(v) => set('cvv', v)} keyboardType="number-pad" style={styles.pairItem} ref={fieldRef('cvv')} onFocus={() => focusField('cvv')} />
+              <Field label={t('addedit.expiry')} placeholder={t('addedit.expiryPh')} maxLength={5} value={form.expiry} onChangeText={(v) => set('expiry', v)} keyboardType="number-pad" style={styles.pairItem} ref={fieldRef('expiry')} onFocus={() => focusField('expiry')} />
             </View>
-            <Field label={t('addedit.holder')} maxLength={60} value={form.username} onChangeText={(v) => set('username', v, 'holder')} />
+            <Field label={t('addedit.holder')} maxLength={60} value={form.username} onChangeText={(v) => set('username', v, 'holder')} ref={fieldRef('holder')} onFocus={() => focusField('holder')} />
           </>
         )}
 
         {form.type === 'note' ? (
-          <Field label={t('addedit.note')} maxLength={2000} value={form.notes} onChangeText={(v) => set('notes', v)} multiline style={{ minHeight: 110 }} />
+          <Field label={t('addedit.note')} maxLength={2000} value={form.notes} onChangeText={(v) => set('notes', v)} multiline style={{ minHeight: 110 }} ref={fieldRef('notes')} onFocus={() => focusField('notes')} />
         ) : (
-          <Field label={t('addedit.notes')} placeholder={t('addedit.optional')} maxLength={2000} value={form.notes} onChangeText={(v) => set('notes', v)} multiline style={{ minHeight: 70 }} />
+          <Field label={t('addedit.notes')} placeholder={t('addedit.optional')} maxLength={2000} value={form.notes} onChangeText={(v) => set('notes', v)} multiline style={{ minHeight: 70 }} ref={fieldRef('notes')} onFocus={() => focusField('notes')} />
         )}
 
         <Button title={editing ? t('addedit.save') : t('addedit.saveNew')} icon="shield-checkmark" block onPress={onSave} disabled={saving} />

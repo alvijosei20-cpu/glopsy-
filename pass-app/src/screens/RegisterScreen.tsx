@@ -186,7 +186,7 @@ export default function RegisterScreen({ navigation }: RootStackScreenProps<'Reg
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.bg }]} edges={['top', 'left', 'right']}>
-      <KeyboardAvoidingView style={styles.wrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.wrap} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
         <AuthHeader tagline={t('reg.tagline')} />
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <Animated.View style={[styles.card, { backgroundColor: c.card, shadowColor: '#000' }, style]}>
@@ -220,6 +220,8 @@ export default function RegisterScreen({ navigation }: RootStackScreenProps<'Reg
                       placeholderTextColor={c.text3}
                       autoCapitalize="characters"
                       autoCorrect={false}
+                      autoComplete="off"
+                      importantForAutofill="no"
                       maxLength={19}
                       editable={!activated}
                       value={licenseCode}
@@ -252,6 +254,9 @@ export default function RegisterScreen({ navigation }: RootStackScreenProps<'Reg
               maxLength={32}
               autoCapitalize="none"
               autoCorrect={false}
+              autoComplete="username"
+              textContentType="username"
+              importantForAutofill="yes"
               returnKeyType="done"
               blurOnSubmit
               onSubmitEditing={Keyboard.dismiss}

@@ -176,7 +176,7 @@ export default function LoginScreen({ navigation }: RootStackScreenProps<'Login'
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.bg }]} edges={['top', 'left', 'right']}>
-      <KeyboardAvoidingView style={styles.wrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.wrap} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
         <AuthHeader
         tagline={
           remembered
@@ -211,6 +211,9 @@ export default function LoginScreen({ navigation }: RootStackScreenProps<'Login'
               maxLength={32}
               autoCapitalize="none"
               autoCorrect={false}
+              autoComplete="username"
+              textContentType="username"
+              importantForAutofill="yes"
               returnKeyType="done"
               blurOnSubmit
               onSubmitEditing={Keyboard.dismiss}
