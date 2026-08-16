@@ -1,5 +1,5 @@
 import { obtenerProductoPorId } from '../services/mastershopService.js';
-import { saveProductForUser, getProductsForUser, searchQueryProducts, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, cancelOrderForUser, updateOrderAddressForUser } from '../services/product.service.js';
+import { saveProductForUser, getProductsForUser, searchQueryProducts, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, cancelOrderForUser, updateOrderAddressForUser } from '../services/product.service.js';
 
 export const getProductById = async (req, res) => {
   const productId = req.params.id;
@@ -237,6 +237,38 @@ export const getUserComprasController = async (req, res) => {
   } catch (error) {
     console.error('Error al obtener compras del usuario:', error.message);
     res.status(500).json({ ok: false, message: 'Error al obtener las compras.' });
+  }
+};
+
+export const searchOrdersController = async (req, res) => {
+  try {
+    const { q, query } = req.query;
+    const searchTerm = q || query;
+    if (!searchTerm) {
+      return res.status(400).json({ ok: false, message: 'Ingresa un número de pedido o documento de identidad.' });
+    }
+    const products = await searchOrdersByNumberOrDoc(searchTerm);
+    res.json({ ok: true, products });
+  } catch (error) {
+    console.error('Error al buscar pedidos:', error.message);
+    res.status(500).json({ ok: false, message: 'Error al buscar pedidos.' });
+  }
+};
+
+export const getOrderByHashController = async (req, res) => {
+  try {
+    const { hash } = req.params;
+    if (!hash) {
+      return res.status(400).json({ ok: false, message: 'Hash de orden requerido.' });
+    }
+    const order = await getOrderByHash(hash);
+    if (!order) {
+      return res.status(404).json({ ok: false, message: 'Pedido no encontrado.' });
+    }
+    res.json({ ok: true, product: order });
+  } catch (error) {
+    console.error('Error al obtener detalle de orden por hash:', error.message);
+    res.status(500).json({ ok: false, message: 'Error al obtener el detalle del pedido.' });
   }
 };
 

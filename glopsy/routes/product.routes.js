@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getProductById, saveProduct, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, createPreferenceController, processMpPaymentController, processSavedCardPaymentController, getTiposEmpaqueController, getUserComprasController, recordPurchaseController, cancelOrderController, updateOrderAddressController } from '../controllers/product.controller.js';
+import { getProductById, saveProduct, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, createPreferenceController, processMpPaymentController, processSavedCardPaymentController, getTiposEmpaqueController, getUserComprasController, searchOrdersController, getOrderByHashController, recordPurchaseController, cancelOrderController, updateOrderAddressController } from '../controllers/product.controller.js';
 import { requireAuth, optionalAuth } from '../middlewares/auth.js';
 import { tiendaLimiter, heavyLimiter } from '../middlewares/limiters.js';
 
@@ -18,6 +18,8 @@ router.post('/favorite', requireAuth, toggleFavorite);
 router.get('/search', searchProducts);
 router.get('/mine', requireAuth, getMyProducts);
 router.get('/compras', optionalAuth, getUserComprasController);
+router.get('/compras/buscar', searchOrdersController);
+router.get('/compras/hash/:hash', getOrderByHashController);
 router.patch('/compras/:hash/cancel', optionalAuth, cancelOrderController);
 router.patch('/compras/:hash/address', optionalAuth, updateOrderAddressController);
 router.get('/tipos-empaque', getTiposEmpaqueController);

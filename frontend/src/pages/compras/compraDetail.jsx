@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Package, ArrowLeft, MapPin, Clock, CheckCircle, Truck, Phone, XCircle, Sparkles, ChevronDown } from 'lucide-react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 export default function CompraDetail() {
   const { hash } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
@@ -18,17 +20,12 @@ export default function CompraDetail() {
   useEffect(() => {
     const fetchOrder = async () => {
       try {
-        const guestHash = localStorage.getItem('glopsy_guest_hash');
-        const res = await api.get('/product/compras', {
-          headers: guestHash ? { 'x-guest-hash': guestHash } : {}
-        });
-        if (res.data.ok && Array.isArray(res.data.products)) {
-          const found = res.data.products.find(p => String(p.order_hash) === String(hash));
-          if (found) {
-            setOrder(found);
-            setNewDireccion(found.direccion || '');
-            setNewTelefono(found.telefono || '');
-          }
+        const res = await api.get(`/product/compras/hash/${hash}`);
+        if (res.data.ok && res.data.product) {
+          const found = res.data.product;
+          setOrder(found);
+          setNewDireccion(found.direccion || '');
+          setNewTelefono(found.telefono || '');
         }
       } catch (err) {
         console.error('Error al cargar detalle de orden:', err);
@@ -55,6 +52,11 @@ export default function CompraDetail() {
   };
 
   const handleCancelOrder = async () => {
+    if (!user) {
+      alert('Debes iniciar sesión para cancelar el pedido.');
+      navigate('/login');
+      return;
+    }
     if (!window.confirm('¿Estás seguro de que deseas cancelar este pedido?')) return;
     setCancelling(true);
     try {
@@ -77,6 +79,11 @@ export default function CompraDetail() {
   };
 
   const handleUpdateAddress = async () => {
+    if (!user) {
+      alert('Debes iniciar sesión para modificar la dirección del pedido.');
+      navigate('/login');
+      return;
+    }
     if (newTelefono && !/^3\d{9}$/.test(newTelefono)) {
       alert('El número móvil debe tener 10 dígitos y empezar por 3 (Ej. 3001234567).');
       return;

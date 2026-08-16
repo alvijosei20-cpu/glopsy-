@@ -242,6 +242,16 @@ export default function Navbar() {
               <span>Productos</span>
             </Link>
 
+            {!user && (
+              <Link 
+                to="/consultar-pedido" 
+                className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-semibold text-black dark:text-white hover:text-fuchsia-600 dark:hover:text-fuchsia-400 hover:bg-fuchsia-50 dark:hover:bg-zinc-800 transition-all duration-200"
+              >
+                <Package size={18} className="text-fuchsia-500" />
+                <span>Consultar Pedido</span>
+              </Link>
+            )}
+
             <Link 
               to="/cart" 
               className="relative flex items-center gap-2 px-3 py-2 rounded-md text-sm font-semibold text-black dark:text-white hover:text-fuchsia-600 dark:hover:text-fuchsia-400 hover:bg-fuchsia-50 dark:hover:bg-zinc-800 transition-all duration-200"
@@ -425,6 +435,16 @@ export default function Navbar() {
             <ShoppingBag size={20} className="text-fuchsia-500" />
             Productos
           </Link>
+          {!user && (
+            <Link
+              to="/consultar-pedido"
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="flex items-center gap-3 px-3 py-2 rounded-lg text-black font-semibold dark:text-white hover:text-fuchsia-600 hover:bg-fuchsia-50 dark:hover:bg-zinc-800 text-base"
+            >
+              <Package size={20} className="text-fuchsia-500" />
+              Consultar Pedido
+            </Link>
+          )}
           <Link
             to="/cart"
             onClick={() => setIsMobileMenuOpen(false)}

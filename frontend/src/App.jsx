@@ -16,6 +16,7 @@ import Listpr from './pages/listpr/listpr';
 import Favorites from './pages/favorites/favorites';
 import Compras from './pages/compras/compras';
 import CompraDetail from './pages/compras/compraDetail';
+import ConsultarPedido from './pages/compras/consultarPedido';
 import Profile from './pages/profile/profile';
 
 import { useState, useEffect } from 'react';
@@ -164,6 +165,7 @@ function MainApp() {
               </ProtectedRoute>
             }
           />
+          <Route path="/consultar-pedido" element={<ConsultarPedido />} />
           <Route 
             path="/compras" 
             element={
@@ -174,11 +176,7 @@ function MainApp() {
           />
           <Route 
             path="/compras/:hash" 
-            element={
-              <ProtectedRoute>
-                <CompraDetail />
-              </ProtectedRoute>
-            }
+            element={<CompraDetail />}
           />
           <Route 
             path="/profile" 

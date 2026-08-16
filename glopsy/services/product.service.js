@@ -563,7 +563,7 @@ export const releaseStockForSession = async (identifier) => {
 };
 
 export const migrateCartSession = async (guestHash, userId) => {
-  if (!guestHash) return { migrated: false };
+  if (!guestHash || !userId) return { migrated: false };
   const guestKey = `cart:reserve:${guestHash}`;
   const userKey = `cart:reserve:user_${userId}`;
 
@@ -572,9 +572,15 @@ export const migrateCartSession = async (guestHash, userId) => {
     const ttl = await redisClient.ttl(guestKey);
     await redisClient.set(userKey, guestData, { EX: ttl > 0 ? ttl : 900 });
     await redisClient.del(guestKey);
-    return { migrated: true };
   }
-  return { migrated: false };
+
+  // Vincular órdenes del guest al usuario autenticado
+  await pool.query(
+    `UPDATE orders SET user_id = $1 WHERE guest_hash = $2 AND (user_id IS NULL OR user_id = 0)`,
+    [userId, guestHash]
+  );
+
+  return { migrated: true };
 };
 
 export const calculateShippingCost = async (items, destinationCiudadId) => {
@@ -1050,6 +1056,8 @@ export const recordPurchaseForUser = async (userId, items, options = {}) => {
   );
 
   const orderId = orderRows[0].id;
+  const orderNumber = String(100000 + orderId);
+  await pool.query(`UPDATE orders SET order_number = $1 WHERE id = $2`, [orderNumber, orderId]);
   const shipmentsList = shippingPayload?.grouped || shippingPayload?.shipments || (Array.isArray(shippingPayload) ? shippingPayload : null);
 
   if (Array.isArray(shipmentsList) && shipmentsList.length > 0) {
@@ -1143,6 +1151,72 @@ export const getUserPurchasesDetails = async (userId, guestHash) => {
   }
 
   return ordersWithDetails;
+};
+
+export const searchOrdersByNumberOrDoc = async (queryParam) => {
+  if (!queryParam) return [];
+  const cleanQuery = String(queryParam).trim();
+  const { rows: orderRows } = await pool.query(
+    `SELECT o.* 
+     FROM orders o
+     WHERE o.order_number = $1 
+        OR o.identification_number ILIKE $2
+     ORDER BY o.created_at DESC`,
+    [cleanQuery, `%${cleanQuery}%`]
+  );
+
+  const ordersWithDetails = [];
+  for (const order of orderRows) {
+    const { rows: itemRows } = await pool.query(
+      `SELECT oi.*, p.images, p.public_id, p.description, p.base_price, p.suggested_price
+       FROM order_items oi
+       LEFT JOIN produc p ON oi.product_id = p.id
+       WHERE oi.order_id = $1`,
+      [order.id]
+    );
+
+    const { rows: shipmentRows } = await pool.query(
+      `SELECT * FROM order_shipments WHERE order_id = $1`,
+      [order.id]
+    );
+
+    ordersWithDetails.push({
+      ...order,
+      items: itemRows,
+      shipments: shipmentRows
+    });
+  }
+
+  return ordersWithDetails;
+};
+
+export const getOrderByHash = async (orderHash) => {
+  if (!orderHash) return null;
+  const { rows: orderRows } = await pool.query(
+    `SELECT * FROM orders WHERE order_hash = $1 LIMIT 1`,
+    [orderHash]
+  );
+  if (orderRows.length === 0) return null;
+  const order = orderRows[0];
+
+  const { rows: itemRows } = await pool.query(
+    `SELECT oi.*, p.images, p.public_id, p.description, p.base_price, p.suggested_price
+     FROM order_items oi
+     LEFT JOIN produc p ON oi.product_id = p.id
+     WHERE oi.order_id = $1`,
+    [order.id]
+  );
+
+  const { rows: shipmentRows } = await pool.query(
+    `SELECT * FROM order_shipments WHERE order_id = $1`,
+    [order.id]
+  );
+
+  return {
+    ...order,
+    items: itemRows,
+    shipments: shipmentRows
+  };
 };
 
 export const cancelMastershopOrderOrShipments = async (order, shipmentIds, totalCancel) => {
