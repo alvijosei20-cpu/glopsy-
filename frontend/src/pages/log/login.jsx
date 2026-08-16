@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Fingerprint } from 'lucide-react';
@@ -22,6 +22,17 @@ function bufferDecode(value) {
   return bytes;
 }
 
+function bufferToBase64Url(buffer) {
+  if (typeof buffer === 'string') return buffer;
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
 export const Login = () => {
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState('');
@@ -31,60 +42,6 @@ export const Login = () => {
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
-
-  useEffect(() => {
-    let abortController = new AbortController();
-    async function initConditionalUI() {
-      try {
-        if (!window.PublicKeyCredential || !PublicKeyCredential.isConditionalMediationAvailable) return;
-        const available = await PublicKeyCredential.isConditionalMediationAvailable();
-        if (!available) return;
-
-        const resOpts = await api.post('/auth/biometric/login-options');
-        const opts = resOpts.data.options;
-        const publicKey = {
-          ...opts,
-          challenge: bufferDecode(opts.challenge),
-          allowCredentials: (opts.allowCredentials || []).map(c => ({
-            ...c,
-            id: bufferDecode(c.id)
-          }))
-        };
-
-        const credential = await navigator.credentials.get({
-          publicKey,
-          signal: abortController.signal,
-          mediation: 'conditional'
-        });
-
-        if (credential) {
-          const authResponse = {
-            id: credential.id,
-            rawId: Array.from(new Uint8Array(credential.rawId)),
-            type: credential.type,
-            response: {
-              clientDataJSON: Array.from(new Uint8Array(credential.response.clientDataJSON)),
-              authenticatorData: Array.from(new Uint8Array(credential.response.authenticatorData)),
-              signature: Array.from(new Uint8Array(credential.response.signature)),
-              userHandle: credential.response.userHandle ? Array.from(new Uint8Array(credential.response.userHandle)) : null,
-            }
-          };
-          const resVerify = await api.post('/auth/biometric/login-verify', authResponse);
-          if (resVerify.data.ok && resVerify.data.token) {
-            localStorage.setItem('glopsy_biometric_login', 'true');
-            await login(resVerify.data.token);
-            navigate('/panel', { replace: true });
-          }
-        }
-      } catch (err) {
-        if (err.name !== 'AbortError') {
-          console.log('Conditional UI not active or dismissed:', err);
-        }
-      }
-    }
-    initConditionalUI();
-    return () => abortController.abort();
-  }, []);
 
   const handleGoogleLogin = () => {
     window.location.href = `${api.defaults.baseURL}/auth/google`;
@@ -117,8 +74,13 @@ export const Login = () => {
         setLoading(false);
         return;
       }
-      const resOpts = await api.post('/auth/biometric/login-options');
+      const resOpts = await api.post('/auth/biometric/login-options', { email: email.trim() || undefined });
       const opts = resOpts.data.options;
+
+      if (!opts.allowCredentials || opts.allowCredentials.length === 0) {
+        setError('No tienes una huella válida registrada. Inicia sesión con tu contraseña y regístrala desde tu perfil.');
+        return;
+      }
 
       const publicKey = {
         ...opts,
@@ -132,13 +94,13 @@ export const Login = () => {
       const credential = await navigator.credentials.get({ publicKey });
       const authResponse = {
         id: credential.id,
-        rawId: Array.from(new Uint8Array(credential.rawId)),
+        rawId: credential.id,
         type: credential.type,
         response: {
-          clientDataJSON: Array.from(new Uint8Array(credential.response.clientDataJSON)),
-          authenticatorData: Array.from(new Uint8Array(credential.response.authenticatorData)),
-          signature: Array.from(new Uint8Array(credential.response.signature)),
-          userHandle: credential.response.userHandle ? Array.from(new Uint8Array(credential.response.userHandle)) : null,
+          clientDataJSON: bufferToBase64Url(credential.response.clientDataJSON),
+          authenticatorData: bufferToBase64Url(credential.response.authenticatorData),
+          signature: bufferToBase64Url(credential.response.signature),
+          userHandle: credential.response.userHandle ? bufferToBase64Url(credential.response.userHandle) : null,
         }
       };
 

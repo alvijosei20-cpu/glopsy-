@@ -153,7 +153,15 @@ export const saveBiometricCredentialService = async (userId, credential) => {
   return { success: true };
 };
 
-export const getBiometricRegistrationOptionsService = async (userId) => {
+export const deleteBiometricCredentialService = async (userId) => {
+  await pool.query(
+    'UPDATE users SET webauthn_credential = NULL, updated_at = NOW() WHERE id = $1',
+    [userId]
+  );
+  return { success: true };
+};
+
+export const getBiometricRegistrationOptionsService = async (userId, originUrl) => {
   const { rows } = await pool.query('SELECT email, name, webauthn_credential FROM users WHERE id = $1', [userId]);
   const user = rows[0];
   if (!user) throw new Error('Usuario no encontrado.');
@@ -177,7 +185,7 @@ export const getBiometricRegistrationOptionsService = async (userId) => {
 
   const options = await generateRegistrationOptions({
     rpName,
-    rpID: getRpID(),
+    rpID: getRpID(originUrl),
     userID: Uint8Array.from(userId.toString(), c => c.charCodeAt(0)),
     userName: user.email,
     userDisplayName: user.name || user.email,
@@ -220,15 +228,15 @@ export const verifyBiometricRegistrationService = async (userId, response, reqOr
       throw new Error('Fallo en la verificación de la huella biométrica.');
     }
 
-    const { credentialID, credentialPublicKey, counter, credentialDeviceType, credentialBackedUp } = verification.registrationInfo;
+    const { credential, credentialDeviceType, credentialBackedUp } = verification.registrationInfo;
 
     const credentialData = {
-      id: Buffer.from(credentialID).toString('base64url'),
-      publicKey: Buffer.from(credentialPublicKey).toString('base64'),
-      counter,
+      id: credential.id,
+      publicKey: Buffer.from(credential.publicKey).toString('base64'),
+      counter: credential.counter,
       deviceType: credentialDeviceType,
       backedUp: credentialBackedUp,
-      transports: response.response?.transports || ['internal'],
+      transports: credential.transports || ['internal'],
     };
 
     await pool.query(
@@ -244,11 +252,31 @@ export const verifyBiometricRegistrationService = async (userId, response, reqOr
   }
 };
 
-export const getBiometricLoginOptionsService = async () => {
+export const getBiometricLoginOptionsService = async (email, originUrl) => {
+  const allowCredentials = [];
+
+  const { rows } = await pool.query(
+    'SELECT webauthn_credential FROM users WHERE webauthn_credential IS NOT NULL' + (email && email.trim() ? ' AND email = $1' : ''),
+    email && email.trim() ? [email.trim()] : []
+  );
+
+  for (const row of rows) {
+    try {
+      const cred = typeof row.webauthn_credential === 'string' ? JSON.parse(row.webauthn_credential) : row.webauthn_credential;
+      if (cred?.id && cred?.publicKey) {
+        allowCredentials.push({
+          id: cred.id,
+          type: 'public-key',
+          transports: cred.transports || ['internal'],
+        });
+      }
+    } catch (e) {}
+  }
+
   const options = await generateAuthenticationOptions({
-    rpID: getRpID(),
+    rpID: getRpID(originUrl),
     userVerification: 'preferred',
-    allowCredentials: [],
+    allowCredentials,
   });
 
   await redisClient.set(`webauthn:auth:${options.challenge}`, 'pending', { EX: 300 });
@@ -283,9 +311,13 @@ export const verifyBiometricLoginService = async (response, reqOrigin) => {
 
   const cred = typeof user.webauthn_credential === 'string' ? JSON.parse(user.webauthn_credential) : user.webauthn_credential;
 
+  if (!cred?.publicKey) {
+    throw new Error('La huella registrada no es válida. Inicia sesión con contraseña y vuelve a registrarla desde tu perfil.');
+  }
+
   let expectedChallenge = null;
   try {
-    const clientDataJSON = JSON.parse(Buffer.from(response.response.clientDataJSON, 'base64').toString('utf8'));
+    const clientDataJSON = JSON.parse(Buffer.from(response.response.clientDataJSON, 'base64url').toString('utf8'));
     expectedChallenge = clientDataJSON.challenge;
   } catch (e) {
     throw new Error('Datos de autenticación webauthn inválidos.');
@@ -302,7 +334,7 @@ export const verifyBiometricLoginService = async (response, reqOrigin) => {
     expectedRPID: getRpID(reqOrigin),
     expectedOrigin: getOrigin(reqOrigin),
     credential: {
-      id: Buffer.from(cred.id, 'base64url'),
+      id: cred.id,
       publicKey: Buffer.from(cred.publicKey, 'base64'),
       counter: cred.counter,
       transports: cred.transports,

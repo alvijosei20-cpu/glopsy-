@@ -152,7 +152,7 @@ function MainApp() {
           
           <Route
             path="/login" 
-            element={user ? <Navigate to="/panel" replace /> : <Login />} 
+            element={user ? <Navigate to="/panel" replace /> : <ErrorBoundary><Login /></ErrorBoundary>} 
           />
           <Route path="/auth/success" element={<AuthSuccess />} />
 

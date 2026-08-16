@@ -1,7 +1,7 @@
 // services/authService.js
 export const authenticateUser = async (userData) => {
   try {
-    const response = await fetch('http://localhost:3000/api/auth/oauth-login', {
+    const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://localhost:3000/api'}/auth/oauth-login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -83,58 +83,91 @@ export default function Navbar() {
   );
   const [biometricStatus, setBiometricStatus] = useState('');
 
+  const bufferDecode = (value) => {
+    if (!value) return value;
+    if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return value;
+    let base64 = value.replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4) base64 += '=';
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  };
+
+  const bufferToBase64Url = (buffer) => {
+    if (typeof buffer === 'string') return buffer;
+    const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+    }
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  };
+
   const handleRegisterBiometric = async () => {
     if (!window.PublicKeyCredential) {
       alert('Tu navegador no soporta autenticación biométrica (WebAuthn).');
       return;
     }
     try {
-      const challenge = new Uint8Array(32);
-      window.crypto.getRandomValues(challenge);
+      let res = await api.post('/auth/biometric/register-options');
+
+      if (res.data.options === undefined && res.data.message === 'Ya posees una huella') {
+        const replace = window.confirm('Ya posees una huella registrada. ¿Deseas reemplazarla?');
+        if (!replace) return;
+        await api.delete('/auth/biometric');
+        res = await api.post('/auth/biometric/register-options');
+      }
+
+      const opts = res.data.options;
       const publicKeyCredentialCreationOptions = {
-        challenge,
-        rp: { name: "Glopsy", id: window.location.hostname },
+        ...opts,
+        challenge: bufferDecode(opts.challenge),
         user: {
-          id: Uint8Array.from(String(user.id), c => c.charCodeAt(0)),
-          name: user.email,
-          displayName: user.name || user.email,
+          ...opts.user,
+          id: bufferDecode(opts.user.id),
         },
-        pubKeyCredParams: [{ alg: -7, type: "public-key" }],
-        timeout: 60000,
-        attestation: "direct"
+        excludeCredentials: (opts.excludeCredentials || []).map(c => ({
+          ...c,
+          id: bufferDecode(c.id)
+        })),
       };
 
       const credential = await navigator.credentials.create({ publicKey: publicKeyCredentialCreationOptions });
       const credentialData = {
         id: credential.id,
-        rawId: Array.from(new Uint8Array(credential.rawId)),
+        rawId: credential.id,
         type: credential.type,
+        response: {
+          attestationObject: bufferToBase64Url(credential.response.attestationObject),
+          clientDataJSON: bufferToBase64Url(credential.response.clientDataJSON),
+          transports: credential.response.getTransports
+            ? (() => { try { return credential.response.getTransports(); } catch (e) { return ['internal']; } })()
+            : ['internal'],
+        },
       };
 
-      await api.post('/auth/biometric', { credential: credentialData });
+      await api.post('/auth/biometric/register-verify', credentialData);
       setBiometricStatus('¡Huella biométrica registrada con éxito!');
       setTimeout(() => setBiometricStatus(''), 4000);
     } catch (err) {
       console.error('Error registrando huella biométrica:', err);
       const serverMsg = err.response?.data?.message;
       if (serverMsg === 'Ya posees una huella') {
-        setBiometricStatus('Ya posees una huella');
-        setTimeout(() => setBiometricStatus(''), 4000);
+        const replace = window.confirm('Ya posees una huella registrada. ¿Deseas reemplazarla?');
+        if (replace) {
+          try {
+            await api.delete('/auth/biometric');
+            setBiometricStatus('Huella eliminada. Pulsa el icono de nuevo para registrarla.');
+            setTimeout(() => setBiometricStatus(''), 4000);
+          } catch (e) {
+            alert('No se pudo eliminar la huella biométrica.');
+          }
+        }
         return;
       }
-      try {
-        await api.post('/auth/biometric', { credential: { simulated: true, userId: user.id } });
-        setBiometricStatus('¡Huella biométrica asociada con éxito!');
-        setTimeout(() => setBiometricStatus(''), 4000);
-      } catch (e) {
-        const simMsg = e.response?.data?.message;
-        if (simMsg === 'Ya posees una huella') {
-          setBiometricStatus('Ya posees una huella');
-          setTimeout(() => setBiometricStatus(''), 4000);
-          return;
-        }
-        alert(simMsg || 'No se pudo registrar la huella biométrica.');
-      }
+      alert(serverMsg || 'No se pudo registrar la huella biométrica.');
     }
   };
 

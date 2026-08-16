@@ -26,7 +26,7 @@ app.use(apiLimiter);
 const allowedOrigin = process.env.FRONTEND_URL;
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || origin === allowedOrigin || origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+    if (!origin || origin === allowedOrigin || origin.startsWith('http://localhost:') || origin.startsWith('https://localhost:') || origin.startsWith('http://127.0.0.1:') || origin.startsWith('https://127.0.0.1:')) {
       callback(null, true);
     } else {
       callback(new Error('Bloqueado por política CORS'));

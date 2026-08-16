@@ -10,7 +10,7 @@
     "postgres": "pg_ctl -D $PREFIX/var/lib/postgresql start",
     "redis": "redis-server",
     "adminer": "php -S localhost:8080 adminer.php",
-    "server": "nodemon server.js"
+    "server": "ENABLE_HTTPS=1 nodemon server.js"
   },
   "keywords": [],
   "author": "",

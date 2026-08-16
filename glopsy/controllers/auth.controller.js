@@ -7,6 +7,7 @@ import {
   loginWithEmail,
   savePushSubscriptionService,
   saveBiometricCredentialService,
+  deleteBiometricCredentialService,
   getBiometricRegistrationOptionsService,
   verifyBiometricRegistrationService,
   getBiometricLoginOptionsService,
@@ -364,10 +365,21 @@ export const saveBiometricCredentialController = async (req, res) => {
   }
 };
 
+export const deleteBiometricCredentialController = async (req, res) => {
+  try {
+    await deleteBiometricCredentialService(req.auth.userId);
+    return res.json({ ok: true, message: 'Huella biométrica eliminada con éxito.' });
+  } catch (error) {
+    console.error('Error al eliminar biométrica:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible eliminar la huella biométrica.' });
+  }
+};
+
 export const biometricRegistrationOptionsController = async (req, res) => {
   try {
     const userId = req.auth.userId;
-    const options = await getBiometricRegistrationOptionsService(userId);
+    const reqOrigin = req.get('origin');
+    const options = await getBiometricRegistrationOptionsService(userId, reqOrigin);
     return res.json({ ok: true, options });
   } catch (error) {
     console.error('Error al generar opciones de registro biométrico:', error.message);
@@ -393,7 +405,9 @@ export const biometricRegistrationVerifyController = async (req, res) => {
 
 export const biometricLoginOptionsController = async (req, res) => {
   try {
-    const options = await getBiometricLoginOptionsService();
+    const { email } = req.body || {};
+    const reqOrigin = req.get('origin');
+    const options = await getBiometricLoginOptionsService(email, reqOrigin);
     return res.json({ ok: true, options });
   } catch (error) {
     console.error('Error al generar opciones de inicio de sesión biométrico:', error.message);

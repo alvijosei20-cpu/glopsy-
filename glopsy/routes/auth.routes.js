@@ -17,6 +17,7 @@ import {
   loginEmail,
   savePushSubscriptionController,
   saveBiometricCredentialController,
+  deleteBiometricCredentialController,
   biometricRegistrationOptionsController,
   biometricRegistrationVerifyController,
   biometricLoginOptionsController,
@@ -49,6 +50,7 @@ router.delete('/cards/:id', requireAuth, deleteCard);
 router.post('/logout', requireAuth, logout);
 router.post('/push-subscription', requireAuth, savePushSubscriptionController);
 router.post('/biometric', requireAuth, saveBiometricCredentialController);
+router.delete('/biometric', requireAuth, deleteBiometricCredentialController);
 router.post('/biometric/register-options', requireAuth, biometricRegistrationOptionsController);
 router.post('/biometric/register-verify', requireAuth, biometricRegistrationVerifyController);
 router.post('/biometric/login-options', authLimiter, biometricLoginOptionsController);
