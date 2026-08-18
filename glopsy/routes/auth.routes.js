@@ -7,6 +7,7 @@ import {
   getCurrentUser,
   updateCurrentUser,
   getAddresses,
+  getCheckoutDefaultsController,
   saveAddress,
   deleteAddress,
   getCards,
@@ -18,6 +19,8 @@ import {
   savePushSubscriptionController,
   saveBiometricCredentialController,
   deleteBiometricCredentialController,
+  biometricPaymentOptionsController,
+  biometricPaymentVerifyController,
   biometricRegistrationOptionsController,
   biometricRegistrationVerifyController,
   biometricLoginOptionsController,
@@ -42,6 +45,7 @@ router.post('/login', authLimiter, loginEmail);
 router.get('/me', requireAuth, getCurrentUser);
 router.put('/me', requireAuth, updateCurrentUser);
 router.get('/addresses', requireAuth, getAddresses);
+router.get('/checkout-defaults', requireAuth, getCheckoutDefaultsController);
 router.post('/addresses', requireAuth, saveAddress);
 router.delete('/addresses/:id', requireAuth, deleteAddress);
 router.get('/cards', requireAuth, getCards);
@@ -51,6 +55,8 @@ router.post('/logout', requireAuth, logout);
 router.post('/push-subscription', requireAuth, savePushSubscriptionController);
 router.post('/biometric', requireAuth, saveBiometricCredentialController);
 router.delete('/biometric', requireAuth, deleteBiometricCredentialController);
+router.post('/biometric/pay-options', requireAuth, biometricPaymentOptionsController);
+router.post('/biometric/pay-verify', requireAuth, biometricPaymentVerifyController);
 router.post('/biometric/register-options', requireAuth, biometricRegistrationOptionsController);
 router.post('/biometric/register-verify', requireAuth, biometricRegistrationVerifyController);
 router.post('/biometric/login-options', authLimiter, biometricLoginOptionsController);

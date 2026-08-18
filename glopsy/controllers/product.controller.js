@@ -1,5 +1,18 @@
 import { obtenerProductoPorId } from '../services/mastershopService.js';
 import { saveProductForUser, getProductsForUser, searchQueryProducts, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, cancelOrderForUser, updateOrderAddressForUser } from '../services/product.service.js';
+import { validatePaymentBiometricNonce } from '../services/auth.service.js';
+import { pool } from '../db.js';
+
+const requirePaymentBiometric = async (userId, biometricNonce) => {
+  if (!userId) return;
+  const { rows } = await pool.query('SELECT webauthn_credential FROM users WHERE id = $1', [userId]);
+  const hasBio = rows[0] && rows[0].webauthn_credential;
+  if (!hasBio) return;
+  const valid = await validatePaymentBiometricNonce(userId, biometricNonce);
+  if (!valid) {
+    throw new Error('Validación biométrica requerida para completar el pago. Vuelve a intentarlo.');
+  }
+};
 
 export const getProductById = async (req, res) => {
   const productId = req.params.id;
@@ -199,6 +212,7 @@ export const processMpPaymentController = async (req, res) => {
   try {
     const { formData, preferenceId, customer_info, guestHash, shipping_cost, shipping_payload, items } = req.body;
     const userId = req.auth?.userId || 1;
+    await requirePaymentBiometric(req.auth?.userId, req.body.biometric_nonce);
     const paymentRes = await processMpPaymentForCart(userId, formData, preferenceId, customer_info, guestHash, shipping_cost, shipping_payload, items);
     res.json({ ok: true, payment: paymentRes });
   } catch (error) {
@@ -210,6 +224,7 @@ export const processMpPaymentController = async (req, res) => {
 export const processSavedCardPaymentController = async (req, res) => {
   try {
     const userId = req.auth?.userId;
+    await requirePaymentBiometric(userId, req.body.biometric_nonce);
     const paymentRes = await processSavedCardPaymentForCart(userId, req.body);
     res.json({ ok: true, payment: paymentRes });
   } catch (error) {

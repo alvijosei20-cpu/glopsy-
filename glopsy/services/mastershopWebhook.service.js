@@ -1,6 +1,17 @@
 import { pool } from '../db.js';
 import { redisClient } from './redis.service.js';
 
+const resolveTiendaIdForWebhook = async (productId, publicId) => {
+  const { rows: existing } = await pool.query(
+    `SELECT tienda_id FROM produc WHERE id = $1 OR public_id = $2 LIMIT 1`,
+    [Number(productId) || 0, publicId || '']
+  );
+  if (existing[0]?.tienda_id) return Number(existing[0].tienda_id);
+
+  const { rows: tiendaRows } = await pool.query(`SELECT usrid FROM tiendas ORDER BY usrid LIMIT 1`);
+  return tiendaRows[0]?.usrid ? Number(tiendaRows[0].usrid) : 1;
+};
+
 export const processMastershopWebhookEvent = async (payload) => {
   const eventType = payload.event || payload.type || payload.action || 'unknown';
   const data = payload.data || payload;
@@ -26,11 +37,15 @@ export const processMastershopWebhookEvent = async (payload) => {
     const price = product.price || product.base_price;
     
     if (productId || publicId) {
+      const tiendaId = data.tienda_id
+        ? Number(data.tienda_id)
+        : await resolveTiendaIdForWebhook(productId, publicId);
+
       await pool.query(
-        `INSERT INTO produc (id, public_id, name, base_price, updated_at)
-         VALUES ($1, $2, $3, $4, NOW())
-         ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, base_price = EXCLUDED.base_price, updated_at = NOW()`,
-        [Number(productId) || Math.floor(Math.random() * 1000000), publicId || String(productId), name || 'Producto Webhook', Number(price) || 0]
+        `INSERT INTO produc (tienda_id, id, public_id, name, base_price, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         ON CONFLICT (id) DO UPDATE SET tienda_id = EXCLUDED.tienda_id, name = EXCLUDED.name, base_price = EXCLUDED.base_price, updated_at = NOW()`,
+        [tiendaId, Number(productId) || Math.floor(Math.random() * 1000000), publicId || String(productId), name || 'Producto Webhook', Number(price) || 0]
       );
       
       if (productId) {

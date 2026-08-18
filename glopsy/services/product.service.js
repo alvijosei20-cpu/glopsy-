@@ -35,9 +35,12 @@ export const saveProductForUser = async (userId, productData) => {
     provider,
     tipoEmpaqueId,
     tipo_empaque_id,
+    perfilEnvioId,
+    perfil_envio_id,
   } = productData;
 
   const resolvedTipoEmpaqueId = tipo_empaque_id !== undefined ? tipo_empaque_id : tipoEmpaqueId;
+  const rawPerfilEnvioId = perfil_envio_id !== undefined ? perfil_envio_id : perfilEnvioId;
 
   if (!name) {
     throw new Error('El nombre del producto es obligatorio.');
@@ -79,6 +82,18 @@ export const saveProductForUser = async (userId, productData) => {
         );
         resolvedFullmId = newFullment.rows[0].id;
       }
+    }
+  }
+
+  // Validar el perfil de envío: debe pertenecer a la tienda y al centro de distribución seleccionado
+  let resolvedPerfilEnvioId = rawPerfilEnvioId ? Number(rawPerfilEnvioId) : null;
+  if (resolvedPerfilEnvioId) {
+    const perfilCheck = await pool.query(
+      `SELECT id FROM perfiles_envio WHERE id = $1 AND tienda_id = $2 AND fullment_id = $3 LIMIT 1`,
+      [resolvedPerfilEnvioId, userId, resolvedFullmId]
+    );
+    if (perfilCheck.rows.length === 0) {
+      resolvedPerfilEnvioId = null;
     }
   }
 
@@ -155,9 +170,10 @@ export const saveProductForUser = async (userId, productData) => {
         selected_options = $16,
         fullm_id = $17,
         tipo_empaque_id = $18,
+        perfil_envio_id = $19,
         updated_at = NOW()
-      WHERE id = $19 AND tienda_id = $1
-      RETURNING id, name, external_product_id, selected_variant_id, suggested_price, fullm_id, tipo_empaque_id, integracion_id, created_at
+      WHERE id = $20 AND tienda_id = $1
+      RETURNING id, name, external_product_id, selected_variant_id, suggested_price, fullm_id, tipo_empaque_id, perfil_envio_id, integracion_id, created_at
     `;
     const updateValues = [
       userId,
@@ -178,6 +194,7 @@ export const saveProductForUser = async (userId, productData) => {
       selectedOptions ? JSON.stringify(selectedOptions) : '{}',
       resolvedFullmId ? Number(resolvedFullmId) : null,
       resolvedTipoEmpaqueId ? Number(resolvedTipoEmpaqueId) : null,
+      resolvedPerfilEnvioId ? Number(resolvedPerfilEnvioId) : null,
       existingId,
     ];
     const { rows } = await pool.query(updateQuery, updateValues);
@@ -205,9 +222,10 @@ export const saveProductForUser = async (userId, productData) => {
         selected_options,
         fullm_id,
         tipo_empaque_id,
+        perfil_envio_id,
         updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW())
-      RETURNING id, public_id, name, external_product_id, selected_variant_id, suggested_price, fullm_id, tipo_empaque_id, integracion_id, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW())
+      RETURNING id, public_id, name, external_product_id, selected_variant_id, suggested_price, fullm_id, tipo_empaque_id, perfil_envio_id, integracion_id, created_at
     `;
     const insertValues = [
       userId,
@@ -229,6 +247,7 @@ export const saveProductForUser = async (userId, productData) => {
       selectedOptions ? JSON.stringify(selectedOptions) : '{}',
       resolvedFullmId ? Number(resolvedFullmId) : null,
       resolvedTipoEmpaqueId ? Number(resolvedTipoEmpaqueId) : null,
+      resolvedPerfilEnvioId ? Number(resolvedPerfilEnvioId) : null,
     ];
     const { rows } = await pool.query(insertQuery, insertValues);
     resultRow = rows[0];
@@ -379,7 +398,13 @@ export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadNam
           AND o.estado = 'activo'
           AND (o.fecha_inicio IS NULL OR o.fecha_inicio <= NOW())
           AND (o.fecha_fin IS NULL OR o.fecha_fin >= NOW())
-          AND (o.alcance = 'global' OR (o.alcance = 'ciudad' AND (o.ciudad_id = c.id OR ($2::text IS NOT NULL AND LOWER(c.nombre) = LOWER($2::text)))))
+          AND (
+            o.alcance = 'global'
+            OR (o.alcance = 'ciudad' AND (o.ciudad_id = c.id OR ($2::text IS NOT NULL AND LOWER(c.nombre) = LOWER($2::text))))
+            OR (o.alcance = 'productos' AND EXISTS (
+              SELECT 1 FROM oferta_productos op WHERE op.oferta_id = o.id AND op.producto_id = p.id
+            ))
+          )
         ORDER BY (o.alcance = 'ciudad') DESC, o.valor_descuento DESC
         LIMIT 1
       ) AS oferta_activa,
@@ -473,7 +498,28 @@ export const toggleProductFavorite = async (userId, productId) => {
 
 export const getProductByPublicId = async (identifier) => {
   let queryText = `
-    SELECT p.*, c.nombre AS ciudad_nombre, cat.nombre AS categoria_nombre
+    SELECT p.*, c.nombre AS ciudad_nombre, cat.nombre AS categoria_nombre,
+      (
+        SELECT json_build_object(
+          'tipo', o.tipo_descuento,
+          'valor', o.valor_descuento,
+          'alcance', o.alcance
+        )
+        FROM ofertas o
+        WHERE o.tienda_id = p.tienda_id
+          AND o.estado = 'activo'
+          AND (o.fecha_inicio IS NULL OR o.fecha_inicio <= NOW())
+          AND (o.fecha_fin IS NULL OR o.fecha_fin >= NOW())
+          AND (
+            o.alcance = 'global'
+            OR (o.alcance = 'ciudad' AND o.ciudad_id = c.id)
+            OR (o.alcance = 'productos' AND EXISTS (
+              SELECT 1 FROM oferta_productos op WHERE op.oferta_id = o.id AND op.producto_id = p.id
+            ))
+          )
+        ORDER BY (o.alcance = 'ciudad') DESC, o.valor_descuento DESC
+        LIMIT 1
+      ) AS oferta_activa
     FROM produc p
     LEFT JOIN fullments f ON p.fullm_id = f.id
     LEFT JOIN ciudades c ON f.ciudad_id = c.id
@@ -1523,7 +1569,6 @@ export const processSavedCardPaymentForCart = async (userId, payload) => {
     token: card.token_mp,
     description: `Compra Glopsy 1-Click - ${items.length} productos`,
     installments: 1,
-    payment_method_id: card.card_brand ? card.card_brand.toLowerCase().includes('visa') ? 'visa' : (card.card_brand.toLowerCase().includes('master') ? 'master' : 'credit_card') : 'credit_card',
     payer: {
       email: userEmail,
       first_name: card.card_holder || userRows[0]?.name || 'Cliente'

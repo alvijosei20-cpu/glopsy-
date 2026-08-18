@@ -16,11 +16,11 @@ export default function Publish() {
   const [error, setError] = useState('');
   const [publishError, setPublishError] = useState('');
 
-  // Estados para Centros de Distribución (Fullments) y Tipos de Empaque de la tienda
+  // Estados para Centros de Distribución (Fullments) y Perfiles de Envío de la tienda
   const [fullments, setFullments] = useState([]);
   const [selectedFullmentId, setSelectedFullmentId] = useState('');
-  const [tiposEmpaque, setTiposEmpaque] = useState([]);
-  const [selectedTipoEmpaqueId, setSelectedTipoEmpaqueId] = useState('');
+  const [perfilesEnvio, setPerfilesEnvio] = useState([]);
+  const [selectedPerfilEnvioId, setSelectedPerfilEnvioId] = useState('');
 
   // Formulario editable procesado
   const [editableProduct, setEditableProduct] = useState({
@@ -43,14 +43,14 @@ export default function Publish() {
     selectedVariantId: '',
   });
 
-  // Cargar integraciones configuradas de la tienda, centros de distribución y tipos de empaque
+  // Cargar integraciones configuradas de la tienda, centros de distribución y perfiles de envío
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
-        const [intRes, fullRes, empaqueRes] = await Promise.all([
+        const [intRes, fullRes, perfilesRes] = await Promise.all([
           api.get('/tienda/integraciones'),
           api.get('/geo/fullments/mine'),
-          api.get('/product/tipos-empaque').catch(() => ({ data: { tipos_empaque: [] } }))
+          api.get('/tienda/perfiles-envio').catch(() => ({ data: { perfiles: [] } }))
         ]);
 
         if (intRes.data && intRes.data.integraciones) {
@@ -73,8 +73,8 @@ export default function Publish() {
           }
         }
 
-        if (empaqueRes.data && empaqueRes.data.tipos_empaque) {
-          setTiposEmpaque(empaqueRes.data.tipos_empaque);
+        if (perfilesRes.data && perfilesRes.data.perfiles) {
+          setPerfilesEnvio(perfilesRes.data.perfiles.filter(p => p.estado === 'activo' || p.estado === undefined));
         }
       } catch (err) {
         console.error('Error al cargar datos iniciales:', err);
@@ -213,7 +213,7 @@ export default function Publish() {
       productOwner: editableProduct.productOwner,
       stockTotal: editableProduct.stockTotal,
       fullmId: selectedFullmentId,
-      tipo_empaque_id: selectedTipoEmpaqueId ? Number(selectedTipoEmpaqueId) : null,
+      perfilEnvioId: selectedPerfilEnvioId ? Number(selectedPerfilEnvioId) : null,
       provider: selectedProvider,
     };
 
@@ -348,7 +348,10 @@ export default function Publish() {
             <select
               id="fullment-select"
               value={selectedFullmentId}
-              onChange={(e) => setSelectedFullmentId(e.target.value)}
+              onChange={(e) => {
+                setSelectedFullmentId(e.target.value);
+                setSelectedPerfilEnvioId('');
+              }}
               required
               style={{ width: '100%', padding: '0.7rem 1rem', borderRadius: '8px', background: '#ffffff', color: '#18181b', border: '1px solid #f472b6', fontSize: '0.95rem', outline: 'none', boxSizing: 'border-box' }}
             >
@@ -367,24 +370,31 @@ export default function Publish() {
             </select>
           </div>
 
-          {/* Tipo de Empaque (Opcional - Medidas y Peso de Envío Automáticos) */}
+          {/* Perfil de Envío (Opcional - Asociado al centro de distribución seleccionado) */}
           <div style={{ background: '#f8fafc', padding: '1.2rem', borderRadius: '10px', border: '1px solid #cbd5e1', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-            <label htmlFor="empaque-select" style={{ color: '#334155', fontWeight: 600, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Package size={16} style={{ color: '#0284c7' }} /> Tipo de Empaque (Opcional)
+            <label htmlFor="perfil-envio-select" style={{ color: '#334155', fontWeight: 600, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Package size={16} style={{ color: '#0284c7' }} /> Perfil de Envío (Opcional)
             </label>
             <select
-              id="empaque-select"
-              value={selectedTipoEmpaqueId}
-              onChange={(e) => setSelectedTipoEmpaqueId(e.target.value)}
+              id="perfil-envio-select"
+              value={selectedPerfilEnvioId}
+              onChange={(e) => setSelectedPerfilEnvioId(e.target.value)}
               style={{ width: '100%', padding: '0.7rem 1rem', borderRadius: '8px', background: '#ffffff', color: '#18181b', border: '1px solid #cbd5e1', fontSize: '0.95rem', outline: 'none', boxSizing: 'border-box' }}
             >
-              <option value="">Sin empaque específico (Usar valores por defecto o del producto)</option>
-              {tiposEmpaque.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.nombre} — {emp.peso} kg ({emp.largo} x {emp.alto} x {emp.ancho} cm)
-                </option>
-              ))}
+              <option value="">Ninguno (Usar cálculo automático de envío)</option>
+              {perfilesEnvio
+                .filter(p => String(p.fullment_id) === String(selectedFullmentId))
+                .map((perfil) => (
+                  <option key={perfil.id} value={perfil.id}>
+                    {perfil.nombre} — {String(perfil.tipo || '').toUpperCase()} ({perfil.alcance})
+                  </option>
+                ))}
             </select>
+            {perfilesEnvio.filter(p => String(p.fullment_id) === String(selectedFullmentId)).length === 0 && (
+              <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                No hay perfiles de envío para este centro de distribución. Créalos en Mi Tienda.
+              </span>
+            )}
           </div>
 
           {/* Imagen principal y Título */}

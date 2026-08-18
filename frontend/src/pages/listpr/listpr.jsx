@@ -407,13 +407,6 @@ export default function Listpr() {
                         {discountInfo.tipo === 'porcentaje' ? `${discountInfo.valor}% OFF` : '¡OFERTA!'}
                       </span>
                     )}
-
-                    {/* Badge de Categoría */}
-                    {p.categoria_nombre && (
-                      <span className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-fuchsia-700 text-[10px] font-bold px-2 py-0.5 rounded-md shadow-sm border border-fuchsia-100">
-                        {p.categoria_nombre}
-                      </span>
-                    )}
                   </div>
 
                   {/* Content Container */}

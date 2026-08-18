@@ -176,16 +176,32 @@ export default function ProductDetail() {
     ? parsedVariants.find(p => p.main === selectedMainOption && (!selectedSubOption || p.sub === selectedSubOption))?.original || variants[0]
     : null;
 
+  const getOfferPrice = (p) => {
+    const base = Number(p.suggested_price || p.base_price || 0);
+    let final = base;
+    let discount = null;
+    if (p.oferta_activa) {
+      discount = p.oferta_activa;
+      if (discount.tipo === 'porcentaje') {
+        final = base * (1 - Number(discount.valor) / 100);
+      } else if (discount.tipo === 'monto_fijo') {
+        final = Math.max(0, base - Number(discount.valor));
+      }
+    }
+    return { base, final, discount, hasDiscount: Boolean(discount && final < base) };
+  };
+
   const handleAddToCart = () => {
     if (!product) return;
     const imgs = getImages(product);
     const safeImgs = imgs.length > 0 ? imgs : ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60'];
     const idx = selectedImage < safeImgs.length ? selectedImage : 0;
+    const offer = getOfferPrice(product);
     const cartItem = {
       id: product.id || id,
       external_id: product.external_product_id || product.id,
       name: product.name,
-      price: Number(product.suggested_price || product.base_price || 0),
+      price: offer.hasDiscount ? offer.final : offer.base,
       image: safeImgs[idx] || safeImgs[0],
       quantity: Number(quantity),
       variant: currentVariant,
@@ -247,7 +263,8 @@ export default function ProductDetail() {
     );
   }
 
-  const mainPrice = Number(product.suggested_price || product.base_price || 0);
+  const { base: mainBase, final: mainFinal, discount: mainDiscount, hasDiscount: mainHasDiscount } = getOfferPrice(product);
+  const mainPrice = mainHasDiscount ? mainFinal : mainBase;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 pb-20">
@@ -349,12 +366,24 @@ export default function ProductDetail() {
 
               {/* Price (Suggested Price) */}
               <div className="mb-6 bg-slate-50 p-4 rounded-2xl border border-fuchsia-100">
+                {mainHasDiscount && (
+                  <span className="text-sm text-slate-400 line-through block">
+                    {formatPrice(mainBase)}
+                  </span>
+                )}
                 <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 block mb-1">
                   {formatPrice(mainPrice)}
                 </span>
-                <p className="text-xs text-slate-500">
-                  Precio sugerido • IVA incluido
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs text-slate-500">
+                    Precio sugerido • IVA incluido
+                  </p>
+                  {mainHasDiscount && (
+                    <span className="bg-gradient-to-r from-pink-600 to-rose-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-md">
+                      {mainDiscount.tipo === 'porcentaje' ? `${mainDiscount.valor}% OFF` : '¡OFERTA!'}
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Cascading Variants Selects split by '/' */}
@@ -544,7 +573,18 @@ export default function ProductDetail() {
 
             <div className="flex gap-4 overflow-x-auto pb-4 pt-2 snap-x snap-mandatory scrollbar-thin">
               {relatedProducts.map(rp => {
-                const rpPrice = Number(rp.suggested_price || rp.base_price || 0);
+                const rpBase = Number(rp.suggested_price || rp.base_price || 0);
+                let rpPrice = rpBase;
+                let rpDiscount = null;
+                if (rp.oferta_activa) {
+                  rpDiscount = rp.oferta_activa;
+                  if (rpDiscount.tipo === 'porcentaje') {
+                    rpPrice = rpBase * (1 - Number(rpDiscount.valor) / 100);
+                  } else if (rpDiscount.tipo === 'monto_fijo') {
+                    rpPrice = Math.max(0, rpBase - Number(rpDiscount.valor));
+                  }
+                }
+                const rpHasDiscount = Boolean(rpDiscount && rpPrice < rpBase);
                 const rpImg = getImages(rp)[0];
                 return (
                   <div
@@ -562,13 +602,25 @@ export default function ProductDetail() {
                           {rp.categoria_nombre}
                         </span>
                       )}
+                      {rpHasDiscount && (
+                        <span className="absolute top-2 right-2 bg-gradient-to-r from-pink-600 to-rose-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-md shadow-md shadow-pink-500/30">
+                          {rpDiscount.tipo === 'porcentaje' ? `${rpDiscount.valor}% OFF` : '¡OFERTA!'}
+                        </span>
+                      )}
                     </div>
                     <div className="p-3 flex flex-col flex-1 justify-between">
                       <h3 className="font-normal text-slate-800 text-xs line-clamp-2 group-hover:text-fuchsia-600 transition-colors mb-2">
                         {rp.name}
                       </h3>
-                      <div className="text-sm font-bold text-slate-950">
-                        {formatPrice(rpPrice)}
+                      <div>
+                        {rpHasDiscount && (
+                          <span className="block text-[10px] text-slate-400 line-through">
+                            {formatPrice(rpBase)}
+                          </span>
+                        )}
+                        <div className="text-sm font-bold text-slate-950">
+                          {formatPrice(rpHasDiscount ? rpPrice : rpBase)}
+                        </div>
                       </div>
                     </div>
                   </div>

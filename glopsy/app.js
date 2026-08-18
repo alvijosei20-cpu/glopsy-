@@ -10,6 +10,7 @@ import tiendaRoutes from './routes/tienda.routes.js';
 import integracionRoutes from './routes/integracion.routes.js';
 import geoRoutes from './routes/geo.routes.js';
 import mastershopWebhookRoutes from './routes/mastershopWebhook.routes.js';
+import mercadopagoWebhookRoutes from './routes/mercadopagoWebhook.routes.js';
 
 const app = express();
 
@@ -43,5 +44,6 @@ app.use('/api/tienda', tiendaRoutes);
 app.use('/api/tienda/integraciones', integracionRoutes);
 app.use('/api/geo', geoRoutes);
 app.use('/api/webhooks', mastershopWebhookRoutes);
+app.use('/api/payments', mercadopagoWebhookRoutes);
 
 export default app;

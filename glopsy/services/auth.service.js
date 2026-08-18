@@ -161,6 +161,103 @@ export const deleteBiometricCredentialService = async (userId) => {
   return { success: true };
 };
 
+export const getPaymentBiometricOptionsService = async (userId, originUrl) => {
+  const { rows } = await pool.query('SELECT email, webauthn_credential FROM users WHERE id = $1', [userId]);
+  const user = rows[0];
+  if (!user) throw new Error('Usuario no encontrado.');
+  if (!user.webauthn_credential) {
+    return { hasBiometric: false, options: null };
+  }
+
+  const allowCredentials = [];
+  try {
+    const cred = typeof user.webauthn_credential === 'string' ? JSON.parse(user.webauthn_credential) : user.webauthn_credential;
+    if (cred?.id && cred?.publicKey) {
+      allowCredentials.push({
+        id: cred.id,
+        type: 'public-key',
+        transports: cred.transports || ['internal'],
+      });
+    }
+  } catch (e) {}
+
+  if (allowCredentials.length === 0) {
+    return { hasBiometric: false, options: null };
+  }
+
+  const options = await generateAuthenticationOptions({
+    rpID: getRpID(originUrl),
+    userVerification: 'required',
+    allowCredentials,
+  });
+
+  await redisClient.set(`webauthn:pay:${options.challenge}`, userId, { EX: 300 });
+  return { hasBiometric: true, options };
+};
+
+export const verifyPaymentBiometricService = async (userId, response, originUrl) => {
+  const { rows } = await pool.query('SELECT webauthn_credential FROM users WHERE id = $1', [userId]);
+  const user = rows[0];
+  if (!user || !user.webauthn_credential) {
+    throw new Error('Credencial biométrica no registrada.');
+  }
+
+  const cred = typeof user.webauthn_credential === 'string' ? JSON.parse(user.webauthn_credential) : user.webauthn_credential;
+  if (!cred?.publicKey) {
+    throw new Error('Huella biométrica inválida, vuelve a registrarla desde tu perfil.');
+  }
+
+  let expectedChallenge = null;
+  try {
+    const clientDataJSON = JSON.parse(Buffer.from(response.response.clientDataJSON, 'base64url').toString('utf8'));
+    expectedChallenge = clientDataJSON.challenge;
+  } catch (e) {
+    throw new Error('Datos de autenticación webauthn inválidos.');
+  }
+
+  const storedUserId = await redisClient.get(`webauthn:pay:${expectedChallenge}`);
+  if (!storedUserId || String(storedUserId) !== String(userId)) {
+    throw new Error('Desafío de autenticación expirado o inválido.');
+  }
+
+  const verification = await verifyAuthenticationResponse({
+    response,
+    expectedChallenge,
+    expectedRPID: getRpID(originUrl),
+    expectedOrigin: getOrigin(originUrl),
+    credential: {
+      id: cred.id,
+      publicKey: Buffer.from(cred.publicKey, 'base64'),
+      counter: cred.counter,
+      transports: cred.transports,
+    },
+    requireUserVerification: true,
+  });
+
+  if (!verification.verified) {
+    throw new Error('Autenticación biométrica fallida.');
+  }
+
+  cred.counter = verification.authenticationInfo.newCounter;
+  await pool.query(
+    'UPDATE users SET webauthn_credential = $1, updated_at = NOW() WHERE id = $2',
+    [JSON.stringify(cred), userId]
+  );
+  await redisClient.del(`webauthn:pay:${expectedChallenge}`);
+
+  const nonce = crypto.randomBytes(24).toString('base64url');
+  await redisClient.set(`payment:bio:${nonce}`, userId, { EX: 120 });
+  return { nonce };
+};
+
+export const validatePaymentBiometricNonce = async (userId, nonce) => {
+  if (!userId || !nonce) return false;
+  const stored = await redisClient.get(`payment:bio:${nonce}`);
+  if (!stored || String(stored) !== String(userId)) return false;
+  await redisClient.del(`payment:bio:${nonce}`);
+  return true;
+};
+
 export const getBiometricRegistrationOptionsService = async (userId, originUrl) => {
   const { rows } = await pool.query('SELECT email, name, webauthn_credential FROM users WHERE id = $1', [userId]);
   const user = rows[0];

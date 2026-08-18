@@ -8,6 +8,8 @@ import {
   savePushSubscriptionService,
   saveBiometricCredentialService,
   deleteBiometricCredentialService,
+  getPaymentBiometricOptionsService,
+  verifyPaymentBiometricService,
   getBiometricRegistrationOptionsService,
   verifyBiometricRegistrationService,
   getBiometricLoginOptionsService,
@@ -192,6 +194,56 @@ export const updateCurrentUser = async (req, res) => {
   }
 };
 
+export const getCheckoutDefaultsController = async (req, res) => {
+  try {
+    const userId = req.auth.userId;
+    const { rows } = await pool.query(
+      'SELECT street, city, state, phone FROM user_addresses WHERE user_id = $1 ORDER BY id DESC LIMIT 1',
+      [userId]
+    );
+    const addr = rows[0];
+    if (!addr || (!addr.street && !addr.city)) {
+      return res.json({ ok: true, defaults: null });
+    }
+
+    let departamentoId = null;
+    let ciudadId = null;
+    if (addr.state) {
+      const { rows: dRows } = await pool.query(
+        'SELECT id FROM departamentos WHERE nombre ILIKE $1 LIMIT 1',
+        [`%${addr.state.trim()}%`]
+      );
+      departamentoId = dRows[0]?.id || null;
+    }
+    if (addr.city) {
+      const { rows: cRows } = await pool.query(
+        'SELECT id FROM ciudades WHERE nombre ILIKE $1 AND ($2::int IS NULL OR departamento_id = $2) LIMIT 1',
+        [`%${addr.city.trim()}%`, departamentoId]
+      );
+      ciudadId = cRows[0]?.id || null;
+    }
+
+    let telefono = addr.phone;
+    if (!telefono) {
+      const { rows: uRows } = await pool.query('SELECT phone FROM users WHERE id = $1', [userId]);
+      telefono = uRows[0]?.phone || '';
+    }
+
+    return res.json({
+      ok: true,
+      defaults: {
+        departamento_id: departamentoId,
+        ciudad_id: ciudadId,
+        direccion: addr.street || '',
+        telefono,
+      },
+    });
+  } catch (error) {
+    console.error('Error al obtener datos por defecto del checkout:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible obtener los datos del checkout.' });
+  }
+};
+
 export const getAddresses = async (req, res) => {
   try {
     const userId = req.auth.userId;
@@ -372,6 +424,28 @@ export const deleteBiometricCredentialController = async (req, res) => {
   } catch (error) {
     console.error('Error al eliminar biométrica:', error.message);
     return res.status(500).json({ ok: false, message: 'No fue posible eliminar la huella biométrica.' });
+  }
+};
+
+export const biometricPaymentOptionsController = async (req, res) => {
+  try {
+    const reqOrigin = req.get('origin');
+    const result = await getPaymentBiometricOptionsService(req.auth.userId, reqOrigin);
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    console.error('Error al generar opciones de validación biométrica de pago:', error.message);
+    return res.status(500).json({ ok: false, message: error.message || 'Error al generar opciones de validación biométrica.' });
+  }
+};
+
+export const biometricPaymentVerifyController = async (req, res) => {
+  try {
+    const reqOrigin = req.get('origin');
+    const result = await verifyPaymentBiometricService(req.auth.userId, req.body, reqOrigin);
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    console.error('Error al verificar validación biométrica de pago:', error.message);
+    return res.status(401).json({ ok: false, message: error.message || 'Validación biométrica fallida.' });
   }
 };
 

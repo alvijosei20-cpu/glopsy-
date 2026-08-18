@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { ShoppingCart, ArrowLeft, ShieldCheck, Phone, Home, Check, ChevronDown, ChevronUp, Truck, Package, DollarSign, CreditCard } from 'lucide-react';
 import api from '../../services/api';
+import { requireBiometricPayment } from '../../utils/webauthn';
 import './cart.css';
 
 const fallbackDepartamentos = [
@@ -63,6 +64,22 @@ export default function Checkout() {
   }, []);
 
   useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    api.get('/auth/checkout-defaults')
+      .then(res => {
+        if (res.data.ok && res.data.defaults) {
+          const d = res.data.defaults;
+          if (d.departamento_id) setSelectedDepartamentoId(String(d.departamento_id));
+          if (d.ciudad_id) setSelectedCiudadId(String(d.ciudad_id));
+          if (d.direccion) setDireccion(d.direccion);
+          if (d.telefono) setTelefono(d.telefono);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
     if (!showBricks || !preferenceData) return;
 
     const scriptId = 'mercadopago-sdk-v2';
@@ -90,7 +107,21 @@ export default function Checkout() {
           callbacks: {
             onReady: () => {},
             onSubmit: ({ selectedPaymentMethod, formData }) => {
-              return new Promise((resolve, reject) => {
+              return new Promise(async (resolve, reject) => {
+                let biometricNonce = null;
+                try {
+                  const bio = await requireBiometricPayment();
+                  if (bio.cancelled) {
+                    alert('Validación biométrica cancelada. El pago no fue procesado.');
+                    reject(new Error('Validación biométrica cancelada'));
+                    return;
+                  }
+                  biometricNonce = bio.nonce || null;
+                } catch (bioErr) {
+                  alert(bioErr.response?.data?.message || bioErr.message || 'No se pudo validar la huella.');
+                  reject(bioErr);
+                  return;
+                }
                 api.post('/product/process-mp-payment', {
                   formData,
                   preferenceId: preferenceData.preferenceId,
@@ -98,6 +129,7 @@ export default function Checkout() {
                   shipping_cost: shippingCost,
                   shipping_payload: { grouped: shipmentsGrouped },
                   items: cartItems,
+                  biometric_nonce: biometricNonce,
                   customer_info: {
                     departamento_id: selectedDepartamentoId,
                     ciudad_id: selectedCiudadId,
@@ -287,11 +319,18 @@ export default function Checkout() {
 
     setLoadingSavedCard(true);
     try {
+      const bio = await requireBiometricPayment();
+      if (bio.cancelled) {
+        alert('Validación biométrica cancelada. El pago no fue procesado.');
+        setLoadingSavedCard(false);
+        return;
+      }
       const res = await api.post('/product/process-saved-card-payment', {
         card_id: cardId,
         items: cartItems,
         shipping_cost: shippingCost,
         shipping_payload: { grouped: shipmentsGrouped },
+        biometric_nonce: bio.nonce || null,
         customer_info: {
           departamento_id: selectedDepartamentoId,
           ciudad_id: selectedCiudadId,

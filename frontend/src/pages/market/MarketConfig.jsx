@@ -111,6 +111,18 @@ const MarketConfig = () => {
           setPerfilesEnvio(p);
           setEnvioGratisTienda(p.some(x => x.isGlobal));
         }
+        // fetch ofertas / promociones
+        const resOfertas = await api.get('/tienda/ofertas').catch(() => ({ data: { ofertas: [] } }));
+        if (resOfertas.data?.ofertas) {
+          setPromociones(resOfertas.data.ofertas.map(o => ({
+            id: o.id,
+            titulo: o.titulo,
+            tipo: o.tipo,
+            valor: Number(o.valor) || 0,
+            alcance: o.alcance,
+            product_ids: o.product_ids || []
+          })));
+        }
       } catch (err) {
         console.error('Error al cargar datos de configuración:', err);
       }
@@ -263,12 +275,14 @@ const MarketConfig = () => {
     { id: 1, nombre: 'Envío Estándar', tipo: 'cobro', fullment_id: null }
   ]);
 
-  const [promociones, setPromociones] = useState([
-    { id: 1, titulo: 'Descuento de Bienvenida', tipo: 'porcentaje', valor: 15, alcance: 'global', fullment_id: null }
-  ]);
+  const [promociones, setPromociones] = useState([]);
 
   const [nuevoEnvio, setNuevoEnvio] = useState({ nombre: '', tipo: 'cobro', fullment_id: '' });
-  const [nuevaPromo, setNuevaPromo] = useState({ titulo: '', tipo: 'porcentaje', valor: '', alcance: 'global', fullment_id: '' });
+  const [nuevaPromo, setNuevaPromo] = useState({ titulo: '', tipo: 'porcentaje', valor: '', alcance: 'global', product_ids: [] });
+  const [promoProducts, setPromoProducts] = useState([]);
+  const [promoProductsOpen, setPromoProductsOpen] = useState(false);
+  const [editingPromoId, setEditingPromoId] = useState(null);
+  const [editingPromoIds, setEditingPromoIds] = useState([]);
 
   const [editingFullment, setEditingFullment] = useState(null);
   const [storeProducts, setStoreProducts] = useState([]);
@@ -448,15 +462,9 @@ const MarketConfig = () => {
     })();
   };
 
-  const handleAddPromo = (e) => {
+  const handleAddPromo = async (e) => {
     e.preventDefault();
     if (!nuevaPromo.titulo) return;
-
-    if (fullments.length === 0) {
-      setNotice('Error: No puedes crear promociones porque no tienes ningún centro de distribución registrado.');
-      setTimeout(() => setNotice(''), 4000);
-      return;
-    }
 
     // Verificar si ya existe una promoción global
     const hasGlobal = promociones.some((p) => p.alcance === 'global');
@@ -466,30 +474,109 @@ const MarketConfig = () => {
       return;
     }
 
-    if (nuevaPromo.alcance === 'ciudad' && !nuevaPromo.fullment_id) {
-      setNotice('Error: Debes seleccionar un centro de distribución.');
+    if (nuevaPromo.alcance === 'productos' && nuevaPromo.product_ids.length === 0) {
+      setNotice('Error: Debes seleccionar al menos un producto.');
       setTimeout(() => setNotice(''), 4000);
       return;
     }
 
-    setPromociones([
-      ...promociones,
-      {
-        id: Date.now(),
-        ...nuevaPromo,
+    try {
+      const res = await api.post('/tienda/ofertas', {
+        titulo: nuevaPromo.titulo,
+        tipo: nuevaPromo.tipo,
         valor: Number(nuevaPromo.valor) || 0,
-        fullment_id: nuevaPromo.alcance === 'ciudad' ? Number(nuevaPromo.fullment_id) : null
+        alcance: nuevaPromo.alcance,
+        product_ids: nuevaPromo.alcance === 'productos' ? nuevaPromo.product_ids : []
+      });
+      if (res.data?.ok && res.data.oferta) {
+        const o = res.data.oferta;
+        setPromociones(prev => [...prev, {
+          id: o.id,
+          titulo: o.titulo,
+          tipo: o.tipo,
+          valor: Number(o.valor) || 0,
+          alcance: o.alcance,
+          product_ids: o.product_ids || []
+        }]);
+        setNuevaPromo({ titulo: '', tipo: 'porcentaje', valor: '', alcance: 'global', product_ids: [] });
+        setPromoProductsOpen(false);
+        setNotice('Promoción creada correctamente.');
+        setTimeout(() => setNotice(''), 3000);
       }
-    ]);
-    setNuevaPromo({ titulo: '', tipo: 'porcentaje', valor: '', alcance: 'global', fullment_id: '' });
-    setNotice('Promoción creada correctamente.');
-    setTimeout(() => setNotice(''), 3000);
+    } catch (err) {
+      console.error('Error al crear promoción:', err);
+      const msg = err.response?.data?.message || 'Error al crear la promoción.';
+      setNotice(msg);
+      setTimeout(() => setNotice(''), 4000);
+    }
   };
 
-  const handleDeletePromo = (id) => {
-    setPromociones(promociones.filter((p) => p.id !== id));
-    setNotice('Promoción eliminada.');
-    setTimeout(() => setNotice(''), 3000);
+  const fetchPromoProducts = () => {
+    return api.get('/product/mine')
+      .then(res => {
+        if (res.data && res.data.products) setPromoProducts(res.data.products);
+      })
+      .catch(err => console.error('Error al cargar productos para promoción:', err));
+  };
+
+  useEffect(() => {
+    if ((nuevaPromo.alcance === 'productos' || editingPromoId) && promoProducts.length === 0) {
+      fetchPromoProducts();
+    }
+  }, [nuevaPromo.alcance, editingPromoId, promoProducts.length]);
+
+  const handleTogglePromoProduct = (productId) => {
+    setNuevaPromo(prev => ({
+      ...prev,
+      product_ids: prev.product_ids.includes(productId)
+        ? prev.product_ids.filter(id => id !== productId)
+        : [...prev.product_ids, productId]
+    }));
+  };
+
+  const openAddPromoProducts = (promo) => {
+    setEditingPromoId(promo.id);
+    setEditingPromoIds(promo.product_ids || []);
+    if (promoProducts.length === 0) fetchPromoProducts();
+  };
+
+  const handleToggleEditingPromoProduct = (productId) => {
+    setEditingPromoIds(prev =>
+      prev.includes(productId)
+        ? prev.filter(id => id !== productId)
+        : [...prev, productId]
+    );
+  };
+
+  const handleSavePromoProducts = async () => {
+    if (!editingPromoId) return;
+    try {
+      const res = await api.put(`/tienda/ofertas/${editingPromoId}/productos`, { product_ids: editingPromoIds });
+      if (res.data?.ok) {
+        setPromociones(prev => prev.map(p => p.id === editingPromoId ? { ...p, product_ids: res.data.product_ids } : p));
+        setEditingPromoId(null);
+        setEditingPromoIds([]);
+        setNotice('Productos de la promoción actualizados.');
+        setTimeout(() => setNotice(''), 3000);
+      }
+    } catch (err) {
+      console.error('Error al guardar productos de la promoción:', err);
+      setNotice(err.response?.data?.message || 'Error al actualizar los productos de la promoción.');
+      setTimeout(() => setNotice(''), 3000);
+    }
+  };
+
+  const handleDeletePromo = async (id) => {
+    try {
+      await api.delete(`/tienda/ofertas/${id}`);
+      setPromociones(promociones.filter((p) => p.id !== id));
+      setNotice('Promoción eliminada.');
+      setTimeout(() => setNotice(''), 3000);
+    } catch (err) {
+      console.error('Error al eliminar promoción:', err);
+      setNotice(err.response?.data?.message || 'Error al eliminar la promoción.');
+      setTimeout(() => setNotice(''), 3000);
+    }
   };
 
   const handleAddFullment = async (e) => {
@@ -735,7 +822,7 @@ const MarketConfig = () => {
               <div className="config-section-header">
                 <div>
                   <h3>Promociones y Ofertas</h3>
-                  <p>Crea descuentos porcentuales o de monto fijo aplicados globalmente o por centros de distribución registrados.</p>
+                  <p>Crea descuentos porcentuales o de monto fijo aplicados globalmente o por productos seleccionados.</p>
                 </div>
               </div>
 
@@ -775,24 +862,88 @@ const MarketConfig = () => {
                     <label>Alcance</label>
                     <select
                       value={nuevaPromo.alcance}
-                      onChange={(e) => setNuevaPromo({ ...nuevaPromo, alcance: e.target.value })}
+                      onChange={(e) => setNuevaPromo({ ...nuevaPromo, alcance: e.target.value, product_ids: [] })}
                     >
                       <option value="global">Global</option>
-                      <option value="ciudad">Por centro de distribución</option>
+                      <option value="productos">Por productos</option>
                     </select>
                   </div>
-                  {nuevaPromo.alcance === 'ciudad' && (
-                    <div className="config-form-group" style={{ margin: 0 }}>
-                      <label>Seleccionar Centro de Distribución</label>
-                      <select
-                        value={nuevaPromo.fullment_id}
-                        onChange={(e) => setNuevaPromo({ ...nuevaPromo, fullment_id: e.target.value })}
+                  {nuevaPromo.alcance === 'productos' && (
+                    <div className="config-form-group" style={{ margin: 0, gridColumn: '1 / -1' }}>
+                      <button
+                        type="button"
+                        onClick={() => setPromoProductsOpen(prev => !prev)}
+                        style={{
+                          width: '100%',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '0.75rem 1rem',
+                          background: '#ffffff',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '0.5rem',
+                          cursor: 'pointer',
+                          color: '#334155',
+                          fontSize: '0.9rem',
+                          fontWeight: 600,
+                        }}
                       >
-                        <option value="">Selecciona un centro registrado</option>
-                        {fullments.map((f) => (
-                          <option key={f.fullment_id} value={f.fullment_id}>{f.ciudad_nombre} ({f.departamento_nombre})</option>
-                        ))}
-                      </select>
+                        <span>{nuevaPromo.product_ids.length > 0 ? `${nuevaPromo.product_ids.length} producto(s) seleccionado(s)` : 'Seleccionar productos de la tienda'}</span>
+                        <span style={{ transition: 'transform 0.2s', transform: promoProductsOpen ? 'rotate(180deg)' : 'none' }}>▾</span>
+                      </button>
+                      {promoProductsOpen && (
+                        <div style={{ marginTop: '0.5rem', maxHeight: '240px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '0.5rem', background: '#ffffff' }}>
+                          {promoProducts.length === 0 ? (
+                            <p style={{ padding: '1rem', margin: 0, color: '#94a3b8', fontSize: '0.85rem', textAlign: 'center' }}>
+                              No tienes productos publicados en la tienda.
+                            </p>
+                          ) : (
+                            promoProducts.map((product) => {
+                              const checked = nuevaPromo.product_ids.includes(product.id);
+                              return (
+                                <label
+                                  key={product.id}
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.6rem',
+                                    padding: '0.6rem 0.9rem',
+                                    cursor: 'pointer',
+                                    borderBottom: '1px solid #f1f5f9',
+                                    background: checked ? '#f0fdf4' : '#ffffff',
+                                  }}
+                                >
+                                  <span
+                                    onClick={() => handleTogglePromoProduct(product.id)}
+                                    style={{
+                                      minWidth: '18px',
+                                      height: '18px',
+                                      borderRadius: '4px',
+                                      border: checked ? '1px solid #16a34a' : '1px solid #cbd5e1',
+                                      background: checked ? '#16a34a' : '#ffffff',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      color: '#ffffff',
+                                      fontSize: '12px',
+                                      lineHeight: 1,
+                                    }}
+                                  >
+                                    {checked && '✓'}
+                                  </span>
+                                  <span style={{ fontSize: '0.9rem', color: '#1e293b', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {product.name}
+                                  </span>
+                                  <span style={{ fontSize: '0.8rem', color: '#64748b', whiteSpace: 'nowrap' }}>
+                                    ${Number(product.suggested_price || product.base_price || 0).toLocaleString()}
+                                  </span>
+                                </label>
+                              );
+                            })
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -818,8 +969,83 @@ const MarketConfig = () => {
                       </button>
                     </div>
                     <p style={{ margin: '0.2rem 0' }}>Descuento: <strong>{promo.valor}{promo.tipo === 'porcentaje' ? '%' : '$'}</strong> ({promo.tipo})</p>
-                    <p style={{ margin: '0.2rem 0' }}>Alcance: <strong>{promo.alcance.toUpperCase()}</strong></p>
-                    {promo.alcance === 'ciudad' && <p style={{ margin: 0 }}>Centro de distribución: <strong>{getFullmentNombre(promo.fullment_id)}</strong></p>}
+                    <p style={{ margin: '0.2rem 0' }}>Alcance: <strong>{promo.alcance === 'productos' ? 'POR PRODUCTOS' : 'GLOBAL'}</strong></p>
+                    {promo.alcance === 'productos' && (
+                      <>
+                        <p style={{ margin: '0.2rem 0', fontSize: '0.85rem', color: '#64748b' }}>
+                          {promo.product_ids.length} producto(s) seleccionado(s)
+                        </p>
+                        {editingPromoId === promo.id ? (
+                          <div style={{ marginTop: '0.5rem', border: '1px solid #e2e8f0', borderRadius: '0.5rem', background: '#ffffff' }}>
+                            <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
+                              {promoProducts.map((product) => {
+                                const checked = editingPromoIds.includes(product.id);
+                                return (
+                                  <label
+                                    key={product.id}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '0.6rem',
+                                      padding: '0.5rem 0.8rem',
+                                      cursor: 'pointer',
+                                      borderBottom: '1px solid #f1f5f9',
+                                      background: checked ? '#f0fdf4' : '#ffffff',
+                                    }}
+                                  >
+                                    <span
+                                      onClick={() => handleToggleEditingPromoProduct(product.id)}
+                                      style={{
+                                        minWidth: '18px',
+                                        height: '18px',
+                                        borderRadius: '4px',
+                                        border: checked ? '1px solid #16a34a' : '1px solid #cbd5e1',
+                                        background: checked ? '#16a34a' : '#ffffff',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: '#ffffff',
+                                        fontSize: '12px',
+                                        lineHeight: 1,
+                                      }}
+                                    >
+                                      {checked && '✓'}
+                                    </span>
+                                    <span style={{ fontSize: '0.85rem', color: '#1e293b', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {product.name}
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.5rem', padding: '0.6rem 0.8rem', borderTop: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                              <button
+                                type="button"
+                                onClick={handleSavePromoProducts}
+                                style={{ flex: 1, padding: '0.45rem', borderRadius: '0.4rem', border: '0', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}
+                              >
+                                Guardar ({editingPromoIds.length})
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { setEditingPromoId(null); setEditingPromoIds([]); }}
+                                style={{ flex: 1, padding: '0.45rem', borderRadius: '0.4rem', border: '1px solid #cbd5e1', background: '#ffffff', color: '#64748b', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer' }}
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => openAddPromoProducts(promo)}
+                            style={{ marginTop: '0.5rem', padding: '0.4rem 0.8rem', borderRadius: '0.4rem', border: '1px solid #16a34a', background: '#f0fdf4', color: '#15803d', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer' }}
+                          >
+                            + Agregar productos
+                          </button>
+                        )}
+                      </>
+                    )}
                   </div>
                 ))}
               </div>
