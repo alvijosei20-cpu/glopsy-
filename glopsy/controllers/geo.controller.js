@@ -1,26 +1,43 @@
 import { query } from '../db.js';
 import { getProductsByFullment, assignProductsToFullment } from '../services/product.service.js';
 import { invalidateRatesCacheForStore } from '../services/envia.service.js';
+import { redisClient } from '../services/redis.service.js';
+import { toInt, cleanString } from '../utils/validation.js';
+
+const getCached = async (key, ttl, fetcher) => {
+  const cached = await redisClient.get(key).catch(() => null);
+  if (cached) return JSON.parse(cached);
+  const data = await fetcher();
+  await redisClient.set(key, JSON.stringify(data), { EX: ttl }).catch(() => {});
+  return data;
+};
+
+const invalidateFullmentsCache = async () => {
+  await redisClient.del('geo:fullments').catch(() => {});
+};
 
 export const getFullments = async (req, res) => {
   try {
-    const { rows } = await query(`
-      SELECT 
-        f.id AS fullment_id,
-        f.tienda_id,
-        c.id AS ciudad_id,
-        c.nombre AS ciudad_nombre,
-        d.id AS departamento_id,
-        d.nombre AS departamento_nombre,
-        p.id AS pais_id,
-        p.nombre AS pais_nombre
-      FROM fullments f
-      JOIN ciudades c ON f.ciudad_id = c.id
-      JOIN departamentos d ON c.departamento_id = d.id
-      JOIN paises p ON d.pais_id = p.id
-      WHERE f.estado = 'activo'
-      ORDER BY c.nombre
-    `);
+    const rows = await getCached('geo:fullments', 60, async () => {
+      const { rows } = await query(`
+        SELECT 
+          f.id AS fullment_id,
+          f.tienda_id,
+          c.id AS ciudad_id,
+          c.nombre AS ciudad_nombre,
+          d.id AS departamento_id,
+          d.nombre AS departamento_nombre,
+          p.id AS pais_id,
+          p.nombre AS pais_nombre
+        FROM fullments f
+        JOIN ciudades c ON f.ciudad_id = c.id
+        JOIN departamentos d ON c.departamento_id = d.id
+        JOIN paises p ON d.pais_id = p.id
+        WHERE f.estado = 'activo'
+        ORDER BY c.nombre
+      `);
+      return rows;
+    });
     res.json({ ok: true, fullments: rows });
   } catch (error) {
     console.error('Error al obtener fullments:', error.message);
@@ -57,11 +74,14 @@ export const getMyFullments = async (req, res) => {
 
 export const getDepartamentos = async (req, res) => {
   try {
-    const { rows } = await query(`
-      SELECT id, nombre, pais_id
-      FROM departamentos
-      ORDER BY nombre
-    `);
+    const rows = await getCached('geo:departamentos', 3600, async () => {
+      const { rows } = await query(`
+        SELECT id, nombre, pais_id
+        FROM departamentos
+        ORDER BY nombre
+      `);
+      return rows;
+    });
     res.json({ ok: true, departamentos: rows });
   } catch (error) {
     console.error('Error al obtener departamentos:', error.message);
@@ -71,11 +91,14 @@ export const getDepartamentos = async (req, res) => {
 
 export const getCiudades = async (req, res) => {
   try {
-    const { rows } = await query(`
-      SELECT id, nombre, departamento_id, codigo_postal
-      FROM ciudades
-      ORDER BY nombre
-    `);
+    const rows = await getCached('geo:ciudades', 3600, async () => {
+      const { rows } = await query(`
+        SELECT id, nombre, departamento_id, codigo_postal
+        FROM ciudades
+        ORDER BY nombre
+      `);
+      return rows;
+    });
     res.json({ ok: true, ciudades: rows });
   } catch (error) {
     console.error('Error al obtener ciudades:', error.message);
@@ -86,7 +109,7 @@ export const getCiudades = async (req, res) => {
 export const createFullment = async (req, res) => {
   try {
     const userId = req.auth?.userId;
-    const { ciudad_id } = req.body;
+    const ciudad_id = toInt(req.body.ciudad_id, { min: 1 });
 
     if (!ciudad_id) {
       return res.status(400).json({ ok: false, message: 'El campo ciudad_id es obligatorio' });
@@ -100,6 +123,7 @@ export const createFullment = async (req, res) => {
     );
 
     res.status(201).json({ ok: true, fullment: rows[0] });
+    try { await invalidateFullmentsCache().catch(() => {}); } catch {}
     try { await invalidateRatesCacheForStore(userId).catch(() => {}); } catch {}
   } catch (error) {
     console.error('Error al crear fullment:', error.message);
@@ -113,7 +137,10 @@ export const createFullment = async (req, res) => {
 export const deleteFullment = async (req, res) => {
   try {
     const userId = req.auth?.userId;
-    const { id } = req.params;
+    const id = toInt(req.params.id, { min: 1 });
+    if (!id) {
+      return res.status(400).json({ ok: false, message: 'ID inválido.' });
+    }
 
     const { rowCount } = await query(
       `DELETE FROM fullments WHERE id = $1 AND tienda_id = $2`,
@@ -125,6 +152,7 @@ export const deleteFullment = async (req, res) => {
     }
 
     res.json({ ok: true, message: 'Centro de distribución eliminado' });
+    try { await invalidateFullmentsCache().catch(() => {}); } catch {}
     try { await invalidateRatesCacheForStore(userId).catch(() => {}); } catch {}
   } catch (error) {
     console.error('Error al eliminar fullment:', error.message);
@@ -139,7 +167,10 @@ export const updateFullmentPerfil = async (req, res) => {
 export const getFullmentProducts = async (req, res) => {
   try {
     const userId = req.auth?.userId;
-    const { id } = req.params;
+    const id = toInt(req.params.id, { min: 1 });
+    if (!id) {
+      return res.status(400).json({ ok: false, message: 'ID inválido.' });
+    }
     const products = await getProductsByFullment(userId, id);
     res.json({ ok: true, products });
   } catch (error) {
@@ -151,8 +182,21 @@ export const getFullmentProducts = async (req, res) => {
 export const updateFullmentProducts = async (req, res) => {
   try {
     const userId = req.auth?.userId;
-    const { id } = req.params;
-    const { product_ids, product_profiles } = req.body;
+    const id = toInt(req.params.id, { min: 1 });
+    if (!id) {
+      return res.status(400).json({ ok: false, message: 'ID inválido.' });
+    }
+    const product_ids = Array.isArray(req.body.product_ids)
+      ? req.body.product_ids.map((pid) => toInt(pid, { min: 1 })).filter(Boolean)
+      : [];
+    const product_profiles = {};
+    if (req.body.product_profiles && typeof req.body.product_profiles === 'object' && !Array.isArray(req.body.product_profiles)) {
+      for (const [pid, perfilId] of Object.entries(req.body.product_profiles)) {
+        const pId = toInt(pid, { min: 1 });
+        const profile = toInt(perfilId, { min: 1 });
+        if (pId) product_profiles[pId] = profile;
+      }
+    }
 
     const products = await assignProductsToFullment(userId, id, product_ids, product_profiles);
     res.json({ ok: true, message: 'Productos actualizados en el centro de distribución', products });

@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+Disallow: /login
+Disallow: /panel
+Disallow: /profile
+Disallow: /market
+Disallow: /favorites
+Disallow: /compras
+Disallow: /auth/success
+
+Sitemap: https://glopsy.app/sitemap.xml

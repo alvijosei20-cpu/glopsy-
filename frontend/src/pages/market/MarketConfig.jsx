@@ -22,12 +22,12 @@ const MarketConfig = () => {
   const [enviaMode, setEnviaMode] = useState('prueba');
 
   const [mercadoPagoConfigs, setMercadoPagoConfigs] = useState({
-    prueba: { public_key: '', access_token: '' },
-    produccion: { public_key: '', access_token: '' }
+    prueba: { public_key: '', access_token: '', webhook_secret: '' },
+    produccion: { public_key: '', access_token: '', webhook_secret: '' }
   });
   const [initialMercadoPagoConfigs, setInitialMercadoPagoConfigs] = useState({
-    prueba: { public_key: '', access_token: '' },
-    produccion: { public_key: '', access_token: '' }
+    prueba: { public_key: '', access_token: '', webhook_secret: '' },
+    produccion: { public_key: '', access_token: '', webhook_secret: '' }
   });
 
   const [enviaConfigs, setEnviaConfigs] = useState({
@@ -89,8 +89,16 @@ const MarketConfig = () => {
           const mpPrueba = integrations.find(i => i.provider === 'mercadopago' && (i.mode === 'prueba' || !i.mode));
           const mpProd = integrations.find(i => i.provider === 'mercadopago' && i.mode === 'produccion');
           const newMp = {
-            prueba: { public_key: mpPrueba?.public_key || '', access_token: mpPrueba?.access_token || '' },
-            produccion: { public_key: mpProd?.public_key || '', access_token: mpProd?.access_token || '' }
+            prueba: {
+              public_key: mpPrueba?.public_key || '',
+              access_token: mpPrueba?.access_token || '',
+              webhook_secret: mpPrueba?.webhook_secret || ''
+            },
+            produccion: {
+              public_key: mpProd?.public_key || '',
+              access_token: mpProd?.access_token || '',
+              webhook_secret: mpProd?.webhook_secret || ''
+            }
           };
           setMercadoPagoConfigs(newMp);
           setInitialMercadoPagoConfigs(JSON.parse(JSON.stringify(newMp)));
@@ -131,15 +139,21 @@ const MarketConfig = () => {
   }, []);
 
   const hasMercadoPagoChanges = () => {
+    const tokenChanged = mercadoPagoConfig.access_token !== initialMercadoPagoConfig.access_token &&
+      mercadoPagoConfig.access_token.trim() !== '';
+    const webhookChanged = mercadoPagoConfig.webhook_secret !== initialMercadoPagoConfig.webhook_secret &&
+      mercadoPagoConfig.webhook_secret.trim() !== '';
     return (
       mercadoPagoConfig.public_key !== initialMercadoPagoConfig.public_key ||
-      mercadoPagoConfig.access_token !== initialMercadoPagoConfig.access_token
+      tokenChanged ||
+      webhookChanged
     );
   };
 
   const hasEnviaChanges = () => {
     return (
-      enviaConfig.access_token !== initialEnviaConfig.access_token
+      enviaConfig.access_token !== initialEnviaConfig.access_token &&
+      enviaConfig.access_token.trim() !== ''
     );
   };
 
@@ -151,11 +165,16 @@ const MarketConfig = () => {
       return;
     }
     try {
+      const tokenChanged = mercadoPagoConfig.access_token !== initialMercadoPagoConfig.access_token &&
+        mercadoPagoConfig.access_token.trim() !== '';
+      const webhookChanged = mercadoPagoConfig.webhook_secret !== initialMercadoPagoConfig.webhook_secret &&
+        mercadoPagoConfig.webhook_secret.trim() !== '';
       const res = await api.post('/tienda/checkout-integrations', {
         provider: 'mercadopago',
         mode: mpMode,
         public_key: mercadoPagoConfig.public_key,
-        access_token: mercadoPagoConfig.access_token
+        ...(tokenChanged ? { access_token: mercadoPagoConfig.access_token } : {}),
+        ...(webhookChanged ? { webhook_secret: mercadoPagoConfig.webhook_secret } : {}),
       });
       setNotice(res.data.message || 'Configuración de Mercado Pago guardada con éxito.');
       setTimeout(() => setNotice(''), 3000);
@@ -182,10 +201,12 @@ const MarketConfig = () => {
       return;
     }
     try {
+      const tokenChanged = enviaConfig.access_token !== initialEnviaConfig.access_token &&
+        enviaConfig.access_token.trim() !== '';
       const res = await api.post('/tienda/checkout-integrations', {
         provider: 'envia',
         mode: enviaMode,
-        access_token: enviaConfig.access_token
+        ...(tokenChanged ? { access_token: enviaConfig.access_token } : {}),
       });
       setNotice(res.data.message || 'Configuración de ENVIA guardada con éxito.');
       setTimeout(() => setNotice(''), 3000);
@@ -214,13 +235,14 @@ const MarketConfig = () => {
     try {
       await api.delete(`/tienda/checkout-integrations/${provider}?mode=${currentMode}`);
       if (provider === 'mercadopago') {
+        const cleared = { public_key: '', access_token: '', webhook_secret: '' };
         setMercadoPagoConfigs({
           ...mercadoPagoConfigs,
-          [currentMode]: { public_key: '', access_token: '' }
+          [currentMode]: cleared
         });
         setInitialMercadoPagoConfigs({
           ...initialMercadoPagoConfigs,
-          [currentMode]: { public_key: '', access_token: '' }
+          [currentMode]: cleared
         });
       } else {
         setEnviaConfigs({
@@ -1450,6 +1472,20 @@ const MarketConfig = () => {
                         required
                         style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
                       />
+                    </div>
+
+                    <div className="config-form-group" style={{ margin: 0 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#334155', fontWeight: 600 }}>
+                        <Hash size={16} color="#009ee3" /> Webhook Secret ({mpMode === 'prueba' ? 'Prueba' : 'Producción'})
+                      </label>
+                      <input
+                        type="password"
+                        placeholder="Secreto para validar notificaciones de pago"
+                        value={mercadoPagoConfig.webhook_secret}
+                        onChange={(e) => setMercadoPagoConfig({ ...mercadoPagoConfig, webhook_secret: e.target.value })}
+                        style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
+                      />
+                      <small style={{ color: '#64748b', fontSize: '0.8rem' }}>Opcional. Úsalo para validar la firma de los webhooks en el endpoint /api/webhooks/mercadopago/webhook.</small>
                     </div>
                   </div>
 

@@ -6,7 +6,8 @@ import {
   saveDian,
   getCheckoutIntegrations,
   saveCheckoutIntegration,
-  deleteCheckoutIntegration
+  deleteCheckoutIntegration,
+  getAnalytics
 } from '../controllers/tienda.controller.js';
 import { requireAuth } from '../middlewares/auth.js';
 import { tiendaLimiter } from '../middlewares/limiters.js';
@@ -32,5 +33,7 @@ router.get('/ofertas', getOfertas);
 router.post('/ofertas', createOferta);
 router.put('/ofertas/:id/productos', updateOfertaProductos);
 router.delete('/ofertas/:id', deleteOferta);
+// Estadísticas / analytics del vendedor
+router.get('/analytics', getAnalytics);
 
 export default router;

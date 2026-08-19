@@ -6,7 +6,6 @@ import { useAuth } from '../../context/AuthContext';
 import { ApiLoadingModal } from '../../components/LoadingScreen';
 import api from '../../services/api';
 import '../panel/panel.css';
-
 const Market = () => {
   const navigate = useNavigate();
   const { tienda, setTienda } = useAuth();
@@ -18,6 +17,7 @@ const Market = () => {
   const [error, setError] = useState('');
   const [editingKey, setEditingKey] = useState(null);
   const [apiKeys, setApiKeys] = useState({ mastershop: '', dropi: '' });
+  const [initialApiKeys, setInitialApiKeys] = useState({ mastershop: '', dropi: '' });
 
   const integrations = [
     { id: 'mastershop', name: 'Mastershop', mark: 'M', className: 'integration-logo--mastershop' },
@@ -30,10 +30,12 @@ const Market = () => {
       try {
         const { data } = await api.get('/tienda/integraciones');
         if (data && data.integraciones) {
-          setApiKeys({
+          const loaded = {
             mastershop: data.integraciones.mastershop || '',
             dropi: data.integraciones.dropi || '',
-          });
+          };
+          setApiKeys(loaded);
+          setInitialApiKeys(loaded);
         }
       } catch (err) {
         console.error('Error al cargar integraciones:', err);
@@ -50,15 +52,19 @@ const Market = () => {
     setNotice('');
     setApiStatus('loading');
     try {
+      // Si la clave no cambió (sigue siendo el valor enmascarado), no enviar y conservar la existente
+      const keyUnchanged = apiKeys[provider] === initialApiKeys[provider];
       const { data } = await api.post('/tienda/integraciones', {
         provider,
-        apiKey: apiKeys[provider],
+        ...(keyUnchanged ? {} : { apiKey: apiKeys[provider] }),
       });
       if (data && data.integraciones) {
-        setApiKeys({
+        const loaded = {
           mastershop: data.integraciones.mastershop || '',
           dropi: data.integraciones.dropi || '',
-        });
+        };
+        setApiKeys(loaded);
+        setInitialApiKeys(loaded);
       }
       setApiStatus('success');
       setNotice(`API key de ${provider === 'mastershop' ? 'Mastershop' : 'Dropi'} guardada con éxito.`);
@@ -114,6 +120,7 @@ const Market = () => {
         onToggleStatus={toggleStatus}
         onConfig={() => navigate('/market/config')}
         onPublish={() => navigate('/publish')}
+        onAnalytics={() => navigate('/market/analytics')}
       />
       {notice && <p className="panel__notice" role="status">{notice}</p>}
 

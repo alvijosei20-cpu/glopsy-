@@ -2,9 +2,16 @@ import React, { useState } from 'react';
 import { Package, Search, Clock, CheckCircle, ChevronRight, Sparkles, User, FileText } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../../services/api';
+import { useSEO } from '../../utils/seo';
 
 export default function ConsultarPedido() {
   const navigate = useNavigate();
+  useSEO({
+    title: 'Consultar Pedido — Seguimiento de Compras',
+    description:
+      'Consulta el estado de tu pedido en Glopsy con tu número de pedido o documento de identidad. Seguimiento de compras en tiempo real en todo Colombia.',
+    path: '/consultar-pedido',
+  });
   const [query, setQuery] = useState('');
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -21,7 +28,10 @@ export default function ConsultarPedido() {
     setLoading(true);
     setSearched(true);
     try {
-      const res = await api.get(`/product/compras/buscar?q=${encodeURIComponent(query.trim())}`);
+      const guestHash = localStorage.getItem('glopsy_guest_hash');
+      const res = await api.get(`/product/compras/buscar?q=${encodeURIComponent(query.trim())}`, {
+        headers: guestHash ? { 'x-guest-hash': guestHash } : {}
+      });
       if (res.data.ok) {
         setOrders(res.data.products || []);
       } else {

@@ -8,6 +8,7 @@ import {
 } from '@simplewebauthn/server';
 import { pool } from '../db.js';
 import { redisClient } from './redis.service.js';
+import { cleanString, cleanEmail, cleanUrl } from '../utils/validation.js';
 
 const rpName = 'Glopsy';
 const getRpID = (originUrl) => {
@@ -37,8 +38,12 @@ export const verifyPassword = (password, storedHash) => {
   return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(key, 'hex'));
 };
 
-export const registerWithEmail = async ({ email, name, password }) => {
-  const existing = await pool.query('SELECT id FROM users WHERE email = $1 LIMIT 1', [email]);
+export const registerWithEmail = async ({ email, password, name }) => {
+  const safeEmail = cleanEmail(email, { required: true });
+  if (!safeEmail) throw new Error('Correo electrónico inválido.');
+  const safeName = cleanString(name, { maxLength: 120 });
+
+  const existing = await pool.query('SELECT id FROM users WHERE email = $1 LIMIT 1', [safeEmail]);
   if (existing.rows[0]) {
     throw new Error('El correo electrónico ya está registrado.');
   }
@@ -48,7 +53,7 @@ export const registerWithEmail = async ({ email, name, password }) => {
     `INSERT INTO users (email, name, password_hash)
      VALUES ($1, $2, $3)
      RETURNING id, email, name, avatar_url`,
-    [email, name || email.split('@')[0], password_hash]
+    [safeEmail, safeName || safeEmail.split('@')[0], password_hash]
   );
   const user = rows[0];
 
@@ -61,9 +66,12 @@ export const registerWithEmail = async ({ email, name, password }) => {
 };
 
 export const loginWithEmail = async ({ email, password }) => {
+  const safeEmail = cleanEmail(email, { required: true });
+  if (!safeEmail) throw new Error('Correo electrónico inválido.');
+
   const { rows } = await pool.query(
     'SELECT id, email, name, avatar_url, password_hash FROM users WHERE email = $1 LIMIT 1',
-    [email]
+    [safeEmail]
   );
   const user = rows[0];
 
@@ -97,6 +105,14 @@ export const processOAuthUser = async ({ email, name, avatar_url, provider, prov
     throw new Error('Proveedor OAuth no compatible');
   }
 
+  const safeEmail = cleanEmail(email, { required: true });
+  const safeName = cleanString(name, { maxLength: 120 });
+  const safeAvatar = cleanUrl(avatar_url, { maxLength: 2048 });
+  const safeProviderId = cleanString(provider_id, { maxLength: 100 });
+  if (!safeEmail) {
+    throw new Error('Correo electrónico inválido.');
+  }
+
   // 1. Insertar o actualizar usuario en la base de datos (Upsert)
   const query = `
     INSERT INTO users (email, name, avatar_url, ${providerColumn})
@@ -110,7 +126,7 @@ export const processOAuthUser = async ({ email, name, avatar_url, provider, prov
     RETURNING id, email, name, avatar_url;
   `;
 
-  const values = [email, name, avatar_url, provider_id];
+  const values = [safeEmail, safeName, safeAvatar, safeProviderId];
   const { rows } = await pool.query(query, values);
   const user = rows[0];
 
@@ -382,7 +398,8 @@ export const getBiometricLoginOptionsService = async (email, originUrl) => {
 
 export const verifyBiometricLoginService = async (response, reqOrigin) => {
   if (response.simulated) {
-    const { email } = response;
+    const email = cleanEmail(response.email, { required: true });
+    if (!email) throw new Error('Correo electrónico inválido.');
     const { rows } = await pool.query('SELECT id, email, name, avatar_url, webauthn_credential FROM users WHERE email = $1 LIMIT 1', [email]);
     const user = rows[0];
     if (!user || !user.webauthn_credential) {

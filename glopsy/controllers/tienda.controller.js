@@ -5,10 +5,12 @@ import {
   saveDianConfigForUser,
   getCheckoutIntegrationsForUser,
   saveCheckoutIntegrationForUser,
-  deleteCheckoutIntegrationForUser
+  deleteCheckoutIntegrationForUser,
+  getStoreAnalytics
 } from '../services/tienda.service.js';
 import { pool } from '../db.js';
 import { getShippingOptionsFromEnvia } from '../services/envia.service.js';
+import { cleanString, isAllowedEnum } from '../utils/validation.js';
 
 export const createTiendaController = ({
   getShippingCosts = async (req, res) => {
@@ -104,7 +106,11 @@ export const createTiendaController = ({
   },
 
   saveDian: async (req, res) => {
-    const { sw_id, sw_pin, technical_key, prefix, test_set_id } = req.body;
+    const sw_id = cleanString(req.body.sw_id, { maxLength: 255 });
+    const sw_pin = cleanString(req.body.sw_pin, { maxLength: 255 });
+    const technical_key = cleanString(req.body.technical_key, { maxLength: 50000, allowNewlines: true });
+    const prefix = cleanString(req.body.prefix, { maxLength: 50 });
+    const test_set_id = cleanString(req.body.test_set_id, { maxLength: 255 });
     if (
       !sw_id || !String(sw_id).trim() ||
       !sw_pin || !String(sw_pin).trim() ||
@@ -115,7 +121,7 @@ export const createTiendaController = ({
       return res.status(400).json({ ok: false, message: 'Todos los campos de la DIAN son obligatorios y no pueden quedar vacíos.' });
     }
     try {
-      const config = await saveDianConfig(req.auth.userId, req.body);
+      const config = await saveDianConfig(req.auth.userId, { sw_id, sw_pin, technical_key, prefix, test_set_id });
       return res.json({ ok: true, dian: config, message: 'Configuración DIAN guardada con éxito.' });
     } catch (error) {
       console.error('Error al guardar configuración DIAN:', error.message);
@@ -133,31 +139,46 @@ export const createTiendaController = ({
     }
   },
 
+  getAnalytics: async (req, res) => {
+    try {
+      const analytics = await getStoreAnalytics(req.auth.userId);
+      return res.json({ ok: true, analytics });
+    } catch (error) {
+      console.error('Error al consultar estadísticas de la tienda:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible consultar las estadísticas de la tienda.' });
+    }
+  },
+
   saveCheckoutIntegration: async (req, res) => {
-    const { provider, mode, public_key, access_token } = req.body;
-    
-    if (!provider || !['mercadopago', 'envia'].includes(provider)) {
+    const provider = cleanString(req.body.provider, { maxLength: 50 });
+    const mode = cleanString(req.body.mode, { maxLength: 20 });
+    const public_key = cleanString(req.body.public_key, { maxLength: 2048 });
+    const access_token = cleanString(req.body.access_token, { maxLength: 2048 });
+    const webhook_secret = cleanString(req.body.webhook_secret, { maxLength: 2048 });
+
+    if (!provider || !isAllowedEnum(provider, ['mercadopago', 'envia'])) {
       return res.status(400).json({ ok: false, message: 'Proveedor no válido.' });
     }
 
-    const integrationMode = mode && ['prueba', 'produccion'].includes(mode) ? mode : 'prueba';
+    const integrationMode = mode && isAllowedEnum(mode, ['prueba', 'produccion']) ? mode : 'prueba';
 
-    if (!access_token || !String(access_token).trim()) {
-      return res.status(400).json({ ok: false, message: 'El token de acceso es obligatorio y no puede estar vacío.' });
+    const cleanAccessToken = access_token
+      ? String(access_token).trim().replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      : '';
+    const cleanPublicKey = public_key
+      ? String(public_key).trim().replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      : null;
+    const cleanWebhookSecret = webhook_secret
+      ? String(webhook_secret).trim().replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      : '';
+
+    if (provider === 'mercadopago' && !cleanPublicKey) {
+      return res.status(400).json({ ok: false, message: 'La Public Key is obligatoria para Mercado Pago.' });
     }
-
-    if (provider === 'mercadopago') {
-      if (!public_key || !String(public_key).trim()) {
-        return res.status(400).json({ ok: false, message: 'La Public Key is obligatoria para Mercado Pago.' });
-      }
-    }
-
-    const cleanAccessToken = String(access_token).trim().replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-    const cleanPublicKey = public_key ? String(public_key).trim().replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') : null;
 
     // Permitir explícitamente guiones (-), underscores, puntos y caracteres válidos de credenciales (ej. Mercado Pago APP_USR-)
     const credentialPattern = /^[a-zA-Z0-9_\-\.\+\=\/\:\s]+$/;
-    if (!credentialPattern.test(cleanAccessToken)) {
+    if (cleanAccessToken && !credentialPattern.test(cleanAccessToken)) {
       return res.status(400).json({ ok: false, message: 'El token de acceso contiene caracteres no válidos. Se permiten guiones (-).' });
     }
     if (cleanPublicKey && !credentialPattern.test(cleanPublicKey)) {
@@ -165,7 +186,11 @@ export const createTiendaController = ({
     }
 
     try {
-      const saved = await saveCheckoutIntegration(req.auth.userId, provider, integrationMode, cleanPublicKey, cleanAccessToken);
+      const saved = await saveCheckoutIntegration(req.auth.userId, provider, integrationMode, {
+        publicKey: cleanPublicKey,
+        accessToken: cleanAccessToken || undefined,
+        webhookSecret: cleanWebhookSecret || undefined,
+      });
       const provName = provider === 'mercadopago' ? 'Mercado Pago' : 'ENVIA';
       const modeName = integrationMode === 'prueba' ? 'Prueba' : 'Producción';
       return res.json({ ok: true, integration: saved, message: `Configuración de ${provName} (${modeName}) guardada con éxito.` });
@@ -176,13 +201,13 @@ export const createTiendaController = ({
   },
 
   deleteCheckoutIntegration: async (req, res) => {
-    const { provider } = req.params;
-    const mode = req.query.mode || req.body?.mode;
-    if (!provider || !['mercadopago', 'envia'].includes(provider)) {
+    const provider = cleanString(req.params.provider, { maxLength: 50 });
+    const mode = cleanString(req.query.mode || req.body?.mode, { maxLength: 20 });
+    if (!provider || !isAllowedEnum(provider, ['mercadopago', 'envia'])) {
       return res.status(400).json({ ok: false, message: 'Proveedor no válido.' });
     }
 
-    const integrationMode = mode && ['prueba', 'produccion'].includes(mode) ? mode : 'prueba';
+    const integrationMode = mode && isAllowedEnum(mode, ['prueba', 'produccion']) ? mode : 'prueba';
 
     try {
       const deleted = await deleteCheckoutIntegration(req.auth.userId, provider, integrationMode);
@@ -207,5 +232,6 @@ export const {
   saveDian,
   getCheckoutIntegrations,
   saveCheckoutIntegration,
-  deleteCheckoutIntegration
+  deleteCheckoutIntegration,
+  getAnalytics
 } = tiendaController;

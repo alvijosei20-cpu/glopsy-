@@ -3,6 +3,7 @@ import {
   saveIntegracionForUser,
   queryIntegrationProduct,
 } from '../services/integracion.service.js';
+import { cleanString, isAllowedEnum } from '../utils/validation.js';
 
 export const createIntegracionController = ({
   getIntegraciones = getIntegracionesForUser,
@@ -20,12 +21,19 @@ export const createIntegracionController = ({
   },
 
   save: async (req, res) => {
-    const { provider, apiKey } = req.body || {};
+    const provider = cleanString(req.body?.provider, { maxLength: 30 });
+    const apiKey = cleanString(req.body?.apiKey, { maxLength: 500 });
 
     if (!provider || !apiKey) {
       return res.status(400).json({
         ok: false,
         message: 'Proveedor y clave de API son requeridos.',
+      });
+    }
+    if (!isAllowedEnum(provider, ['mastershop', 'dropi'])) {
+      return res.status(400).json({
+        ok: false,
+        message: 'Proveedor de integración no válido.',
       });
     }
 
@@ -43,12 +51,19 @@ export const createIntegracionController = ({
   },
 
   queryProduct: async (req, res) => {
-    const { provider, productId } = req.query || {};
+    const provider = cleanString(req.query?.provider, { maxLength: 30 });
+    const productId = cleanString(req.query?.productId, { maxLength: 200 });
 
     if (!provider || !productId) {
       return res.status(400).json({
         ok: false,
         message: 'Proveedor e ID de producto son requeridos.',
+      });
+    }
+    if (!isAllowedEnum(provider, ['mastershop', 'dropi'])) {
+      return res.status(400).json({
+        ok: false,
+        message: 'Proveedor de integración no válido.',
       });
     }
 

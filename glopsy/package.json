@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node --import=dotenv/config --test",
+    "test": "node --import=dotenv/config --test --test-force-exit",
     "start": "node app.js",
     "dev": "concurrently \"npm run postgres\" \"npm run redis\" \"npm run adminer\" \"npm run server\"",
     "postgres": "pg_ctl -D $PREFIX/var/lib/postgresql start",
@@ -37,7 +37,8 @@
     "xmlbuilder2": "^4.0.3"
   },
   "devDependencies": {
-    "concurrently": "^10.0.3"
+    "concurrently": "^10.0.3",
+    "nodemon": "^3.1.14"
   },
   "overrides": {
     "shell-quote": "^1.8.5"

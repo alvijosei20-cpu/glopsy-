@@ -16,6 +16,17 @@ import {
   verifyBiometricLoginService,
 } from '../services/auth.service.js';
 import { pool } from '../db.js';
+import {
+  cleanString,
+  cleanNullableString,
+  cleanEmail,
+  cleanPhone,
+  isColombianMobile,
+  toInt,
+  cleanUrl,
+  cleanDate,
+  sanitizeObject,
+} from '../utils/validation.js';
 
 // ==========================================
 // GOOGLE OAUTH
@@ -38,7 +49,7 @@ export const googleLogin = (req, res) => {
 };
 
 export const googleCallback = async (req, res) => {
-  const { code } = req.query;
+  const code = cleanString(req.query.code, { maxLength: 2000 });
 
   if (!code) {
     return res.status(400).json({ message: 'Código de autorización no provisto' });
@@ -98,7 +109,7 @@ export const discordLogin = (req, res) => {
 };
 
 export const discordCallback = async (req, res) => {
-  const { code } = req.query;
+  const code = cleanString(req.query.code, { maxLength: 2000 });
 
   if (!code) {
     return res.status(400).json({ message: 'Código de autorización no provisto' });
@@ -166,7 +177,13 @@ export const getCurrentUser = async (req, res) => {
 export const updateCurrentUser = async (req, res) => {
   try {
     const userId = req.auth.userId;
-    const { name, phone, birthdate, document_type, document_number, gender, avatar_url } = req.body;
+    const name = cleanNullableString(req.body.name, { maxLength: 120 });
+    const phone = cleanPhone(req.body.phone, { maxLength: 15 });
+    const birthdate = cleanDate(req.body.birthdate);
+    const document_type = cleanNullableString(req.body.document_type, { maxLength: 30 });
+    const document_number = cleanNullableString(req.body.document_number, { maxLength: 30 });
+    const gender = cleanNullableString(req.body.gender, { maxLength: 20 });
+    const avatar_url = cleanUrl(req.body.avatar_url, { maxLength: 2048 });
 
     const { rows } = await pool.query(
       `UPDATE users SET 
@@ -261,11 +278,19 @@ export const getAddresses = async (req, res) => {
 export const saveAddress = async (req, res) => {
   try {
     const userId = req.auth.userId;
-    const { type, title, street, city, state, zip_code, country, phone, notes } = req.body;
+    const type = cleanString(req.body.type, { maxLength: 20 }) || 'envio';
+    const title = cleanString(req.body.title, { maxLength: 100 }) || 'Dirección principal';
+    const street = cleanString(req.body.street, { maxLength: 200 });
+    const city = cleanString(req.body.city, { maxLength: 100 });
+    const state = cleanString(req.body.state, { maxLength: 100 }) || '';
+    const zip_code = cleanString(req.body.zip_code, { maxLength: 20 }) || '';
+    const country = cleanString(req.body.country, { maxLength: 60 }) || 'Colombia';
+    const phone = cleanPhone(req.body.phone, { maxLength: 15 });
+    const notes = cleanText(req.body.notes, { maxLength: 500 });
     if (!street || !city) {
       return res.status(400).json({ ok: false, message: 'Calle y ciudad son obligatorias.' });
     }
-    if (phone && !/^3\d{9}$/.test(phone)) {
+    if (phone && !isColombianMobile(phone)) {
       return res.status(400).json({ ok: false, message: 'El número móvil debe tener 10 dígitos y empezar por 3 (Ej: 3001234567).' });
     }
 
@@ -273,7 +298,7 @@ export const saveAddress = async (req, res) => {
       `INSERT INTO user_addresses (user_id, type, title, street, city, state, zip_code, country, phone, notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING id, type, title, street, city, state, zip_code, country, phone, notes`,
-      [userId, type || 'envio', title || 'Dirección principal', street, city, state || '', zip_code || '', country || 'Colombia', phone || '', notes || '']
+      [userId, type, title, street, city, state, zip_code, country, phone || '', notes || '']
     );
 
     return res.status(201).json({ ok: true, address: rows[0] });
@@ -286,7 +311,10 @@ export const saveAddress = async (req, res) => {
 export const deleteAddress = async (req, res) => {
   try {
     const userId = req.auth.userId;
-    const id = Number(req.params.id);
+    const id = toInt(req.params.id, { min: 1 });
+    if (!id) {
+      return res.status(400).json({ ok: false, message: 'ID inválido.' });
+    }
     const { rowCount } = await pool.query('DELETE FROM user_addresses WHERE id = $1 AND user_id = $2', [id, userId]);
     if (rowCount === 0) {
       return res.status(404).json({ ok: false, message: 'Dirección no encontrada.' });
@@ -315,7 +343,11 @@ export const getCards = async (req, res) => {
 export const saveCard = async (req, res) => {
   try {
     const userId = req.auth.userId;
-    const { card_holder, card_number, expiry_month, expiry_year, card_brand } = req.body;
+    const card_holder = cleanString(req.body.card_holder, { maxLength: 120 });
+    const card_number = cleanString(req.body.card_number, { maxLength: 19 }).replace(/\D/g, '');
+    const expiry_month = cleanString(req.body.expiry_month, { maxLength: 2 }).replace(/\D/g, '');
+    const expiry_year = cleanString(req.body.expiry_year, { maxLength: 4 }).replace(/\D/g, '');
+    const card_brand = cleanString(req.body.card_brand, { maxLength: 30 });
     if (!card_number || card_number.length < 4) {
       return res.status(400).json({ ok: false, message: 'Número de tarjeta inválido.' });
     }
@@ -340,7 +372,10 @@ export const saveCard = async (req, res) => {
 export const deleteCard = async (req, res) => {
   try {
     const userId = req.auth.userId;
-    const id = Number(req.params.id);
+    const id = toInt(req.params.id, { min: 1 });
+    if (!id) {
+      return res.status(400).json({ ok: false, message: 'ID inválido.' });
+    }
     const { rowCount } = await pool.query('DELETE FROM user_cards WHERE id = $1 AND user_id = $2', [id, userId]);
     if (rowCount === 0) {
       return res.status(404).json({ ok: false, message: 'Tarjeta no encontrada.' });
@@ -364,9 +399,17 @@ export const logout = async (req, res) => {
 
 export const registerEmail = async (req, res) => {
   try {
-    const { email, password, name } = req.body;
-    if (!email || !password) {
+    const email = cleanEmail(req.body.email, { required: true });
+    const password = typeof req.body.password === 'string' ? req.body.password : '';
+    const name = cleanNullableString(req.body.name, { maxLength: 120 });
+    if (!email) {
+      return res.status(400).json({ ok: false, message: 'Correo electrónico inválido.' });
+    }
+    if (!password) {
       return res.status(400).json({ ok: false, message: 'Correo y contraseña son obligatorios.' });
+    }
+    if (password.length > 128) {
+      return res.status(400).json({ ok: false, message: 'La contraseña es demasiado larga (máx. 128 caracteres).' });
     }
     const { user, token } = await registerWithEmail({ email, password, name });
     res.status(201).json({ ok: true, user, token });
@@ -378,9 +421,13 @@ export const registerEmail = async (req, res) => {
 
 export const loginEmail = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const email = cleanEmail(req.body.email, { required: true });
+    const password = typeof req.body.password === 'string' ? req.body.password : '';
     if (!email || !password) {
       return res.status(400).json({ ok: false, message: 'Correo y contraseña son obligatorios.' });
+    }
+    if (password.length > 128) {
+      return res.status(400).json({ ok: false, message: 'Correo o contraseña incorrectos.' });
     }
     const { user, token } = await loginWithEmail({ email, password });
     res.json({ ok: true, user, token });
@@ -394,7 +441,10 @@ export const savePushSubscriptionController = async (req, res) => {
   try {
     const userId = req.auth.userId;
     const { subscription } = req.body;
-    await savePushSubscriptionService(userId, subscription);
+    if (!subscription || typeof subscription !== 'object' || Array.isArray(subscription)) {
+      return res.status(400).json({ ok: false, message: 'Suscripción push inválida.' });
+    }
+    await savePushSubscriptionService(userId, sanitizeObject(subscription, { maxSize: 20 }));
     return res.json({ ok: true, message: 'Suscripción push guardada con éxito.' });
   } catch (error) {
     console.error('Error al guardar suscripción push:', error.message);
@@ -406,6 +456,9 @@ export const saveBiometricCredentialController = async (req, res) => {
   try {
     const userId = req.auth.userId;
     const { credential } = req.body;
+    if (!credential || typeof credential !== 'object' || Array.isArray(credential)) {
+      return res.status(400).json({ ok: false, message: 'Credencial biométrica inválida.' });
+    }
     await saveBiometricCredentialService(userId, credential);
     return res.json({ ok: true, message: 'Credencial biométrica asociada con éxito.' });
   } catch (error) {
@@ -479,7 +532,7 @@ export const biometricRegistrationVerifyController = async (req, res) => {
 
 export const biometricLoginOptionsController = async (req, res) => {
   try {
-    const { email } = req.body || {};
+    const email = cleanEmail(req.body.email, { required: false });
     const reqOrigin = req.get('origin');
     const options = await getBiometricLoginOptionsService(email, reqOrigin);
     return res.json({ ok: true, options });

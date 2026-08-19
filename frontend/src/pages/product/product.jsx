@@ -1,8 +1,89 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ShoppingCart, Zap, Heart, ArrowLeft, Truck, ShieldCheck, Check, Star, MapPin, Store, Shield, Sparkles, ChevronDown, ChevronUp, Maximize2, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ShoppingCart, Zap, Heart, ArrowLeft, Truck, ShieldCheck, Check, Star, MapPin, Store, Shield, Sparkles, ChevronDown, ChevronUp, Maximize2, X, ChevronLeft, ChevronRight, RotateCw } from 'lucide-react';
 import api from '../../services/api';
+import { useSEO } from '../../utils/seo';
 import './product.css';
+import '@google/model-viewer';
+
+function Spin360({ images, startIdx = 0, autoRotate = true, name = 'Producto' }) {
+  const [idx, setIdx] = useState(startIdx % images.length);
+  const dragRef = useRef(null);
+  const timerRef = useRef(null);
+  const runningRef = useRef(false);
+
+  const startSpin = () => {
+    if (runningRef.current || images.length <= 1) return;
+    runningRef.current = true;
+    const step = () => {
+      setIdx(prev => (prev + 1) % images.length);
+      timerRef.current = setTimeout(step, 150);
+    };
+    step();
+  };
+
+  const stopSpin = () => {
+    runningRef.current = false;
+    clearTimeout(timerRef.current);
+  };
+
+  useEffect(() => {
+    if (autoRotate) startSpin();
+    return stopSpin;
+  }, []);
+
+  useEffect(() => {
+    setIdx(startIdx % images.length);
+  }, [startIdx]);
+
+  const handlePointerDown = (e) => {
+    stopSpin();
+    dragRef.current = { x: e.clientX, idx };
+  };
+
+  const handlePointerMove = (e) => {
+    if (!dragRef.current) return;
+    const delta = Math.round((e.clientX - dragRef.current.x) / 16);
+    if (delta !== 0) {
+      const next = (dragRef.current.idx + delta + images.length) % images.length;
+      dragRef.current.idx = next;
+      dragRef.current.x = e.clientX;
+      setIdx(next);
+    }
+  };
+
+  const handlePointerUp = () => {
+    dragRef.current = null;
+    if (autoRotate) startSpin();
+  };
+
+  return (
+    <div
+      className="max-w-5xl max-h-[75vh] w-full h-full flex items-center justify-center overflow-hidden px-16 select-none touch-none relative"
+      style={{ touchAction: 'none' }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerLeave={handlePointerUp}
+    >
+      <img
+        src={images[idx % images.length]}
+        alt={`${name} ${(idx % images.length) + 1}`}
+        draggable={false}
+        className="max-h-[75vh] max-w-full object-contain rounded-2xl shadow-2xl select-none cursor-grab active:cursor-grabbing"
+      />
+      <span className="absolute top-3 left-3 bg-fuchsia-600/90 backdrop-blur-sm text-white text-[11px] font-bold px-3 py-1.5 rounded-full shadow-md flex items-center gap-1.5">
+        <RotateCw size={13} />
+        Arrastra para girar 360°
+      </span>
+      {images.length > 1 && (
+        <span className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-sm text-white text-[11px] font-bold px-3 py-1.5 rounded-full shadow-md">
+          {(idx % images.length) + 1} / {images.length}
+        </span>
+      )}
+    </div>
+  );
+}
 
 export default function ProductDetail() {
   const { id } = useParams();
@@ -21,6 +102,15 @@ export default function ProductDetail() {
   const [warrantyExpanded, setWarrantyExpanded] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
   const [fullscreenOpen, setFullscreenOpen] = useState(false);
+
+  // Reseñas (solo compradores verificados)
+  const [reviewsData, setReviewsData] = useState({ reviews: [], summary: null });
+  const [userReviewStatus, setUserReviewStatus] = useState({ review: null, canReview: false });
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState('');
+  const [reviewSuccess, setReviewSuccess] = useState('');
 
   const getImages = (p) => {
     try {
@@ -42,6 +132,7 @@ export default function ProductDetail() {
   const images = product ? getImages(product) : [];
   const safeImages = images.length > 0 ? images : ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60'];
   const currentImageIdx = selectedImage < safeImages.length ? selectedImage : 0;
+  const modelUrl = product ? (product.model_url || product.glb_url || product.model_3d || product.url_model) : null;
 
   // Keyboard navigation for fullscreen
   useEffect(() => {
@@ -93,6 +184,92 @@ export default function ProductDetail() {
       })
       .catch(err => console.error('Error al cargar relacionados:', err));
   }, [product]);
+
+  // Cargar reseñas del producto
+  useEffect(() => {
+    if (!id) return;
+    api.get(`/product/${id}/reviews`)
+      .then(res => {
+        if (res.data.ok) {
+          setReviewsData({ reviews: res.data.reviews || [], summary: res.data.summary || null });
+        }
+      })
+      .catch(err => console.error('Error al cargar reseñas:', err));
+  }, [id]);
+
+  // Cargar reseña / elegibilidad del usuario autenticado
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token || !id) return;
+    api.get(`/product/${id}/review`)
+      .then(res => {
+        if (res.data.ok) {
+          setUserReviewStatus({ review: res.data.review, canReview: res.data.canReview });
+          if (res.data.review) {
+            setReviewRating(res.data.review.rating);
+            setReviewComment(res.data.review.comment || '');
+          }
+        }
+      })
+      .catch(err => console.error('Error al cargar estado de reseña:', err));
+  }, [id]);
+
+  const reloadReviews = () => {
+    api.get(`/product/${id}/reviews`)
+      .then(res => {
+        if (res.data.ok) {
+          setReviewsData({ reviews: res.data.reviews || [], summary: res.data.summary || null });
+        }
+      })
+      .catch(() => {});
+  };
+
+  const handleSubmitReview = async (e) => {
+    e.preventDefault();
+    if (!reviewRating || reviewRating < 1 || reviewRating > 5) {
+      setReviewError('Selecciona una calificación entre 1 y 5 estrellas.');
+      return;
+    }
+    setReviewSubmitting(true);
+    setReviewError('');
+    setReviewSuccess('');
+    try {
+      const hasReview = Boolean(userReviewStatus.review);
+      const res = await api[hasReview ? 'put' : 'post'](`/product/${id}/review`, {
+        rating: reviewRating,
+        comment: reviewComment,
+      });
+      if (res.data.ok) {
+        setUserReviewStatus({ review: res.data.review, canReview: false });
+        setReviewSuccess(hasReview ? 'Tu reseña fue actualizada. ¡Gracias!' : '¡Gracias por tu reseña!');
+        setTimeout(() => setReviewSuccess(''), 4000);
+        reloadReviews();
+      }
+    } catch (err) {
+      setReviewError(err.response?.data?.message || 'No se pudo guardar tu reseña.');
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
+
+  const handleDeleteReview = async () => {
+    if (!window.confirm('¿Eliminar tu reseña de este producto?')) return;
+    setReviewSubmitting(true);
+    setReviewError('');
+    try {
+      const res = await api.delete(`/product/${id}/review`);
+      if (res.data.ok) {
+        setUserReviewStatus({ review: null, canReview: true });
+        setReviewRating(5);
+        setReviewComment('');
+        reloadReviews();
+      }
+    } catch (err) {
+      setReviewError(err.response?.data?.message || 'No se pudo eliminar tu reseña.');
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
 
   const formatPrice = (val) => {
     const num = Number(val || 0);
@@ -190,6 +367,40 @@ export default function ProductDetail() {
     }
     return { base, final, discount, hasDiscount: Boolean(discount && final < base) };
   };
+
+  const offer = product ? getOfferPrice(product) : { base: 0, final: 0 };
+  const seoImage = product ? (safeImages[0] || '') : '';
+  const seoJsonLd = product
+    ? {
+        '@context': 'https://schema.org',
+        '@type': 'Product',
+        name: product.name,
+        description: (product.description || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(),
+        image: seoImage,
+        brand: { '@type': 'Brand', name: product.tienda_nombre || 'Glopsy' },
+        offers: {
+          '@type': 'Offer',
+          priceCurrency: 'COP',
+          price: Number(offer.final || offer.base).toFixed(0),
+          availability: Number(product.stock_total || 0) > 0
+            ? 'https://schema.org/InStock'
+            : 'https://schema.org/OutOfStock',
+          url: `https://glopsy.app/product/${id}`,
+          seller: { '@type': 'Organization', name: product.tienda_nombre || 'Glopsy' },
+        },
+      }
+    : null;
+
+  useSEO({
+    title: product ? product.name : 'Tienda de Productos en Línea',
+    description: product
+      ? (product.description || 'Compra este producto en Glopsy con pagos seguros y envíos a todo Colombia.').replace(/<[^>]*>/g, ' ')
+      : 'Compra productos en línea en Glopsy con pagos seguros y envíos a todo Colombia.',
+    path: id ? `/product/${id}` : '/products',
+    image: seoImage,
+    type: 'product',
+    jsonLd: seoJsonLd,
+  });
 
   const handleAddToCart = () => {
     if (!product) return;
@@ -515,9 +726,6 @@ export default function ProductDetail() {
               <div>
                 <h4 className="text-xs font-bold text-fuchsia-700 uppercase tracking-wider mb-1">Proveedor / Vendedor</h4>
                 <h3 className="text-lg font-extrabold text-slate-900 mb-1">{owner.publicName || owner.name || 'Proveedor Verificado'}</h3>
-                {owner.idBusiness && (
-                  <p className="text-xs text-slate-500 font-medium mb-3">ID de Negocio: <span className="font-mono text-slate-700 font-bold">{owner.idBusiness}</span></p>
-                )}
                 <div className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
                   <ShieldCheck size={14} />
                   <span>Vendedor Oficial Verificado</span>
@@ -568,7 +776,6 @@ export default function ProductDetail() {
                 </div>
                 <h2 className="text-xl font-extrabold text-slate-950">Productos Relacionados</h2>
               </div>
-              <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">{relatedProducts.length} disponibles</span>
             </div>
 
             <div className="flex gap-4 overflow-x-auto pb-4 pt-2 snap-x snap-mandatory scrollbar-thin">
@@ -632,6 +839,180 @@ export default function ProductDetail() {
 
       </div>
 
+      {/* Sección de Reseñas */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 pb-8">
+        <div className="bg-white rounded-3xl border border-fuchsia-100 p-6 sm:p-8 shadow-sm">
+          <div className="flex items-center gap-2.5 mb-6">
+            <div className="p-2.5 bg-amber-100 text-amber-600 rounded-xl">
+              <Star size={22} />
+            </div>
+            <h2 className="text-xl font-extrabold text-slate-950">Reseñas del producto</h2>
+            {reviewsData.summary?.review_count > 0 && (
+              <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
+                {reviewsData.summary.review_count} {reviewsData.summary.review_count === 1 ? 'opinión' : 'opiniones'}
+              </span>
+            )}
+          </div>
+
+          {reviewsData.summary && reviewsData.summary.review_count > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-8 mb-8">
+              {/* Resumen */}
+              <div className="md:col-span-4 bg-slate-50 rounded-2xl border border-fuchsia-100 p-6 text-center">
+                <p className="text-5xl font-extrabold text-slate-900">
+                  {Number(reviewsData.summary.avg_rating).toFixed(1)}
+                </p>
+                <div className="flex items-center justify-center gap-0.5 mt-2">
+                  {[1, 2, 3, 4, 5].map(i => (
+                    <Star
+                      key={i}
+                      size={20}
+                      className={i <= Math.round(Number(reviewsData.summary.avg_rating)) ? 'text-amber-400 fill-amber-400' : 'text-slate-300 fill-slate-200'}
+                    />
+                  ))}
+                </div>
+                <p className="text-xs text-slate-500 mt-2 font-medium">
+                  Basado en {reviewsData.summary.review_count} {reviewsData.summary.review_count === 1 ? 'compra verificada' : 'compras verificadas'}
+                </p>
+                <div className="mt-4 space-y-1.5 text-left">
+                  {[5, 4, 3, 2, 1].map(star => {
+                    const count = reviewsData.summary.distribution?.[star] || 0;
+                    const pct = reviewsData.summary.review_count > 0 ? Math.round((count / reviewsData.summary.review_count) * 100) : 0;
+                    return (
+                      <div key={star} className="flex items-center gap-2 text-xs">
+                        <span className="w-8 font-bold text-slate-600">{star} ★</span>
+                        <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
+                          <div className="h-full bg-amber-400 rounded-full" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="w-6 text-right text-slate-400">{count}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Lista de reseñas */}
+              <div className="md:col-span-8 space-y-5 max-h-[480px] overflow-y-auto pr-1">
+                {reviewsData.reviews.map(r => (
+                  <div key={r.id} className="border border-fuchsia-100 rounded-2xl p-4 bg-white shadow-sm">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-fuchsia-600 to-pink-500 text-white flex items-center justify-center font-bold text-sm shadow-md shadow-fuchsia-600/30 shrink-0">
+                          {(r.user_name || 'U').slice(0, 1).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-slate-800">{r.user_name || 'Comprador'}</p>
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-0.5">
+                              {[1, 2, 3, 4, 5].map(i => (
+                                <Star key={i} size={13} className={i <= r.rating ? 'text-amber-400 fill-amber-400' : 'text-slate-300 fill-slate-200'} />
+                              ))}
+                            </div>
+                            <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full">
+                              ✓ Compra verificada
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <span className="text-[11px] text-slate-400">
+                        {new Date(r.created_at).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' })}
+                      </span>
+                    </div>
+                    {r.comment && <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{r.comment}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500 mb-8 bg-slate-50 border border-fuchsia-100 rounded-2xl p-6 text-center">
+              Este producto aún no tiene reseñas. Sé el primero en opinar si ya lo compraste.
+            </p>
+          )}
+
+          {/* Formulario de reseña para compradores verificados */}
+          {localStorage.getItem('token') ? (
+            (userReviewStatus.canReview || userReviewStatus.review) && (
+              <form onSubmit={handleSubmitReview} className="border-t border-fuchsia-100 pt-6">
+                <h3 className="text-sm font-bold text-slate-800 mb-1">
+                  {userReviewStatus.review ? 'Editar tu reseña' : 'Escribe tu reseña'}
+                </h3>
+                <p className="text-xs text-slate-500 mb-4">
+                  {userReviewStatus.review
+                    ? 'Puedes modificar tu calificación y comentario cuando quieras.'
+                    : 'Solo puedes calificar productos que hayas comprado y con pedido completado. Una reseña por compra.'}
+                </p>
+
+                <div className="flex items-center gap-1.5 mb-4">
+                  {[1, 2, 3, 4, 5].map(i => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setReviewRating(i)}
+                      className="transition-transform hover:scale-110"
+                      title={`${i} estrella${i > 1 ? 's' : ''}`}
+                    >
+                      <Star
+                        size={30}
+                        className={i <= reviewRating ? 'text-amber-400 fill-amber-400' : 'text-slate-300 fill-slate-200'}
+                      />
+                    </button>
+                  ))}
+                </div>
+
+                <textarea
+                  value={reviewComment}
+                  onChange={(e) => setReviewComment(e.target.value)}
+                  placeholder="¿Cómo fue tu experiencia con este producto? (opcional)"
+                  rows={3}
+                  maxLength={2000}
+                  className="w-full bg-slate-50 border border-fuchsia-200 rounded-xl px-4 py-3 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-fuchsia-500 transition-all resize-none"
+                />
+
+                {reviewError && (
+                  <p className="mt-3 text-xs font-bold text-pink-600 bg-pink-50 border border-pink-200 rounded-xl px-4 py-2.5">
+                    {reviewError}
+                  </p>
+                )}
+                {reviewSuccess && (
+                  <p className="mt-3 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5">
+                    {reviewSuccess}
+                  </p>
+                )}
+
+                <div className="flex items-center gap-3 mt-4">
+                  <button
+                    type="submit"
+                    disabled={reviewSubmitting}
+                    className="flex-1 sm:flex-none bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-lg shadow-fuchsia-600/30 text-sm disabled:opacity-50"
+                  >
+                    {reviewSubmitting ? 'Guardando...' : (userReviewStatus.review ? 'Actualizar reseña' : 'Publicar reseña')}
+                  </button>
+                  {userReviewStatus.review && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteReview}
+                      disabled={reviewSubmitting}
+                      className="text-sm font-bold text-pink-600 bg-pink-50 border border-pink-200 hover:bg-pink-100 py-3 px-5 rounded-xl transition-all disabled:opacity-50"
+                    >
+                      Eliminar
+                    </button>
+                  )}
+                </div>
+              </form>
+            )
+          ) : (
+            <div className="border-t border-fuchsia-100 pt-6">
+              <p className="text-sm text-slate-600 flex items-center gap-2">
+                <ShieldCheck size={18} className="text-emerald-600" />
+                <span>
+                  <button onClick={() => navigate('/login')} className="text-fuchsia-600 font-bold hover:underline">Inicia sesión</button>{' '}
+                  para calificar este producto (solo compradores verificados).
+                </span>
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Fullscreen Image Modal */}
       {fullscreenOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col justify-between p-4 sm:p-6 animate-fadeIn">
@@ -666,12 +1047,28 @@ export default function ProductDetail() {
               </button>
             )}
 
-            <div className="max-w-5xl max-h-[75vh] flex items-center justify-center overflow-hidden px-16">
-              <img
-                src={safeImages[currentImageIdx]}
-                alt={`${product.name} ${currentImageIdx + 1}`}
-                className="max-h-[75vh] max-w-full object-contain rounded-2xl shadow-2xl select-none"
-              />
+            <div className="max-w-5xl max-h-[75vh] w-full flex items-center justify-center overflow-hidden px-16">
+              {modelUrl ? (
+                <model-viewer
+                  src={modelUrl}
+                  alt={product.name}
+                  camera-controls
+                  auto-rotate
+                  rotation-per-second="24deg"
+                  shadow-intensity="1"
+                  exposure="1"
+                  camera-orbit="0deg 80deg 105%"
+                  className="w-full h-full max-h-[75vh] rounded-2xl"
+                />
+              ) : safeImages.length > 1 ? (
+                <Spin360 images={safeImages} startIdx={currentImageIdx} name={product.name} />
+              ) : (
+                <img
+                  src={safeImages[currentImageIdx]}
+                  alt={`${product.name} ${currentImageIdx + 1}`}
+                  className="max-h-[75vh] max-w-full object-contain rounded-2xl shadow-2xl select-none"
+                />
+              )}
             </div>
 
             {safeImages.length > 1 && (

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getProductById, saveProduct, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, createPreferenceController, processMpPaymentController, processSavedCardPaymentController, getTiposEmpaqueController, getUserComprasController, searchOrdersController, getOrderByHashController, recordPurchaseController, cancelOrderController, updateOrderAddressController } from '../controllers/product.controller.js';
+import { getProductById, saveProduct, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, createPreferenceController, processMpPaymentController, processSavedCardPaymentController, getTiposEmpaqueController, getUserComprasController, searchOrdersController, getOrderByHashController, recordPurchaseController, cancelOrderController, updateOrderAddressController, getProductReviewsController, getUserReviewController, addReviewController, updateReviewController, deleteReviewController } from '../controllers/product.controller.js';
 import { requireAuth, optionalAuth } from '../middlewares/auth.js';
 import { tiendaLimiter, heavyLimiter } from '../middlewares/limiters.js';
 
@@ -14,12 +14,19 @@ router.get('/favorites', requireAuth, getFavorites);
 router.get('/favorite-products', requireAuth, getFavoritesProductsController);
 router.post('/favorite', requireAuth, toggleFavorite);
 
+// Endpoint: Reseñas (solo compradores verificados, 1 por compra completada)
+router.get('/:id/reviews', getProductReviewsController);
+router.get('/:id/review', requireAuth, getUserReviewController);
+router.post('/:id/review', requireAuth, addReviewController);
+router.put('/:id/review', requireAuth, updateReviewController);
+router.delete('/:id/review', requireAuth, deleteReviewController);
+
 // Specific GET routes (must be before /:id)
 router.get('/search', searchProducts);
 router.get('/mine', requireAuth, getMyProducts);
 router.get('/compras', optionalAuth, getUserComprasController);
-router.get('/compras/buscar', searchOrdersController);
-router.get('/compras/hash/:hash', getOrderByHashController);
+router.get('/compras/buscar', optionalAuth, searchOrdersController);
+router.get('/compras/hash/:hash', optionalAuth, getOrderByHashController);
 router.patch('/compras/:hash/cancel', optionalAuth, cancelOrderController);
 router.patch('/compras/:hash/address', optionalAuth, updateOrderAddressController);
 router.get('/tipos-empaque', getTiposEmpaqueController);

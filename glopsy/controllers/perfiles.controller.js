@@ -1,5 +1,6 @@
 import { pool } from '../db.js';
 import { invalidateRatesCacheForStore } from '../services/envia.service.js';
+import { cleanString, toInt, toNumber, isAllowedEnum } from '../utils/validation.js';
 
 export const getPerfilesForUser = async (req, res) => {
   try {
@@ -15,14 +16,24 @@ export const getPerfilesForUser = async (req, res) => {
 export const createPerfilForUser = async (req, res) => {
   try {
     const userId = req.auth.userId;
-    const { nombre, tipo, alcance, fullment_id, costo } = req.body;
+    const nombre = cleanString(req.body.nombre, { maxLength: 150 });
+    const tipo = cleanString(req.body.tipo, { maxLength: 20 });
+    const alcance = cleanString(req.body.alcance, { maxLength: 20 });
+    const fullment_id = toInt(req.body.fullment_id, { min: 1 });
+    const costo = toNumber(req.body.costo, { min: 0, max: 99999999, fallback: 0 });
     if (!nombre || !tipo || !alcance) {
       return res.status(400).json({ ok: false, message: 'Nombre, tipo y alcance son obligatorios.' });
+    }
+    if (!isAllowedEnum(tipo, ['gratis', 'cobro'])) {
+      return res.status(400).json({ ok: false, message: 'Tipo de envío inválido.' });
+    }
+    if (!isAllowedEnum(alcance, ['global', 'ciudad'])) {
+      return res.status(400).json({ ok: false, message: 'Alcance inválido.' });
     }
 
     const insert = await pool.query(`
       INSERT INTO perfiles_envio (tienda_id, nombre, tipo_envio, alcance, fullment_id, costo) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, nombre, tipo_envio AS tipo, alcance, fullment_id, costo, estado
-    `, [userId, nombre, tipo, alcance, fullment_id || null, costo || 0]);
+    `, [userId, nombre, tipo, alcance, fullment_id || null, costo]);
     const perfil = insert.rows[0];
 
     // invalidate cache for store
@@ -38,7 +49,7 @@ export const createPerfilForUser = async (req, res) => {
 export const deletePerfilForUser = async (req, res) => {
   try {
     const userId = req.auth.userId;
-    const id = Number(req.params.id);
+    const id = toInt(req.params.id, { min: 1 });
     if (!id) return res.status(400).json({ ok: false, message: 'ID inválido.' });
 
     const { rowCount } = await pool.query(`DELETE FROM perfiles_envio WHERE id = $1 AND tienda_id = $2`, [id, userId]);

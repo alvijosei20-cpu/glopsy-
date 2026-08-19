@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { pool } from '../db.js';
 import { MercadoPagoConfig, Payment } from 'mercadopago';
+import { decryptSecret } from '../utils/crypto.js';
 
 const getMpAccessToken = async () => {
   const { rows } = await pool.query(
@@ -12,6 +13,7 @@ const getMpAccessToken = async () => {
   if (!mpInt?.access_token) {
     throw new Error('No hay integración de Mercado Pago configurada.');
   }
+  mpInt.access_token = decryptSecret(mpInt.access_token);
   return mpInt;
 };
 
@@ -92,13 +94,13 @@ export const processMercadopagoWebhook = async (payload, rawBody, headers = {}) 
   }
 
   const { rows: webhookRows } = await pool.query(
-    `SELECT w.webhook_secret
-     FROM webhook w
-     JOIN checkout_integrations ci ON ci.id = w.checkout_integration_id
+    `SELECT ci.webhook_secret
+     FROM checkout_integrations ci
      WHERE ci.provider = 'mercadopago'
+     ORDER BY (ci.mode = 'produccion') DESC
      LIMIT 1`
   );
-  const secret = webhookRows[0]?.webhook_secret;
+  const secret = webhookRows[0]?.webhook_secret ? decryptSecret(webhookRows[0].webhook_secret) : null;
 
   if (secret && rawBody && !verifyWebhookSignature(secret, rawBody, headers)) {
     return { ok: false, error: 'invalid_signature', status: 401 };

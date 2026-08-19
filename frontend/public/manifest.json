@@ -1,15 +1,26 @@
 {
-  "name": "Glopsy",
+  "name": "Glopsy — Marketplace de Colombia",
   "short_name": "Glopsy",
+  "description": "Compra y vende productos en línea con pagos seguros, envíos a todo Colombia y autenticación biométrica.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#000000",
-  "theme_color": "#000000",
+  "lang": "es",
+  "orientation": "portrait",
+  "background_color": "#181818",
+  "theme_color": "#181818",
   "icons": [
     {
       "src": "/favicon.svg",
       "sizes": "any",
-      "type": "image/svg+xml"
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
     }
   ]
 }

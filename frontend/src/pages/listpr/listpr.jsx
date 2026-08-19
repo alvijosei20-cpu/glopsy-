@@ -1,12 +1,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Heart, MapPin, ShoppingCart, Star, ShieldCheck, Tag, Truck, RefreshCw, Filter, ArrowUpDown, Layers } from 'lucide-react';
+import { Search, Heart, MapPin, ShoppingCart, Star, Truck, ArrowUpDown, Filter, ChevronDown, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { SkeletonList } from '../../components/SkeletonLoader';
+import { useSEO } from '../../utils/seo';
 import './listpr.css';
 
 export default function Listpr() {
   const navigate = useNavigate();
+  useSEO({
+    title: 'Tienda — Compra Productos en Línea',
+    description:
+      'Explora miles de productos de tiendas verificadas en Glopsy. Filtra por categoría, precio, envío gratis y calificación. Compra con pagos seguros en Colombia.',
+    path: '/listpr',
+  });
   const [query, setQuery] = useState('');
   const [submittedQuery, setSubmittedQuery] = useState('');
   const [products, setProducts] = useState([]);
@@ -18,6 +25,11 @@ export default function Listpr() {
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [sortBy, setSortBy] = useState('relevance');
+  const [priceMin, setPriceMin] = useState('');
+  const [priceMax, setPriceMax] = useState('');
+  const [minRating, setMinRating] = useState(0);
+  const [freeShipping, setFreeShipping] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024);
   const [favorites, setFavorites] = useState(new Set());
   const [cartItemCount, setCartItemCount] = useState(0);
   const [toastMessage, setToastMessage] = useState('');
@@ -123,6 +135,11 @@ export default function Listpr() {
           limit,
           offset: currentOffset,
           ciudad: userCity,
+          sort: sortBy,
+          price_min: priceMin || undefined,
+          price_max: priceMax || undefined,
+          min_rating: minRating > 0 ? minRating : undefined,
+          envio_gratis: freeShipping || undefined,
         },
       });
 
@@ -146,13 +163,13 @@ export default function Listpr() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [limit, userCity]);
+  }, [limit, userCity, sortBy, priceMin, priceMax, minRating, freeShipping]);
 
-  // Carga inicial y al cambiar búsqueda o categoría
+  // Carga inicial y al cambiar búsqueda, categoría, orden o filtros
   useEffect(() => {
     setOffset(0);
     fetchProducts(submittedQuery, selectedCategory, 0, false);
-  }, [submittedQuery, selectedCategory, fetchProducts]);
+  }, [submittedQuery, selectedCategory, sortBy, priceMin, priceMax, minRating, freeShipping, fetchProducts]);
 
   // Manejo de Infinite Scroll (al llegar al final del scroll)
   useEffect(() => {
@@ -204,18 +221,45 @@ export default function Listpr() {
     }
   };
 
-  // Ordenamiento en frontend
-  const sortedProducts = [...products].sort((a, b) => {
-    const priceA = Number(a.suggested_price || a.base_price || 0);
-    const priceB = Number(b.suggested_price || b.base_price || 0);
-    if (sortBy === 'low_price') return priceA - priceB;
-    if (sortBy === 'high_price') return priceB - priceA;
-    return 0;
-  });
+  // Ordenamiento ahora se aplica en el servidor (respeta paginación)
+  const sortedProducts = products;
 
   const formatPrice = (val) => {
     const num = Number(val || 0);
     return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(num);
+  };
+
+  const hasActiveFilters = Boolean(submittedQuery || selectedCategory || priceMin || priceMax || minRating > 0 || freeShipping);
+
+  const clearFilters = () => {
+    setQuery('');
+    setSubmittedQuery('');
+    setSelectedCategory(null);
+    setPriceMin('');
+    setPriceMax('');
+    setMinRating(0);
+    setFreeShipping(false);
+    setSortBy('relevance');
+  };
+
+  const StarRating = ({ rating, size = 14, count }) => {
+    const value = Number(rating || 0);
+    const full = Math.round(value);
+    return (
+      <span className="flex items-center gap-1">
+        <span className="flex items-center">
+          {[1, 2, 3, 4, 5].map(i => (
+            <Star
+              key={i}
+              size={size}
+              className={i <= full ? 'text-amber-400 fill-amber-400' : 'text-slate-300 fill-slate-200'}
+            />
+          ))}
+        </span>
+        {value > 0 && <span className="text-xs font-bold text-slate-600">{Number(value).toFixed(1)}</span>}
+        {count > 0 && <span className="text-[10px] text-slate-400">({count})</span>}
+      </span>
+    );
   };
 
   const getProductImage = (p) => {
@@ -231,100 +275,191 @@ export default function Listpr() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 pb-16">
-      {/* Search Header Bar */}
-      <div className="bg-white border-b border-fuchsia-100 shadow-sm py-3 px-4 sm:px-8 sticky top-16 z-45">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          
-          {/* Barra de Búsqueda */}
-          <form onSubmit={handleSearchSubmit} className="w-full md:w-2/3 flex items-center bg-slate-50 border border-fuchsia-200 rounded-xl shadow-inner overflow-hidden focus-within:ring-2 focus-within:ring-fuchsia-500 transition-all">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar productos, marcas y más..."
-              className="w-full px-4 py-2.5 text-slate-800 outline-none text-sm md:text-base placeholder-slate-400 bg-transparent"
-            />
-            {query && (
-              <button
-                type="button"
-                onClick={() => { setQuery(''); setSubmittedQuery(''); }}
-                className="px-3 text-slate-400 hover:text-fuchsia-600 text-sm font-bold transition-colors"
-              >
-                ✕
-              </button>
-            )}
-            <button
-              type="submit"
-              className="bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white px-6 py-2.5 transition-all flex items-center justify-center shadow-md shadow-fuchsia-600/20"
-            >
-              <Search size={18} />
-            </button>
-          </form>
+      {/* ===== Barra de búsqueda y filtros ===== */}
+      <div className="bg-white border-b border-slate-200 shadow-sm sticky top-16 z-45">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
 
-          {/* Ubicación del Usuario */}
-          <div className="flex items-center gap-2 text-fuchsia-800 text-xs md:text-sm font-medium bg-fuchsia-50/80 px-4 py-2 rounded-xl shadow-sm border border-fuchsia-100">
-            <MapPin size={16} className="text-fuchsia-600 shrink-0" />
-            <span>Enviar a <b>{userCity}</b></span>
+          {/* Fila 1: Búsqueda + ubicación */}
+          <div className="flex flex-col md:flex-row md:items-center gap-3">
+            <form onSubmit={handleSearchSubmit} className="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-fuchsia-500/30 focus-within:border-fuchsia-400 transition-all">
+              <Search size={18} className="ml-4 text-slate-400 shrink-0" />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar productos, marcas y más..."
+                className="flex-1 min-w-0 px-3 py-2.5 text-slate-800 outline-none text-sm md:text-base placeholder-slate-400 bg-transparent"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => { setQuery(''); setSubmittedQuery(''); }}
+                  className="px-3 text-slate-400 hover:text-fuchsia-600 text-sm font-bold transition-colors"
+                  aria-label="Limpiar búsqueda"
+                >
+                  ✕
+                </button>
+              )}
+              <button
+                type="submit"
+                className="bg-slate-900 hover:bg-slate-800 active:bg-slate-700 text-white px-5 py-2.5 transition-all flex items-center justify-center gap-2 text-sm font-semibold"
+              >
+                <Search size={16} />
+                <span className="hidden sm:inline">Buscar</span>
+              </button>
+            </form>
+
+            {/* Ubicación del Usuario */}
+            <div className="flex items-center gap-2 text-slate-600 text-xs md:text-sm font-medium bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200 shrink-0">
+              <MapPin size={16} className="text-fuchsia-600 shrink-0" />
+              <span>Enviar a <b className="text-slate-900">{userCity}</b></span>
+            </div>
           </div>
 
+          {/* Fila 2: Categorías */}
+          <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-0.5 scrollbar-none">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 shrink-0 mr-1">Categorías</span>
+            <button
+              onClick={() => setSelectedCategory(null)}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all border ${
+                selectedCategory === null
+                  ? 'bg-fuchsia-600 text-white border-fuchsia-600'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-fuchsia-300 hover:text-fuchsia-600'
+              }`}
+            >
+              Todas
+            </button>
+            {categories.map(cat => (
+              <button
+                key={cat.id}
+                onClick={() => setSelectedCategory(cat.id)}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all border ${
+                  selectedCategory === cat.id
+                    ? 'bg-fuchsia-600 text-white border-fuchsia-600'
+                    : 'bg-white text-slate-600 border-slate-200 hover:border-fuchsia-300 hover:text-fuchsia-600'
+                }`}
+              >
+                {cat.nombre}
+              </button>
+            ))}
+          </div>
+
+          {/* Fila 3: Filtros estructurados (colapsables) */}
+          {filtersOpen && (
+            <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-x-6 gap-y-2.5">
+            {/* Precio */}
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Precio</span>
+              <input
+                type="number"
+                min="0"
+                placeholder="Mín"
+                value={priceMin}
+                onChange={(e) => setPriceMin(e.target.value)}
+                className="w-20 h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none placeholder-slate-400 focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-500/15 transition-all"
+              />
+              <span className="text-slate-300 text-sm">—</span>
+              <input
+                type="number"
+                min="0"
+                placeholder="Máx"
+                value={priceMax}
+                onChange={(e) => setPriceMax(e.target.value)}
+                className="w-20 h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none placeholder-slate-400 focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-500/15 transition-all"
+              />
+            </div>
+
+            {/* Calificación mínima */}
+            <div className="flex items-center gap-2">
+              <Star size={13} className={minRating > 0 ? 'text-amber-500 fill-amber-400' : 'text-slate-400'} />
+              <select
+                value={minRating}
+                onChange={(e) => setMinRating(Number(e.target.value))}
+                className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-500/15 transition-all"
+              >
+                <option value={0}>Cualquier rating</option>
+                <option value={4}>4+ estrellas</option>
+                <option value={3}>3+ estrellas</option>
+                <option value={2}>2+ estrellas</option>
+              </select>
+            </div>
+
+            {/* Envío gratis */}
+            <button
+              type="button"
+              onClick={() => setFreeShipping(!freeShipping)}
+              className={`flex items-center gap-2 h-9 px-3 rounded-lg border text-xs font-semibold transition-all ${
+                freeShipping
+                  ? 'bg-fuchsia-600 text-white border-fuchsia-600'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-fuchsia-300 hover:text-fuchsia-600'
+              }`}
+            >
+              <Truck size={14} />
+              Envío gratis
+            </button>
+
+            {/* Ordenar */}
+            <div className="flex items-center gap-2 ml-auto">
+              <ArrowUpDown size={13} className="text-slate-400" />
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Ordenar</span>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-500/15 transition-all"
+              >
+                <option value="relevance">Más relevantes</option>
+                <option value="low_price">Menor precio</option>
+                <option value="high_price">Mayor precio</option>
+                <option value="newest">Más recientes</option>
+                <option value="rating">Mejor calificados</option>
+              </select>
+            </div>
+
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="flex items-center gap-1 text-xs font-semibold text-fuchsia-600 hover:text-fuchsia-700 transition-all"
+              >
+                <X size={13} />
+                Limpiar filtros
+              </button>
+            )}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Main Content & Results */}
+      {/* ===== Resultados ===== */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-        
-        {/* Categorías (Filtros estilo Mercado Libre) */}
-        <div className="mb-6 flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-          <button
-            onClick={() => setSelectedCategory(null)}
-            className={`px-4 py-2 rounded-xl text-xs md:text-sm font-semibold whitespace-nowrap transition-all shadow-sm ${
-              selectedCategory === null
-                ? 'bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white shadow-fuchsia-600/20'
-                : 'bg-white text-slate-600 border border-fuchsia-100 hover:bg-fuchsia-50 hover:text-fuchsia-600'
-            }`}
-          >
-            Todas las categorías
-          </button>
-          {categories.map(cat => (
-            <button
-              key={cat.id}
-              onClick={() => setSelectedCategory(cat.id)}
-              className={`px-4 py-2 rounded-xl text-xs md:text-sm font-semibold whitespace-nowrap transition-all shadow-sm ${
-                selectedCategory === cat.id
-                  ? 'bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white shadow-fuchsia-600/20'
-                  : 'bg-white text-slate-600 border border-fuchsia-100 hover:bg-fuchsia-50 hover:text-fuchsia-600'
-              }`}
-            >
-              {cat.nombre}
-            </button>
-          ))}
-        </div>
-
-        {/* Subheader & Filters */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-white p-4 rounded-2xl shadow-sm border border-fuchsia-100 mb-6 gap-4">
+        <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-lg md:text-xl font-bold text-slate-900">
               {submittedQuery ? `Resultados para "${submittedQuery}"` : (selectedCategory ? categories.find(c => c.id === selectedCategory)?.nombre || 'Categoría' : 'Catálogo de Productos')}
             </h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              {total} productos encontrados
+              {total} {total === 1 ? 'producto' : 'productos'} encontrados
             </p>
           </div>
-
-          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
-            <div className="flex items-center gap-2 text-sm text-slate-600">
-              <ArrowUpDown size={16} className="text-fuchsia-500" />
-              <span>Ordenar por:</span>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="bg-slate-50 border border-fuchsia-200 rounded-xl px-3 py-1.5 text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-fuchsia-500 transition-all"
-              >
-                <option value="relevance">Más relevantes</option>
-                <option value="low_price">Menor precio</option>
-                <option value="high_price">Mayor precio</option>
-              </select>
-            </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {hasActiveFilters && (
+              <span className="hidden sm:inline-flex text-[11px] font-semibold text-fuchsia-600 bg-fuchsia-50 border border-fuchsia-100 px-2.5 py-1 rounded-full">
+                {[selectedCategory !== null, priceMin !== '', priceMax !== '', minRating > 0, freeShipping].filter(Boolean).length} filtros activos
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setFiltersOpen(!filtersOpen)}
+              className={`flex items-center gap-1.5 h-9 px-3.5 rounded-lg border text-xs font-semibold transition-all ${
+                filtersOpen
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-fuchsia-300 hover:text-fuchsia-600'
+              }`}
+            >
+              <Filter size={13} />
+              <span className="hidden sm:inline">Filtros</span>
+              <ChevronDown size={14} className={`transition-transform ${filtersOpen ? 'rotate-180' : ''}`} />
+            </button>
           </div>
         </div>
 
@@ -344,7 +479,7 @@ export default function Listpr() {
               Intenta seleccionar otra categoría o buscar con otros términos.
             </p>
             <button
-              onClick={() => { setQuery(''); setSubmittedQuery(''); setSelectedCategory(null); }}
+              onClick={clearFilters}
               className="bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-semibold px-6 py-2.5 rounded-xl transition-all text-sm shadow-md shadow-fuchsia-600/20"
             >
               Ver todos los productos
@@ -416,6 +551,13 @@ export default function Listpr() {
                       <h2 className="text-xs sm:text-sm font-normal text-slate-800 line-clamp-2 group-hover:text-fuchsia-600 transition-colors mb-2 leading-snug">
                         {p.name}
                       </h2>
+
+                      {/* 1b. Calificación (reseñas) */}
+                      {Number(p.review_count || 0) > 0 && (
+                        <div className="mb-1.5">
+                          <StarRating rating={p.avg_rating} count={p.review_count} />
+                        </div>
+                      )}
 
                       {/* 2. Precio y Botón Agregar al Carrito */}
                       <div className="flex items-center justify-between gap-2 mt-2">

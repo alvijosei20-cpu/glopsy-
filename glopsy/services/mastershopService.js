@@ -1,18 +1,5 @@
-import axios  from 'axios';
-import { createClient } from 'redis';
-
-// 1. Configurar e inicializar el cliente de Redis
-const redisClient = createClient({
-    // url: 'redis://localhost:6379' // Cambia esto si usas credenciales o un puerto diferente
-});
-
-redisClient.on('error', (err) => console.error('Error en el cliente de Redis:', err));
-
-// Conectar a Redis (en las versiones más recientes de redis para Node, esto es asíncrono)
-(async () => {
-    await redisClient.connect();
-    console.log('Conectado a Redis con éxito');
-})();
+import axios from 'axios';
+import { redisClient } from './redis.service.js';
 
 const MASTERSHOP_API_KEY = 'g-4G2yMS57mBqym0Dsp6MF3ncSGrDpMld4o9UVcRDMO786whDz'; 
 const TIEMPO_EXPIRACION = 3600; // Tiempo en segundos que durará en caché (ej. 1 hora)

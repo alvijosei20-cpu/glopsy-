@@ -3,6 +3,7 @@ import { pool } from '../db.js';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
 import { redisClient } from './redis.service.js';
+import { decryptSecret } from '../utils/crypto.js';
 dotenv.config();
 
 const maskToken = (t) => {
@@ -82,7 +83,7 @@ export const getShippingOptionsFromEnvia = async (items = [], destinationCiudadI
     }
   }
 
-  const accessToken = dbRow?.access_token || process.env.ENVIA_API_TOKEN || process.env.ENVIA_TOKEN;
+    const accessToken = dbRow?.access_token ? decryptSecret(dbRow.access_token) : (process.env.ENVIA_API_TOKEN || process.env.ENVIA_TOKEN);
   const mode = dbRow?.mode || opts.mode || 'prueba';
   if (!accessToken) {
     // No token available -> cannot query Envia
@@ -294,7 +295,7 @@ export const getShippingOptionsForTipoEmpaque = async (tipoId, destinationCiudad
         dbRow = r.rows[0];
       } catch {}
     }
-    const accessToken = dbRow?.access_token || process.env.ENVIA_API_TOKEN || process.env.ENVIA_TOKEN;
+  const accessToken = dbRow?.access_token ? decryptSecret(dbRow.access_token) : (process.env.ENVIA_API_TOKEN || process.env.ENVIA_TOKEN);
     if (!accessToken) return null;
     const isProdFinal = dbRow?.mode ? String(dbRow.mode).toLowerCase() === 'produccion' : isProd;
     const baseEnviaUrl = getBaseEnviaUrl(isProdFinal);

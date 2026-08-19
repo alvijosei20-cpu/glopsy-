@@ -1,29 +1,30 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
 import Navbar from './components/navbar';
-import Home from './pages/home/home';
-import Cart from './pages/cart/cart';
-import Checkout from './pages/cart/checkout';
-import Products from './pages/product/product';
-import ProductDetail from './pages/product/product';
-import Login from './pages/log/login';
-import AuthSuccess from './pages/log/authSuccess';
-import Panel from './pages/panel/panel';
-import Market from './pages/market/market';
-import MarketConfig from './pages/market/MarketConfig';
-import Publish from './pages/publish/publish';
-import Listpr from './pages/listpr/listpr';
-import Favorites from './pages/favorites/favorites';
-import Compras from './pages/compras/compras';
-import CompraDetail from './pages/compras/compraDetail';
-import ConsultarPedido from './pages/compras/consultarPedido';
-import Profile from './pages/profile/profile';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { LoadingScreen, ConfiguringScreen } from './components/LoadingScreen';
 import ErrorBoundary from './components/ErrorBoundary';
 // 1. IMPORTAR useAuth JUNTO A AuthProvider
 import { AuthProvider, useAuth } from './context/AuthContext';
+
+const Home = lazy(() => import('./pages/home/home'));
+const Cart = lazy(() => import('./pages/cart/cart'));
+const Checkout = lazy(() => import('./pages/cart/checkout'));
+const ProductDetail = lazy(() => import('./pages/product/product'));
+const Login = lazy(() => import('./pages/log/login'));
+const AuthSuccess = lazy(() => import('./pages/log/authSuccess'));
+const Panel = lazy(() => import('./pages/panel/panel'));
+const Market = lazy(() => import('./pages/market/market'));
+const MarketConfig = lazy(() => import('./pages/market/MarketConfig'));
+const Analytics = lazy(() => import('./pages/market/Analytics'));
+const Publish = lazy(() => import('./pages/publish/publish'));
+const Listpr = lazy(() => import('./pages/listpr/listpr'));
+const Favorites = lazy(() => import('./pages/favorites/favorites'));
+const Compras = lazy(() => import('./pages/compras/compras'));
+const CompraDetail = lazy(() => import('./pages/compras/compraDetail'));
+const ConsultarPedido = lazy(() => import('./pages/compras/consultarPedido'));
+const Profile = lazy(() => import('./pages/profile/profile'));
 
 // Componente para proteger rutas privadas
 function ProtectedRoute({ children }) {
@@ -141,10 +142,11 @@ function MainApp() {
       <Navbar />
 
       <main className="app-content">
+        <Suspense fallback={<ConfiguringScreen message="Cargando Glopsy ..." />}>
         <Routes>
           {/* RUTAS PÚBLICAS */}
           <Route path="/" element={<Home />} />
-          <Route path="/products" element={<Products />} />
+          <Route path="/products" element={<ProductDetail />} />
           <Route path="/product/:id" element={<ErrorBoundary><ProductDetail /></ErrorBoundary>} />
           <Route path="/products/:id" element={<ErrorBoundary><ProductDetail /></ErrorBoundary>} />
           <Route path="/cart" element={<Cart />} />
@@ -189,6 +191,7 @@ function MainApp() {
 
           <Route path="/market" element={<StoreRoute><Market /></StoreRoute>} />
           <Route path="/market/config" element={<StoreRoute><MarketConfig /></StoreRoute>} />
+          <Route path="/market/analytics" element={<StoreRoute><Analytics /></StoreRoute>} />
           <Route path="/publish" element={<StoreRoute><Publish /></StoreRoute>} />
 
           
@@ -201,6 +204,7 @@ function MainApp() {
             }
           />
         </Routes>
+        </Suspense>
       </main>
     </div>
   );

@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { pool } from '../db.js';
 import { redisClient } from './redis.service.js';
+import { encryptSecret, decryptSecret, maskSecret } from '../utils/crypto.js';
 
 const CACHE_TTL_SECONDS = 60;
 const cacheKey = (userId) => `integraciones:${userId}`;
@@ -37,7 +38,7 @@ export const getIntegracionesForUser = async (userId) => {
 
   const integraciones = {};
   rows.forEach((row) => {
-    integraciones[row.provider] = row.api_key;
+    integraciones[row.provider] = maskSecret(decryptSecret(row.api_key));
   });
 
   await redisClient.set(key, JSON.stringify(integraciones), { EX: CACHE_TTL_SECONDS });
@@ -50,7 +51,7 @@ export const saveIntegracionForUser = async (userId, provider, apiKey) => {
     throw new Error('Proveedor de integración no válido.');
   }
 
-  const sanitizedKey = sanitizeInput(apiKey);
+  const sanitizedKey = apiKey ? sanitizeInput(apiKey) : '';
   if (!sanitizedKey) {
     throw new Error('La clave de API no puede estar vacía.');
   }
@@ -62,13 +63,13 @@ export const saveIntegracionForUser = async (userId, provider, apiKey) => {
      ON CONFLICT (user_id, provider)
      DO UPDATE SET api_key = EXCLUDED.api_key, updated_at = NOW()
      RETURNING provider, api_key`,
-    [userId, provider, sanitizedKey]
+    [userId, provider, encryptSecret(sanitizedKey)]
   );
 
-  // Invalidar/Actualizar caché en Redis
+  // Invalidar/Actualizar caché en Redis (solo valores enmascarados, nunca el secreto)
   const key = cacheKey(userId);
   const current = (await redisClient.get(key)) ? JSON.parse(await redisClient.get(key)) : {};
-  current[provider] = rows[0].api_key;
+  current[provider] = maskSecret(decryptSecret(rows[0].api_key));
   await redisClient.set(key, JSON.stringify(current), { EX: CACHE_TTL_SECONDS });
 
   return current;
@@ -85,38 +86,20 @@ export const queryIntegrationProduct = async (userId, provider, productId) => {
     throw new Error('ID de producto inválido.');
   }
 
-  // 1. Intentar obtener la API key desde la caché de Redis del usuario
-  let apiKey = null;
-  const integracionesCacheKey = cacheKey(userId);
-  const cachedIntegraciones = await redisClient.get(integracionesCacheKey);
+  // 1. Consultar la API key desde la base de datos y descifrarla (el caché solo guarda valores enmascarados)
+  const { rows } = await pool.query(
+    `SELECT api_key 
+     FROM tienda_integraciones 
+     WHERE user_id = $1 AND provider = $2 
+     LIMIT 1`,
+    [userId, provider]
+  );
 
-  if (cachedIntegraciones) {
-    const parsed = JSON.parse(cachedIntegraciones);
-    if (parsed[provider]) {
-      apiKey = parsed[provider];
-    }
+  if (!rows[0] || !rows[0].api_key) {
+    throw new Error(`No se encontró una API key configurada para ${provider}. Configúrala en Mi Tienda.`);
   }
 
-  // 2. Si no estaba en Redis, consultar a la base de datos y cachear en Redis
-  if (!apiKey) {
-    const { rows } = await pool.query(
-      `SELECT api_key 
-       FROM tienda_integraciones 
-       WHERE user_id = $1 AND provider = $2 
-       LIMIT 1`,
-      [userId, provider]
-    );
-
-    if (!rows[0] || !rows[0].api_key) {
-      throw new Error(`No se encontró una API key configurada para ${provider}. Configúrala en Mi Tienda.`);
-    }
-
-    apiKey = rows[0].api_key;
-
-    const current = cachedIntegraciones ? JSON.parse(cachedIntegraciones) : {};
-    current[provider] = apiKey;
-    await redisClient.set(integracionesCacheKey, JSON.stringify(current), { EX: CACHE_TTL_SECONDS });
-  }
+  const apiKey = decryptSecret(rows[0].api_key);
 
   const baseUrl = GLOBAL_API_URLS[provider];
 

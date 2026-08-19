@@ -5,22 +5,38 @@ import { getShippingOptionsFromEnvia, invalidateRatesCacheForStore } from './env
 import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
 import { obtenerProductoPorId } from './mastershopService.js';
 import { redisClient } from './redis.service.js';
+import { decryptSecret } from '../utils/crypto.js';
+import {
+  cleanString,
+  cleanText,
+  cleanEmail,
+  cleanPhone,
+  cleanUrl,
+  toNumber,
+  sanitizeObject,
+  sanitizeArray,
+} from '../utils/validation.js';
 
 export const getTiposEmpaque = async () => {
+  const cached = await redisClient.get('tipo-empaque').catch(() => null);
+  if (cached) return JSON.parse(cached);
   const { rows } = await pool.query('SELECT id, nombre, peso, largo, alto, ancho FROM tipo_empaque ORDER BY id');
+  await redisClient.set('tipo-empaque', JSON.stringify(rows), { EX: 3600 }).catch(() => {});
   return rows;
+};
+
+export const invalidateProductCache = async (productId, publicId) => {
+  const keys = [];
+  if (productId !== undefined && productId !== null) keys.push(`product:detail:${productId}`, `product:reviews:${productId}`);
+  if (publicId) keys.push(`product:detail:${publicId}`);
+  if (keys.length > 0) await redisClient.del(keys).catch(() => {});
 };
 
 export const saveProductForUser = async (userId, productData) => {
   const {
     idProduct,
     idVariant,
-    name,
-    basePrice,
     baseCurrencyPrice,
-    suggestedPrice,
-    description,
-    stockTotal,
     productOwner,
     urlImageProduct,
     variation,
@@ -41,6 +57,21 @@ export const saveProductForUser = async (userId, productData) => {
 
   const resolvedTipoEmpaqueId = tipo_empaque_id !== undefined ? tipo_empaque_id : tipoEmpaqueId;
   const rawPerfilEnvioId = perfil_envio_id !== undefined ? perfil_envio_id : perfilEnvioId;
+
+  const parseNumeric = (val) => {
+    if (val === undefined || val === null || val === '') return null;
+    const cleaned = String(val).replace(/[^0-9.,-]/g, '').replace(',', '.');
+    const num = Number(cleaned);
+    return isNaN(num) ? null : num;
+  };
+
+  const name = cleanString(productData.name, { maxLength: 255 });
+  const description = cleanText(productData.description, { maxLength: 20000 });
+  const basePrice = toNumber(parseNumeric(productData.basePrice), { min: 0, fallback: 0 });
+  const suggestedPrice = toNumber(parseNumeric(productData.suggestedPrice), { min: 0 });
+  const stockTotal = Math.round(toNumber(parseNumeric(productData.stockTotal), { min: 0, fallback: 0 }));
+  const currency = cleanString(baseCurrencyPrice, { maxLength: 10 }) || 'USD';
+  const cleanProvider = cleanString(provider, { maxLength: 30 });
 
   if (!name) {
     throw new Error('El nombre del producto es obligatorio.');
@@ -97,23 +128,25 @@ export const saveProductForUser = async (userId, productData) => {
     }
   }
 
-  const parseNumeric = (val) => {
-    if (val === undefined || val === null || val === '') return null;
-    const cleaned = String(val).replace(/[^0-9.,-]/g, '').replace(',', '.');
-    const num = Number(cleaned);
-    return isNaN(num) ? null : num;
+  const imageUrl = cleanUrl(urlImageProduct, { maxLength: 2048 });
+  const images = imageUrl ? [{ src: imageUrl }] : [];
+  const variants = sanitizeArray(variation, (v) => sanitizeObject(v, { maxSize: 50 }), { maxLength: 200 });
+  const warranties = {
+    period: cleanString(warrantyPeriod, { maxLength: 500 }) || '',
+    conditions: cleanText(warrantyConditions, { maxLength: 2000 }) || '',
   };
-
-  const images = urlImageProduct ? [{ src: urlImageProduct }] : [];
-  const variants = Array.isArray(variation) ? variation : [];
-  const warranties = { period: warrantyPeriod || '', conditions: warrantyConditions || '' };
-  const support = { email: supportEmail || '', phone: warrantyPhone || '' };
+  const support = {
+    email: cleanEmail(supportEmail) || '',
+    phone: cleanPhone(warrantyPhone, { maxLength: 20 }) || '',
+  };
+  const cleanProductOwner = productOwner ? sanitizeObject(productOwner, { maxSize: 50 }) : null;
+  const cleanSelectedOptions = selectedOptions ? sanitizeObject(selectedOptions, { maxSize: 100 }) : null;
 
   let resolvedIntegracionId = integracionId !== undefined ? integracionId : tiendaIntegracionId;
-  if (!resolvedIntegracionId && provider) {
+  if (!resolvedIntegracionId && cleanProvider) {
     const intRow = await pool.query(
       `SELECT id FROM tienda_integraciones WHERE user_id = $1 AND provider = $2 LIMIT 1`,
-      [userId, provider]
+      [userId, cleanProvider]
     );
     if (intRow.rows[0]) {
       resolvedIntegracionId = intRow.rows[0].id;
@@ -181,17 +214,17 @@ export const saveProductForUser = async (userId, productData) => {
       idVariant ? String(idVariant) : null,
       resolvedIntegracionId !== undefined && resolvedIntegracionId !== '' ? Number(resolvedIntegracionId) : null,
       name,
-      parseNumeric(basePrice) || 0,
-      baseCurrencyPrice || 'USD',
-      parseNumeric(suggestedPrice),
+      basePrice,
+      currency,
+      suggestedPrice,
       description || '',
-      Math.round(parseNumeric(stockTotal) || 0),
-      productOwner ? JSON.stringify(productOwner) : null,
+      stockTotal,
+      cleanProductOwner ? JSON.stringify(cleanProductOwner) : null,
       JSON.stringify(images),
       JSON.stringify(variants),
       JSON.stringify(warranties),
       JSON.stringify(support),
-      selectedOptions ? JSON.stringify(selectedOptions) : '{}',
+      cleanSelectedOptions ? JSON.stringify(cleanSelectedOptions) : '{}',
       resolvedFullmId ? Number(resolvedFullmId) : null,
       resolvedTipoEmpaqueId ? Number(resolvedTipoEmpaqueId) : null,
       resolvedPerfilEnvioId ? Number(resolvedPerfilEnvioId) : null,
@@ -234,17 +267,17 @@ export const saveProductForUser = async (userId, productData) => {
       idVariant ? String(idVariant) : null,
       resolvedIntegracionId !== undefined && resolvedIntegracionId !== '' ? Number(resolvedIntegracionId) : null,
       name,
-      parseNumeric(basePrice) || 0,
-      baseCurrencyPrice || 'USD',
-      parseNumeric(suggestedPrice),
+      basePrice,
+      currency,
+      suggestedPrice,
       description || '',
-      Math.round(parseNumeric(stockTotal) || 0),
-      productOwner ? JSON.stringify(productOwner) : null,
+      stockTotal,
+      cleanProductOwner ? JSON.stringify(cleanProductOwner) : null,
       JSON.stringify(images),
       JSON.stringify(variants),
       JSON.stringify(warranties),
       JSON.stringify(support),
-      selectedOptions ? JSON.stringify(selectedOptions) : '{}',
+      cleanSelectedOptions ? JSON.stringify(cleanSelectedOptions) : '{}',
       resolvedFullmId ? Number(resolvedFullmId) : null,
       resolvedTipoEmpaqueId ? Number(resolvedTipoEmpaqueId) : null,
       resolvedPerfilEnvioId ? Number(resolvedPerfilEnvioId) : null,
@@ -257,6 +290,9 @@ export const saveProductForUser = async (userId, productData) => {
   try {
     await invalidateRatesCacheForStore(userId).catch(() => {});
   } catch {}
+
+  // Invalidate product detail cache so the published changes are visible immediately
+  await invalidateProductCache(resultRow?.id, resultRow?.public_id).catch(() => {});
 
   return resultRow;
 };
@@ -322,9 +358,12 @@ export const assignProductsToFullment = async (userId, fullmentId, productIds, p
 };
 
 export const getCategories = async () => {
+  const cached = await redisClient.get('categorias').catch(() => null);
+  if (cached) return JSON.parse(cached);
   const { rows } = await pool.query(
     `SELECT id, nombre, descripcion FROM categorias ORDER BY nombre`
   );
+  await redisClient.set('categorias', JSON.stringify(rows), { EX: 300 }).catch(() => {});
   return rows;
 };
 
@@ -365,12 +404,88 @@ export const autoCategorizeUncategorizedProducts = async () => {
   }
 };
 
-export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadName, categoriaId }) => {
+const SORT_CLAUSES = {
+  relevance: 'p.id DESC',
+  low_price: 'COALESCE(p.suggested_price, p.base_price) ASC NULLS LAST',
+  high_price: 'COALESCE(p.suggested_price, p.base_price) DESC NULLS LAST',
+  newest: 'p.created_at DESC',
+  rating: '(SELECT COALESCE(AVG(rv.rating), 0) FROM reviews rv WHERE rv.product_id = p.id) DESC, review_count DESC',
+};
+
+const buildSearchWhere = (idx) => {
+  const { search, city, cat, pMin, pMax, minRate, freeShip } = idx;
+  const freeShippingExpr = `EXISTS (
+    SELECT 1 
+    FROM perfiles_envio pe
+    LEFT JOIN fullments pf ON pe.fullment_id = pf.id
+    LEFT JOIN ciudades ci ON pf.ciudad_id = ci.id
+    WHERE (pe.tienda_id = p.tienda_id OR pe.id = p.perfil_envio_id)
+      AND pe.tipo_envio = 'gratis'
+      AND (
+        pe.alcance = 'global' 
+        OR (
+          pe.alcance = 'ciudad' 
+          AND $${city}::text IS NOT NULL 
+          AND (
+            LOWER(ci.nombre) = LOWER($${city}::text)
+            OR ci.id::text = $${city}::text
+          )
+        )
+      )
+  )`;
+  const where = `
+    ($${search}::text IS NULL OR $${search} = '' OR p.name ILIKE '%' || $${search} || '%' OR p.description ILIKE '%' || $${search} || '%')
+    AND ($${cat}::int IS NULL OR p.categoria_id = $${cat})
+    AND ($${pMin}::numeric IS NULL OR COALESCE(p.suggested_price, p.base_price) >= $${pMin})
+    AND ($${pMax}::numeric IS NULL OR COALESCE(p.suggested_price, p.base_price) <= $${pMax})
+    AND ($${minRate}::int IS NULL OR (
+      SELECT COALESCE(AVG(rv.rating), 0) FROM reviews rv WHERE rv.product_id = p.id
+    ) >= $${minRate})
+    AND ($${freeShip}::boolean IS NOT TRUE OR ${freeShippingExpr})`;
+  return where;
+};
+
+export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadName, categoriaId, sortBy, priceMin, priceMax, envioGratis, minRating }) => {
   const lim = Math.max(1, parseInt(limit, 10) || 12);
   const off = Math.max(0, parseInt(offset, 10) || 0);
   const search = q ? String(q).trim() : null;
   const city = ciudadName ? String(ciudadName).trim() : null;
   const catId = categoriaId ? parseInt(categoriaId, 10) : null;
+  const pMin = priceMin !== undefined && priceMin !== null && priceMin !== '' ? Number(priceMin) : null;
+  const pMax = priceMax !== undefined && priceMax !== null && priceMax !== '' ? Number(priceMax) : null;
+  const freeShip = envioGratis === 'true' || envioGratis === true;
+  const minRate = minRating !== undefined && minRating !== null && minRating !== '' ? Number(minRating) : null;
+  const orderBy = SORT_CLAUSES[sortBy] || SORT_CLAUSES.relevance;
+
+  const ratingSelect = `(
+    SELECT COUNT(*) FROM reviews rv WHERE rv.product_id = p.id
+  ) AS review_count,
+  (
+    SELECT COALESCE(AVG(rv.rating), 0)::numeric(3,2) FROM reviews rv WHERE rv.product_id = p.id
+  ) AS avg_rating`;
+
+  const freeShippingExpr = `EXISTS (
+    SELECT 1 
+    FROM perfiles_envio pe
+    LEFT JOIN fullments pf ON pe.fullment_id = pf.id
+    LEFT JOIN ciudades ci ON pf.ciudad_id = ci.id
+    WHERE (pe.tienda_id = p.tienda_id OR pe.id = p.perfil_envio_id)
+      AND pe.tipo_envio = 'gratis'
+      AND (
+        pe.alcance = 'global' 
+        OR (
+          pe.alcance = 'ciudad' 
+          AND $2::text IS NOT NULL 
+          AND (
+            LOWER(ci.nombre) = LOWER($2::text)
+            OR ci.id::text = $2::text
+          )
+        )
+      )
+  )`;
+
+  const mainIdx = { search: 1, city: 2, cat: 5, pMin: 6, pMax: 7, minRate: 8, freeShip: 9 };
+  const countIdx = { search: 1, city: 2, cat: 3, pMin: 4, pMax: 5, minRate: 6, freeShip: 7 };
 
   const queryText = `
     SELECT 
@@ -387,6 +502,7 @@ export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadNam
       c.nombre AS ciudad_nombre,
       cat.id AS categoria_id,
       cat.nombre AS categoria_nombre,
+      ${ratingSelect},
       (
         SELECT json_build_object(
           'tipo', o.tipo_descuento,
@@ -408,46 +524,24 @@ export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadNam
         ORDER BY (o.alcance = 'ciudad') DESC, o.valor_descuento DESC
         LIMIT 1
       ) AS oferta_activa,
-      EXISTS (
-        SELECT 1 
-        FROM perfiles_envio pe
-        LEFT JOIN fullments pf ON pe.fullment_id = pf.id
-        LEFT JOIN ciudades ci ON pf.ciudad_id = ci.id
-        WHERE (pe.tienda_id = p.tienda_id OR pe.id = p.perfil_envio_id)
-          AND pe.tipo_envio = 'gratis'
-          AND (
-            pe.alcance = 'global' 
-            OR (
-              pe.alcance = 'ciudad' 
-              AND $2::text IS NOT NULL 
-              AND (
-                LOWER(ci.nombre) = LOWER($2::text)
-                OR ci.id::text = $2::text
-              )
-            )
-          )
-      ) AS envio_gratis
+      ${freeShippingExpr} AS envio_gratis
     FROM produc p
     LEFT JOIN fullments f ON p.fullm_id = f.id
     LEFT JOIN ciudades c ON f.ciudad_id = c.id
     LEFT JOIN categorias cat ON p.categoria_id = cat.id
-    WHERE ($1::text IS NULL OR $1 = '' OR p.name ILIKE '%' || $1 || '%' OR p.description ILIKE '%' || $1 || '%')
-      AND ($5::int IS NULL OR p.categoria_id = $5)
-    ORDER BY p.id DESC
+    WHERE ${buildSearchWhere(mainIdx)}
+    ORDER BY ${orderBy}
     LIMIT $3 OFFSET $4
   `;
 
   const countQueryText = `
     SELECT COUNT(*) AS total
     FROM produc p
-    LEFT JOIN fullments f ON p.fullm_id = f.id
-    LEFT JOIN ciudades c ON f.ciudad_id = c.id
-    WHERE ($1::text IS NULL OR $1 = '' OR p.name ILIKE '%' || $1 || '%' OR p.description ILIKE '%' || $1 || '%')
-      AND ($2::int IS NULL OR p.categoria_id = $2)
+    WHERE ${buildSearchWhere(countIdx)}
   `;
 
-  const values = [search, city, lim, off, catId];
-  const countValues = [search, catId];
+  const values = [search, city, lim, off, catId, pMin, pMax, minRate, freeShip];
+  const countValues = [search, city, catId, pMin, pMax, minRate, freeShip];
 
   const [result, countResult] = await Promise.all([
     pool.query(queryText, values),
@@ -497,8 +591,18 @@ export const toggleProductFavorite = async (userId, productId) => {
 };
 
 export const getProductByPublicId = async (identifier) => {
+  const cacheKey = `product:detail:${identifier}`;
+  const cached = await redisClient.get(cacheKey).catch(() => null);
+  if (cached) return JSON.parse(cached);
+
   let queryText = `
     SELECT p.*, c.nombre AS ciudad_nombre, cat.nombre AS categoria_nombre,
+      (
+        SELECT COUNT(*) FROM reviews rv WHERE rv.product_id = p.id
+      ) AS review_count,
+      (
+        SELECT COALESCE(AVG(rv.rating), 0)::numeric(3,2) FROM reviews rv WHERE rv.product_id = p.id
+      ) AS avg_rating,
       (
         SELECT json_build_object(
           'tipo', o.tipo_descuento,
@@ -537,13 +641,15 @@ export const getProductByPublicId = async (identifier) => {
   const { rows } = await pool.query(queryText, values);
   if (rows[0]) {
     const row = rows[0];
-    return {
+    const producto = {
       ...row,
       images: typeof row.images === 'string' ? JSON.parse(row.images) : row.images,
       variants: typeof row.variants === 'string' ? JSON.parse(row.variants) : row.variants,
       warranties: typeof row.warranties === 'string' ? JSON.parse(row.warranties) : row.warranties,
       support: typeof row.support === 'string' ? JSON.parse(row.support) : row.support,
     };
+    await redisClient.set(cacheKey, JSON.stringify(producto), { EX: 60 }).catch(() => {});
+    return producto;
   }
 
   return await obtenerProductoPorId(identifier);
@@ -931,6 +1037,7 @@ export const createMercadoPagoPreferenceForCart = async (userId, items, shipping
   if (!mpInt?.access_token) {
     throw new Error('La tienda no tiene configurada la integración de Mercado Pago.');
   }
+  mpInt.access_token = decryptSecret(mpInt.access_token);
 
   const client = new MercadoPagoConfig({ accessToken: mpInt.access_token });
   const preference = new Preference(client);
@@ -981,6 +1088,7 @@ export const processMpPaymentForCart = async (userId, formData, preferenceId, cu
   if (!mpInt?.access_token) {
     throw new Error('La tienda no tiene configurada la integración de Mercado Pago.');
   }
+  mpInt.access_token = decryptSecret(mpInt.access_token);
 
   const client = new MercadoPagoConfig({ accessToken: mpInt.access_token });
   const payment = new Payment(client);
@@ -1044,6 +1152,157 @@ export const getFavoriteProductsDetails = async (userId) => {
     [userId]
   );
   return rows;
+};
+
+export const getProductReviews = async (productId) => {
+  const pId = parseInt(productId, 10);
+  if (!pId) return { reviews: [], summary: null };
+
+  const cacheKey = `product:reviews:${pId}`;
+  const cached = await redisClient.get(cacheKey).catch(() => null);
+  if (cached) return JSON.parse(cached);
+
+  const { rows } = await pool.query(
+    `SELECT r.id, r.rating, r.comment, r.created_at, u.name AS user_name, u.avatar_url AS user_avatar
+     FROM reviews r
+     LEFT JOIN users u ON u.id = r.user_id
+     WHERE r.product_id = $1
+     ORDER BY r.created_at DESC`,
+    [pId]
+  );
+
+  const { rows: summaryRows } = await pool.query(
+    `SELECT
+       COALESCE(AVG(rating), 0)::numeric(3,2) AS avg_rating,
+       COUNT(*) AS review_count,
+       COUNT(*) FILTER (WHERE rating = 5) AS r5,
+       COUNT(*) FILTER (WHERE rating = 4) AS r4,
+       COUNT(*) FILTER (WHERE rating = 3) AS r3,
+       COUNT(*) FILTER (WHERE rating = 2) AS r2,
+       COUNT(*) FILTER (WHERE rating = 1) AS r1
+     FROM reviews
+     WHERE product_id = $1`,
+    [pId]
+  );
+
+  const s = summaryRows[0] || {};
+  const result = {
+    reviews: rows,
+    summary: {
+      avg_rating: Number(s.avg_rating || 0),
+      review_count: Number(s.review_count || 0),
+      distribution: {
+        5: Number(s.r5 || 0),
+        4: Number(s.r4 || 0),
+        3: Number(s.r3 || 0),
+        2: Number(s.r2 || 0),
+        1: Number(s.r1 || 0),
+      },
+    },
+  };
+  await redisClient.set(cacheKey, JSON.stringify(result), { EX: 60 }).catch(() => {});
+  return result;
+};
+
+export const getUserReviewForProduct = async (userId, productId) => {
+  const pId = parseInt(productId, 10);
+  if (!pId) return null;
+  const { rows } = await pool.query(
+    `SELECT id, product_id, order_id, rating, comment, created_at, updated_at
+     FROM reviews
+     WHERE product_id = $1 AND user_id = $2
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [pId, userId]
+  );
+  return rows[0] || null;
+};
+
+export const getUserReviewStatus = async (userId, productId) => {
+  const pId = parseInt(productId, 10);
+  const review = await getUserReviewForProduct(userId, pId);
+  if (review) return { review, canReview: false };
+  const purchase = await findCompletedPurchaseForReview(userId, pId);
+  return { review: null, canReview: Boolean(purchase) };
+};
+
+const findCompletedPurchaseForReview = async (userId, productId) => {
+  const { rows } = await pool.query(
+    `SELECT o.id, o.order_number
+     FROM orders o
+     JOIN order_items oi ON oi.order_id = o.id
+     WHERE o.status = 'Completado'
+       AND o.user_id = $1
+       AND oi.product_id = $2
+       AND NOT EXISTS (
+         SELECT 1 FROM reviews r WHERE r.order_id = o.id AND r.product_id = $2
+       )
+     ORDER BY o.created_at DESC
+     LIMIT 1`,
+    [userId, productId]
+  );
+  return rows[0] || null;
+};
+
+export const addProductReview = async (userId, productId, { rating, comment }) => {
+  const pId = parseInt(productId, 10);
+  const rate = parseInt(rating, 10);
+  if (!pId) throw new Error('ID de producto inválido.');
+  if (!rate || rate < 1 || rate > 5) throw new Error('La calificación debe estar entre 1 y 5 estrellas.');
+
+  const purchase = await findCompletedPurchaseForReview(userId, pId);
+  if (!purchase) {
+    throw new Error('Solo puedes calificar productos que hayas comprado y que estén completados.');
+  }
+
+  const text = comment && String(comment).trim() ? String(comment).trim().slice(0, 2000) : null;
+
+  const { rows } = await pool.query(
+    `INSERT INTO reviews (product_id, user_id, order_id, rating, comment)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (product_id, user_id, order_id) DO NOTHING
+     RETURNING id, product_id, order_id, rating, comment, created_at`,
+    [pId, userId, purchase.id, rate, text]
+  );
+  if (rows.length === 0) {
+    throw new Error('Ya calificaste este producto en esta compra.');
+  }
+  await invalidateProductCache(pId).catch(() => {});
+  return rows[0];
+};
+
+export const updateProductReview = async (userId, productId, { rating, comment }) => {
+  const pId = parseInt(productId, 10);
+  const rate = parseInt(rating, 10);
+  if (!pId) throw new Error('ID de producto inválido.');
+  if (!rate || rate < 1 || rate > 5) throw new Error('La calificación debe estar entre 1 y 5 estrellas.');
+  const text = comment && String(comment).trim() ? String(comment).trim().slice(0, 2000) : null;
+
+  const { rows } = await pool.query(
+    `UPDATE reviews SET rating = $3, comment = $4, updated_at = NOW()
+     WHERE product_id = $1 AND user_id = $2
+     RETURNING id, product_id, order_id, rating, comment, updated_at`,
+    [pId, userId, rate, text]
+  );
+  if (rows.length === 0) {
+    throw new Error('No tienes una reseña para este producto.');
+  }
+  await invalidateProductCache(pId).catch(() => {});
+  return rows[0];
+};
+
+export const deleteProductReview = async (userId, productId) => {
+  const pId = parseInt(productId, 10);
+  if (!pId) throw new Error('ID de producto inválido.');
+  const { rowCount } = await pool.query(
+    `DELETE FROM reviews WHERE product_id = $1 AND user_id = $2`,
+    [pId, userId]
+  );
+  if (rowCount === 0) {
+    throw new Error('No tienes una reseña para este producto.');
+  }
+  await invalidateProductCache(pId).catch(() => {});
+  return { deleted: true };
 };
 
 export const recordPurchaseForUser = async (userId, items, options = {}) => {
@@ -1164,12 +1423,13 @@ export const recordPurchaseForUser = async (userId, items, options = {}) => {
 };
 
 export const getUserPurchasesDetails = async (userId, guestHash) => {
+  if (!userId && !guestHash) return [];
+
   const { rows: orderRows } = await pool.query(
     `SELECT o.* 
      FROM orders o
-     WHERE ($1::bigint IS NOT NULL AND (o.user_id = $1 OR o.user_id IS NULL)) 
+     WHERE ($1::bigint IS NOT NULL AND o.user_id = $1)
         OR ($2::text IS NOT NULL AND o.guest_hash = $2)
-        OR ($1::bigint IS NULL AND $2::text IS NULL)
      ORDER BY o.created_at DESC`,
     [userId || null, guestHash || null]
   );
@@ -1199,48 +1459,57 @@ export const getUserPurchasesDetails = async (userId, guestHash) => {
   return ordersWithDetails;
 };
 
-export const searchOrdersByNumberOrDoc = async (queryParam) => {
+export const searchOrdersByNumberOrDoc = async (queryParam, userId = null, guestHash = null) => {
   if (!queryParam) return [];
   const cleanQuery = String(queryParam).trim();
   const { rows: orderRows } = await pool.query(
-    `SELECT o.* 
+    `SELECT o.id, o.order_number, o.order_hash, o.user_id, o.guest_hash, o.status, o.amount, o.created_at
      FROM orders o
      WHERE o.order_number = $1 
-        OR o.identification_number ILIKE $2
+        OR o.identification_number = $1
      ORDER BY o.created_at DESC`,
-    [cleanQuery, `%${cleanQuery}%`]
+    [cleanQuery]
   );
 
   const ordersWithDetails = [];
   for (const order of orderRows) {
+    const isOwner = (userId && Number(order.user_id) === Number(userId)) || (guestHash && order.guest_hash === guestHash);
+    const safeOrder = {
+      id: order.id,
+      order_number: order.order_number,
+      status: order.status,
+      amount: Number(order.amount || 0),
+      created_at: order.created_at,
+    };
+    if (isOwner) safeOrder.order_hash = order.order_hash;
+
     const { rows: itemRows } = await pool.query(
-      `SELECT oi.*, p.images, p.public_id, p.description, p.base_price, p.suggested_price
+      `SELECT oi.product_id, oi.product_name, oi.quantity, oi.unit_price, oi.line_total, p.images, p.public_id
        FROM order_items oi
        LEFT JOIN produc p ON oi.product_id = p.id
        WHERE oi.order_id = $1`,
       [order.id]
     );
 
-    const { rows: shipmentRows } = await pool.query(
-      `SELECT * FROM order_shipments WHERE order_id = $1`,
-      [order.id]
-    );
-
     ordersWithDetails.push({
-      ...order,
+      ...safeOrder,
       items: itemRows,
-      shipments: shipmentRows
     });
   }
 
   return ordersWithDetails;
 };
 
-export const getOrderByHash = async (orderHash) => {
+export const getOrderByHash = async (orderHash, userId = null, guestHash = null) => {
   if (!orderHash) return null;
+  if (!userId && !guestHash) return null;
+
   const { rows: orderRows } = await pool.query(
-    `SELECT * FROM orders WHERE order_hash = $1 LIMIT 1`,
-    [orderHash]
+    `SELECT o.* FROM orders o
+     WHERE o.order_hash = $1
+       AND (($2::bigint IS NOT NULL AND o.user_id = $2) OR ($3::text IS NOT NULL AND o.guest_hash = $3))
+     LIMIT 1`,
+    [orderHash, userId || null, guestHash || null]
   );
   if (orderRows.length === 0) return null;
   const order = orderRows[0];
@@ -1258,8 +1527,9 @@ export const getOrderByHash = async (orderHash) => {
     [order.id]
   );
 
+  const { payload, shipping_payload, guest_hash, ...safeOrder } = order;
   return {
-    ...order,
+    ...safeOrder,
     items: itemRows,
     shipments: shipmentRows
   };
@@ -1268,7 +1538,7 @@ export const getOrderByHash = async (orderHash) => {
 export const cancelMastershopOrderOrShipments = async (order, shipmentIds, totalCancel) => {
   try {
     const { rows: integrationRows } = await pool.query(
-      `SELECT api_key FROM tienda_integraciones WHERE tienda_id = $1 AND provider = 'mastershop' LIMIT 1`,
+      `SELECT api_key FROM tienda_integraciones WHERE user_id = $1 AND provider = 'mastershop' LIMIT 1`,
       [order.tienda_id || 1]
     );
     if (!integrationRows[0] || !integrationRows[0].api_key) return;
@@ -1294,12 +1564,12 @@ export const cancelMastershopOrderOrShipments = async (order, shipmentIds, total
   }
 };
 
-export const createNotification = async (userId, guestHash, orderId, title, message) => {
+export const createNotification = async (userId, guestHash, orderId, title, message, type = 'order', data = {}) => {
   try {
     await pool.query(
-      `INSERT INTO notifications (user_id, guest_hash, order_id, title, message, created_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())`,
-      [userId || null, guestHash || null, orderId || null, title, message]
+      `INSERT INTO notifications (user_id, guest_hash, order_id, type, title, message, data, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, NOW())`,
+      [userId || null, guestHash || null, orderId || null, type, title, message, JSON.stringify(data)]
     );
   } catch (err) {
     console.error('Error creando notificación en DB:', err.message);
@@ -1308,7 +1578,7 @@ export const createNotification = async (userId, guestHash, orderId, title, mess
 
 export const cancelOrderForUser = async (orderHash, userId, guestHash) => {
   const { rows: orderRows } = await pool.query(
-    `SELECT * FROM orders WHERE order_hash = $1 AND (($2::bigint IS NOT NULL AND user_id = $2) OR ($3::text IS NOT NULL AND guest_hash = $3) OR ($2::bigint IS NULL AND $3::text IS NULL))`,
+    `SELECT * FROM orders WHERE order_hash = $1 AND (($2::bigint IS NOT NULL AND user_id = $2) OR ($3::text IS NOT NULL AND guest_hash = $3))`,
     [orderHash, userId || null, guestHash || null]
   );
   if (orderRows.length === 0) {
@@ -1327,11 +1597,11 @@ export const cancelOrderForUser = async (orderHash, userId, guestHash) => {
   const cancelledShipmentIds = [];
 
   for (const sh of shipmentRows) {
-    const st = String(sh.status || '').toLowerCase();
+    const st = String(sh.fulfillment_status || '').toLowerCase();
     const isEligible = !st || st.includes('pend') || st.includes('confirm') || st.includes('cread') || st.includes('nuevo');
     
     if (isEligible) {
-      await pool.query(`UPDATE order_shipments SET status = 'cancelled', updated_at = NOW() WHERE id = $1`, [sh.id]);
+      await pool.query(`UPDATE order_shipments SET fulfillment_status = 'cancelled', updated_at = NOW() WHERE id = $1`, [sh.id]);
       cancelledShipmentIds.push(sh.id);
       cancelledCount++;
     } else {
@@ -1365,7 +1635,7 @@ export const cancelOrderForUser = async (orderHash, userId, guestHash) => {
 
   // Recalcular el monto total del pedido basado en los envíos e ítems activos restantes
   const { rows: activeShipments } = await pool.query(
-    `SELECT * FROM order_shipments WHERE order_id = $1 AND status != 'cancelled'`,
+    `SELECT * FROM order_shipments WHERE order_id = $1 AND fulfillment_status != 'cancelled'`,
     [orderId]
   );
   
@@ -1394,7 +1664,7 @@ export const cancelOrderForUser = async (orderHash, userId, guestHash) => {
   // Registrar notificación en la tabla `notifications`
   const notifTitle = totalCancel ? `Pedido #${orderId} cancelado` : `Pedido #${orderId} cancelado parcialmente`;
   const notifMsg = totalCancel ? `Tu pedido ha sido cancelado en su totalidad y el stock ha sido liberado.` : `Se han cancelado ${cancelledCount} envíos de tu pedido.`;
-  await createNotification(order.user_id, order.guest_hash, order.id, notifTitle, notifMsg);
+  await createNotification(order.user_id, order.guest_hash, order.id, notifTitle, notifMsg, 'order_cancelled', { total_cancel: totalCancel, cancelled_shipments: cancelledCount, active_shipments: activeCount });
 
   return {
     order_id: orderId,
@@ -1423,7 +1693,7 @@ export const checkIfMastershopGuideGenerated = async (order) => {
 
     // PASO 2: Si aún no está generada localmente, verificamos en Mastershop como respaldo
     const { rows: integrationRows } = await pool.query(
-      `SELECT api_key FROM tienda_integraciones WHERE tienda_id = $1 AND provider = 'mastershop' LIMIT 1`,
+      `SELECT api_key FROM tienda_integraciones WHERE user_id = $1 AND provider = 'mastershop' LIMIT 1`,
       [order.tienda_id || 1]
     );
     if (!integrationRows[0] || !integrationRows[0].api_key) {
@@ -1456,7 +1726,7 @@ export const checkIfMastershopGuideGenerated = async (order) => {
 export const updateMastershopOrderAddress = async (order, direccion, telefono) => {
   try {
     const { rows: integrationRows } = await pool.query(
-      `SELECT api_key FROM tienda_integraciones WHERE tienda_id = $1 AND provider = 'mastershop' LIMIT 1`,
+      `SELECT api_key FROM tienda_integraciones WHERE user_id = $1 AND provider = 'mastershop' LIMIT 1`,
       [order.tienda_id || 1]
     );
     if (!integrationRows[0] || !integrationRows[0].api_key) {
@@ -1503,7 +1773,7 @@ export const updateMastershopOrderAddress = async (order, direccion, telefono) =
 
 export const updateOrderAddressForUser = async (orderHash, userId, guestHash, direccion, telefono) => {
   const { rows: orderRows } = await pool.query(
-    `SELECT * FROM orders WHERE order_hash = $1 AND (($2::bigint IS NOT NULL AND user_id = $2) OR ($3::text IS NOT NULL AND guest_hash = $3) OR ($2::bigint IS NULL AND $3::text IS NULL))`,
+    `SELECT * FROM orders WHERE order_hash = $1 AND (($2::bigint IS NOT NULL AND user_id = $2) OR ($3::text IS NOT NULL AND guest_hash = $3))`,
     [orderHash, userId || null, guestHash || null]
   );
   if (orderRows.length === 0) {
@@ -1553,6 +1823,7 @@ export const processSavedCardPaymentForCart = async (userId, payload) => {
   if (!mpInt?.access_token) {
     throw new Error('La tienda no tiene configurada la integración de Mercado Pago.');
   }
+  mpInt.access_token = decryptSecret(mpInt.access_token);
 
   const { rows: userRows } = await pool.query(`SELECT email, name FROM users WHERE id = $1 LIMIT 1`, [userId]);
   const userEmail = userRows[0]?.email || 'cliente@glopsy.com';

@@ -8,3 +8,4 @@ node_modules
 
 /generated/prisma
 certs/
+dump.rdb

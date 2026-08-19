@@ -20,7 +20,10 @@ export default function CompraDetail() {
   useEffect(() => {
     const fetchOrder = async () => {
       try {
-        const res = await api.get(`/product/compras/hash/${hash}`);
+        const guestHash = localStorage.getItem('glopsy_guest_hash');
+        const res = await api.get(`/product/compras/hash/${hash}`, {
+          headers: guestHash ? { 'x-guest-hash': guestHash } : {}
+        });
         if (res.data.ok && res.data.product) {
           const found = res.data.product;
           setOrder(found);
