@@ -10,7 +10,6 @@ services:
     plan: free
     region: oregon
     healthCheckPath: /api/health
-    preDeployCommand: node scripts/migrate.mjs
     envVars:
       - key: NODE_ENV
         value: production

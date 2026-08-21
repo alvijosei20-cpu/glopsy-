@@ -13,4 +13,4 @@ ENV ENABLE_HTTPS=0
 
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+CMD ["sh", "-c", "node scripts/migrate.mjs && node server.js"]
