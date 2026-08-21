@@ -1,0 +1,13 @@
+{$DOMAIN} {
+	encode gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+
+	reverse_proxy /api/* backend:3000
+	reverse_proxy /webhooks/* backend:3000
+	reverse_proxy /* frontend:80
+}
