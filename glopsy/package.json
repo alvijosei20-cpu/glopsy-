@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "node --import=dotenv/config --test --test-force-exit",
+    "migrate": "node --import=dotenv/config scripts/migrate.mjs",
     "start": "node app.js",
     "dev": "concurrently \"npm run postgres\" \"npm run redis\" \"npm run adminer\" \"npm run server\"",
     "postgres": "pg_ctl -D $PREFIX/var/lib/postgresql start",
