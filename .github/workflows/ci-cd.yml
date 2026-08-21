@@ -40,22 +40,3 @@ jobs:
       - run: npm run build
         env:
           VITE_API_URL: /api
-
-  deploy:
-    if: github.ref == 'refs/heads/main'
-    needs: [test-backend, build-frontend]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          script: |
-            cd ~/app
-            git pull --ff-only
-            docker compose -f glopsy/back/docker-compose.yml up -d --build
-            docker image prune -f
