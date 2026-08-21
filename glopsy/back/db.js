@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import pg from 'pg';
+import { createPool } from './utils/db-config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,15 +11,8 @@ dotenv.config({ path: path.join(__dirname, '.env') });
 const { Pool } = pg;
 
 // Configuración de la conexión a PostgreSQL
-const pool = new Pool({
-  user: process.env.DB_USER,
-  host: process.env.DB_HOST,
-  database: process.env.DB_NAME,
-  password: process.env.DB_PASSWORD,
-  port: Number(process.env.DB_PORT) || 5432,
-  // En producción (ej. Render/Neon/Supabase) habilita SSL de forma segura:
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-});
+// Usa DATABASE_URL si existe (patrón Render/Neon) o variables DB_* individuales.
+const pool = createPool();
 
 // Manejo de errores globales del pool de conexiones
 pool.on('error', (err) => {
