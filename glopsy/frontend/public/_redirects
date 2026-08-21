@@ -1,0 +1,5 @@
+# Proxy de API hacia el backend de Render (mismo origen para cookies Lax)
+/api/* https://glopsy-back.onrender.com/api/:splat 200
+
+# SPA: cualquier ruta cae en index.html
+/* /index.html 200
