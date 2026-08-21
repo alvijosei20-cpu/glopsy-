@@ -32,6 +32,7 @@ services:
       DB_NAME: ${DB_NAME}
       REDIS_URL: redis://redis:6379
       FRONTEND_URL: https://${DOMAIN}
+      DASHBOARD_ORIGIN: ${DASHBOARD_ORIGIN}
       JWT_SECRET: ${JWT_SECRET}
       APP_ENC_KEY: ${APP_ENC_KEY}
       COOKIE_SECURE: "true"

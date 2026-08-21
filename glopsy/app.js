@@ -10,6 +10,7 @@ import authRoutes from './routes/auth.routes.js';
 import tiendaRoutes from './routes/tienda.routes.js';
 import integracionRoutes from './routes/integracion.routes.js';
 import geoRoutes from './routes/geo.routes.js';
+import healthRoutes from './routes/health.routes.js';
 import mastershopWebhookRoutes from './routes/mastershopWebhook.routes.js';
 import mercadopagoWebhookRoutes from './routes/mercadopagoWebhook.routes.js';
 
@@ -26,9 +27,13 @@ app.use(
 );
 app.use(apiLimiter);
 const allowedOrigin = process.env.FRONTEND_URL;
+const dashboardOrigins = (process.env.DASHBOARD_ORIGIN || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || origin === allowedOrigin || origin.startsWith('http://localhost:') || origin.startsWith('https://localhost:') || origin.startsWith('http://127.0.0.1:') || origin.startsWith('https://127.0.0.1:')) {
+    if (!origin || origin === allowedOrigin || dashboardOrigins.includes(origin) || origin.startsWith('http://localhost:') || origin.startsWith('https://localhost:') || origin.startsWith('http://127.0.0.1:') || origin.startsWith('https://127.0.0.1:')) {
       callback(null, true);
     } else {
       callback(new Error('Bloqueado por política CORS'));
@@ -45,6 +50,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/tienda', tiendaRoutes);
 app.use('/api/tienda/integraciones', integracionRoutes);
 app.use('/api/geo', geoRoutes);
+app.use('/api/health', healthRoutes);
 app.use('/api/webhooks', mastershopWebhookRoutes);
 app.use('/api/payments', mercadopagoWebhookRoutes);
 

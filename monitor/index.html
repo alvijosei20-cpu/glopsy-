@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>glopsy Monitor</title>
+<style>
+  :root {
+    --background: #1a1a1a;
+    --surface: #000000;
+    --text-primary: #ffffff;
+    --text-muted: #64748b;
+    --border: #27272a;
+    --danger: #9d174d;
+    --ok: #22c55e;
+    --warn: #eab308;
+    --accent: #db2777;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--background);
+    color: var(--text-primary);
+    font-family: sans-serif;
+    line-height: 1.5;
+    padding: 16px;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--surface);
+    margin-bottom: 16px;
+  }
+  header h1 { font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  header h1 .dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
+  header .controls { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--text-muted); }
+  header .controls .switch { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  header .controls input[type=checkbox] { accent-color: var(--accent); }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  @media (min-width: 900px) {
+    .grid { grid-template-columns: 1fr 1fr; }
+    .card.health { grid-column: 1 / -1; }
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 16px;
+    box-shadow: 0 1px 3px rgba(255,255,255,0.05);
+  }
+  .card h2 {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .card h2 .meta { text-transform: none; letter-spacing: 0; font-weight: 400; }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+    background: var(--background);
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .badge.ok { color: var(--ok); }
+  .badge.down { color: var(--danger); }
+  .badge.warn { color: var(--warn); }
+  .badge.bg-ok { background: rgba(34,197,94,0.15); }
+  .badge.bg-down { background: rgba(157,23,77,0.25); }
+  .badge.bg-warn { background: rgba(234,179,8,0.15); }
+  .badge .dot { width: 8px; height: 8px; border-radius: 999px; background: currentColor; }
+  .item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .item:last-child { border-bottom: none; }
+  .item .icon { flex-shrink: 0; width: 16px; height: 16px; margin-top: 4px; }
+  .item .body { min-width: 0; flex: 1; }
+  .item .title { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .sub { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .item .sub code { background: var(--background); padding: 2px 6px; border-radius: 4px; font-size: 11px; }
+  .item .right { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .commit-msg { font-size: 14px; }
+  .health-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+  }
+  .health-cell { text-align: center; padding: 8px 4px; }
+  .health-cell .value { font-size: 20px; font-weight: 700; }
+  .health-cell .label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; }
+  .footer {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 12px;
+    padding: 16px;
+  }
+  .empty, .error {
+    padding: 24px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+  .error { color: var(--danger); }
+  a { color: var(--text-primary); text-decoration: none; }
+  a:hover { color: var(--accent); }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>
+      <span class="dot" id="global-dot" style="background: var(--warn)"></span>
+      glopsy Monitor
+    </h1>
+    <div class="controls">
+      <span id="updated">…</span>
+      <label class="switch">
+        <input type="checkbox" id="auto" checked />
+        Auto
+      </label>
+    </div>
+  </header>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Repositorio <span class="meta" id="repo-name">—</span></h2>
+      <div id="repo-body"><div class="empty">Cargando…</div></div>
+    </section>
+
+    <section class="card">
+      <h2>CI / Workflows <span class="meta"><a id="actions-link" href="#" target="_blank" rel="noopener">ver en GitHub ↗</a></span></h2>
+      <div id="ci-body"><div class="empty">Cargando…</div></div>
+    </section>
+
+    <section class="card health">
+      <h2>Servidor <span class="meta" id="health-api">—</span></h2>
+      <div class="health-row" id="health-body">
+        <div class="health-cell"><div class="value" id="h-api">—</div><div class="label">API</div></div>
+        <div class="health-cell"><div class="value" id="h-db">—</div><div class="label">PostgreSQL</div></div>
+        <div class="health-cell"><div class="value" id="h-redis">—</div><div class="label">Redis</div></div>
+        <div class="health-cell"><div class="value" id="h-uptime">—</div><div class="label">Uptime (s)</div></div>
+        <div class="health-cell"><div class="value" id="h-last">—</div><div class="label">Último check</div></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="footer">
+    Consulta GitHub API cada 5 min · salud del servidor cada 20 s ·
+    <span id="gh-remaining">—</span>
+  </div>
+</div>
+
+<script>
+  // Configuración. Se pueden sobreescribir con query params, ej:
+  // ?repo=alvijosei20-cpu/glopsy-&api=https://api.tu-dominio.com
+  const params = new URLSearchParams(location.search);
+  const REPO = params.get('repo') || 'alvijosei20-cpu/glopsy-';
+  const API_URL = (params.get('api') || 'https://api.tu-dominio.com').replace(/\/$/, '');
+
+  const GITHUB_MS = 5 * 60 * 1000;
+  const HEALTH_MS = 20 * 1000;
+
+  let lastGithub = 0;
+  let lastHealth = 0;
+
+  const $ = (id) => document.getElementById(id);
+
+  function setDot(state) {
+    const colors = { up: 'var(--ok)', down: 'var(--danger)', unknown: 'var(--warn)' };
+    $('global-dot').style.background = colors[state] || colors.unknown;
+  }
+
+  function relTime(iso) {
+    if (!iso) return '—';
+    const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 60) return 'hace ' + s + ' s';
+    if (s < 3600) return 'hace ' + Math.floor(s / 60) + ' min';
+    if (s < 86400) return 'hace ' + Math.floor(s / 3600) + ' h';
+    return 'hace ' + Math.floor(s / 86400) + ' d';
+  }
+
+  function badge(cls, label) {
+    return '<span class="badge ' + cls + '"><span class="dot"></span>' + label + '</span>';
+  }
+
+  // ---------- GitHub (commits + workflows) ----------
+  async function fetchGitHub() {
+    const headers = { 'Accept': 'application/vnd.github+json' };
+    const [commitsRes, runsRes] = await Promise.all([
+      fetch('https://api.github.com/repos/' + REPO + '/commits?per_page=8', { headers }),
+      fetch('https://api.github.com/repos/' + REPO + '/actions/runs?per_page=8', { headers }),
+    ]);
+
+    const remaining = commitsRes.headers.get('x-ratelimit-remaining');
+    $('gh-remaining').textContent = 'GitHub API: ' + (remaining ?? '?') + ' req restantes';
+
+    $('repo-name').textContent = REPO;
+
+    if (!commitsRes.ok) {
+      $('repo-body').innerHTML = '<div class="error">Error GitHub API: ' + commitsRes.status + '</div>';
+    } else {
+      const commits = await commitsRes.json();
+      $('repo-body').innerHTML = commits.map((c) => {
+        const sha = c.sha.slice(0, 7);
+        return (
+          '<div class="item">' +
+          '<div class="body">' +
+          '<div class="title commit-msg">' + esc(c.commit.message.split('\n')[0]) + '</div>' +
+          '<div class="sub"><code>' + sha + '</code><span>' + esc(c.commit.author.name) + '</span><span>·</span><span>' + relTime(c.commit.author.date) + '</span></div>' +
+          '</div>' +
+          '<div class="right"><a href="' + c.html_url + '" target="_blank" rel="noopener">↗</a></div>' +
+          '</div>'
+        );
+      }).join('');
+    }
+
+    if (!runsRes.ok) {
+      $('ci-body').innerHTML = '<div class="error">Error GitHub API: ' + runsRes.status + '</div>';
+    } else {
+      const runs = await runsRes.json();
+      $('actions-link').href = 'https://github.com/' + REPO + '/actions';
+      $('ci-body').innerHTML = (runs.workflow_runs && runs.workflow_runs.length ? runs.workflow_runs : []).map((r) => {
+        const status = r.status === 'completed' ? r.conclusion : r.status;
+        const ok = status === 'success';
+        const pending = ['queued', 'in_progress', 'pending'].includes(status);
+        const cls = ok ? 'bg-ok' : (pending ? 'bg-warn' : 'bg-down');
+        return (
+          '<div class="item">' +
+          '<div class="body">' +
+          '<div class="title">' + esc(r.name) + '</div>' +
+          '<div class="sub"><span>#' + r.run_number + '</span><span>·</span><span>' + relTime(r.created_at) + '</span><span>·</span><code>' + esc(r.head_commit.message.split('\n')[0]) + '</code></div>' +
+          '</div>' +
+          '<div class="right">' + badge(cls, status) + '</div>' +
+          '</div>'
+        );
+      }).join('') || '<div class="empty">Sin runs todavía.</div>';
+    }
+
+    lastGithub = Date.now();
+    $('updated').textContent = 'Actualizado ' + relTime(new Date().toISOString());
+  }
+
+  // ---------- Salud del servidor ----------
+  async function fetchHealth() {
+    try {
+      const res = await fetch(API_URL + '/api/health');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const h = await res.json();
+
+      const apiOk = h.ok;
+      const dbOk = h.db === 'up';
+      const redisOk = h.redis === 'up';
+
+      $('health-api').textContent = API_URL;
+      $('h-api').textContent = apiOk ? 'OK' : 'DOWN';
+      $('h-api').style.color = apiOk ? 'var(--ok)' : 'var(--danger)';
+      $('h-db').textContent = dbOk ? 'UP' : 'DOWN';
+      $('h-db').style.color = dbOk ? 'var(--ok)' : 'var(--danger)';
+      $('h-redis').textContent = redisOk ? 'UP' : 'DOWN';
+      $('h-redis').style.color = redisOk ? 'var(--ok)' : 'var(--danger)';
+      $('h-uptime').textContent = h.uptime ?? '—';
+      $('h-last').textContent = relTime(h.ts);
+
+      setDot(apiOk ? 'up' : 'down');
+    } catch (err) {
+      $('health-api').textContent = API_URL;
+      $('h-api').textContent = 'DOWN';
+      $('h-api').style.color = 'var(--danger)';
+      $('h-db').textContent = '—';
+      $('h-redis').textContent = '—';
+      $('h-uptime').textContent = '—';
+      $('h-last').textContent = 'sin conexión';
+      setDot('down');
+    }
+    lastHealth = Date.now();
+    $('updated').textContent = 'Actualizado ' + relTime(new Date().toISOString());
+  }
+
+  function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, (c) => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+  }
+
+  function tick() {
+    const now = Date.now();
+    const auto = $('auto').checked;
+    if (auto && now - lastGithub >= GITHUB_MS) fetchGitHub().catch(() => {});
+    if (auto && now - lastHealth >= HEALTH_MS) fetchHealth();
+  }
+
+  // Carga inicial
+  fetchGitHub().catch(() => {});
+  fetchHealth();
+  setInterval(tick, 5000);
+
+  // Actualizar el relativo en cada tick sin recargar datos
+  setInterval(() => {
+    if ($('updated').textContent) {
+      $('updated').textContent = 'Actualizado ' + relTime(new Date().toISOString());
+    }
+  }, 15000);
+</script>
+</body>
+</html>
