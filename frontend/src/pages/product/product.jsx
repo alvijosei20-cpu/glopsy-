@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ShoppingCart, Zap, Heart, ArrowLeft, Truck, ShieldCheck, Check, Star, MapPin, Store, Shield, Sparkles, ChevronDown, ChevronUp, Maximize2, X, ChevronLeft, ChevronRight, RotateCw } from 'lucide-react';
 import api from '../../services/api';
+import { isLoggedIn } from '../../utils/session';
 import { useSEO } from '../../utils/seo';
+import { trackEvent } from '../../utils/analytics';
 import './product.css';
 import '@google/model-viewer';
 
@@ -156,7 +158,7 @@ export default function ProductDetail() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     if (!id) return;
     setLoading(true);
-    api.get(`/product/${id}`)
+    api.get(`/product/${id}`, { params: { ciudad: userCity } })
       .then(res => {
         if (res.data.ok) {
           const p = res.data.product;
@@ -174,8 +176,35 @@ export default function ProductDetail() {
 
   useEffect(() => {
     if (!product) return;
+    const price = Number(product.suggested_price || product.base_price || 0);
+    let finalPrice = price;
+    if (product.oferta_activa) {
+      if (product.oferta_activa.tipo === 'porcentaje') {
+        finalPrice = price * (1 - Number(product.oferta_activa.valor) / 100);
+      } else if (product.oferta_activa.tipo === 'monto_fijo') {
+        finalPrice = Math.max(0, price - Number(product.oferta_activa.valor));
+      }
+    }
+    trackEvent('view_item', {
+      currency: 'COP',
+      value: finalPrice,
+      items: [
+        {
+          item_id: String(product.public_id || product.id),
+          item_name: product.name,
+          item_brand: product.tienda_nombre || 'Glopsy',
+          item_category: product.categoria_nombre || '',
+          price: finalPrice,
+          quantity: 1,
+        },
+      ],
+    });
+  }, [product]);
+
+  useEffect(() => {
+    if (!product) return;
     const catId = product.categoria_id;
-    api.get('/product', { params: { categoria_id: catId, limit: 12 } })
+    api.get('/product', { params: { categoria_id: catId, limit: 12, ciudad: userCity } })
       .then(res => {
         if (res.data.ok) {
           const list = (res.data.products || []).filter(p => Number(p.id) !== Number(product.id));
@@ -199,8 +228,7 @@ export default function ProductDetail() {
 
   // Cargar reseña / elegibilidad del usuario autenticado
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token || !id) return;
+    if (!isLoggedIn() || !id) return;
     api.get(`/product/${id}/review`)
       .then(res => {
         if (res.data.ok) {
@@ -433,6 +461,21 @@ export default function ProductDetail() {
 
       localStorage.setItem('glopsy_cart', JSON.stringify(existingCart));
       window.dispatchEvent(new Event('storage'));
+
+      trackEvent('add_to_cart', {
+        currency: 'COP',
+        value: cartItem.price * cartItem.quantity,
+        items: [
+          {
+            item_id: String(product.public_id || product.id),
+            item_name: product.name,
+            item_brand: product.tienda_nombre || 'Glopsy',
+            item_category: product.categoria_nombre || '',
+            price: cartItem.price,
+            quantity: cartItem.quantity,
+          },
+        ],
+      });
 
       setAddedToast(true);
       setTimeout(() => setAddedToast(false), 3000);
@@ -929,7 +972,7 @@ export default function ProductDetail() {
           )}
 
           {/* Formulario de reseña para compradores verificados */}
-          {localStorage.getItem('token') ? (
+          {isLoggedIn() ? (
             (userReviewStatus.canReview || userReviewStatus.review) && (
               <form onSubmit={handleSubmitReview} className="border-t border-fuchsia-100 pt-6">
                 <h3 className="text-sm font-bold text-slate-800 mb-1">

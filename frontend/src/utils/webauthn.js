@@ -1,4 +1,5 @@
 import api from '../services/api';
+import { isLoggedIn } from './session';
 
 export function bufferDecode(value) {
   if (!value) return value;
@@ -58,8 +59,7 @@ export async function assertWebAuthn(publicKeyOptions) {
 }
 
 export async function requireBiometricPayment() {
-  const token = localStorage.getItem('token');
-  if (!token) return { needed: false, nonce: null };
+  if (!isLoggedIn()) return { needed: false, nonce: null };
 
   try {
     const resOptions = await api.post('/auth/biometric/pay-options');

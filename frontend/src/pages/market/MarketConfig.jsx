@@ -115,7 +115,7 @@ const MarketConfig = () => {
         // fetch shipping profiles
         const resPerfiles = await api.get('/tienda/perfiles-envio').catch(() => ({ data: { perfiles: [] } }));
         if (resPerfiles.data?.perfiles) {
-          const p = resPerfiles.data.perfiles.map(pp => ({ id: pp.id, nombre: pp.nombre, tipo: pp.tipo, fullment_id: pp.fullment_id, costo: pp.costo, isGlobal: pp.alcance === 'global' }));
+          const p = resPerfiles.data.perfiles.map(pp => ({ id: pp.id, nombre: pp.nombre, tipo: pp.tipo, fullment_id: pp.fullment_id, ciudad_id: pp.ciudad_id || '', costo: pp.costo, isGlobal: pp.alcance === 'global' }));
           setPerfilesEnvio(p);
           setEnvioGratisTienda(p.some(x => x.isGlobal));
         }
@@ -299,7 +299,8 @@ const MarketConfig = () => {
 
   const [promociones, setPromociones] = useState([]);
 
-  const [nuevoEnvio, setNuevoEnvio] = useState({ nombre: '', tipo: 'cobro', fullment_id: '' });
+  const [nuevoEnvio, setNuevoEnvio] = useState({ nombre: '', tipo: 'cobro', fullment_id: '', ciudad_id: '', costo: '' });
+  const [envioGratisPrecio, setEnvioGratisPrecio] = useState('');
   const [nuevaPromo, setNuevaPromo] = useState({ titulo: '', tipo: 'porcentaje', valor: '', alcance: 'global', product_ids: [] });
   const [promoProducts, setPromoProducts] = useState([]);
   const [promoProductsOpen, setPromoProductsOpen] = useState(false);
@@ -318,40 +319,30 @@ const MarketConfig = () => {
     setEditingFullment(fullment);
     setLoadingProducts(true);
     try {
-      const promises = [
-        api.get('/product/mine'),
-        ...fullments.map(f => api.get(`/geo/fullments/${f.fullment_id}/products`).catch(() => ({ data: { products: [] } })))
-      ];
+      const prodRes = await api
+        .get(`/geo/fullments/${fullment.fullment_id}/products`)
+        .catch(() => ({ data: { products: [] } }));
+      const products = prodRes?.data?.products || [];
 
-      const results = await Promise.all(promises);
-      const resProducts = results[0];
-      const fullmentProductResponses = results.slice(1);
+      setStoreProducts(products);
 
       const profilesMap = {};
-      if (resProducts.data && resProducts.data.products) {
-        setStoreProducts(resProducts.data.products);
-        resProducts.data.products.forEach(p => {
-          if (p.perfil_envio_id) profilesMap[p.id] = p.perfil_envio_id;
-        });
-      }
+      products.forEach(p => {
+        if (p.perfil_envio_id) profilesMap[p.id] = p.perfil_envio_id;
+      });
       setProductProfiles(profilesMap);
 
       const assignments = {};
-      fullments.forEach((f, idx) => {
-        const prodRes = fullmentProductResponses[idx];
-        const assignedProds = prodRes?.data?.products || [];
-        assignedProds.forEach(p => {
-          assignments[p.id] = {
-            fullment_id: f.fullment_id,
-            ciudad_nombre: f.ciudad_nombre,
-            departamento_nombre: f.departamento_nombre
-          };
-        });
+      products.forEach(p => {
+        assignments[p.id] = {
+          fullment_id: fullment.fullment_id,
+          ciudad_nombre: fullment.ciudad_nombre,
+          departamento_nombre: fullment.departamento_nombre
+        };
       });
       setProductAssignments(assignments);
 
-      const currentAssigned = fullmentProductResponses[fullments.findIndex(f => f.fullment_id === fullment.fullment_id)]?.data?.products || [];
-      const assignedIds = currentAssigned.map(p => p.id);
+      const assignedIds = products.map(p => p.id);
       setSelectedProductIds(assignedIds);
       setInitialSelectedProductIds(assignedIds);
     } catch (err) {
@@ -398,15 +389,21 @@ const MarketConfig = () => {
   const handleToggleEnvioGratis = async (checked) => {
     try {
       if (checked) {
+        const precio = Number(envioGratisPrecio);
+        if (!precio || precio <= 0) {
+          setNotice('Error: El precio del envío gratis global es obligatorio y debe ser mayor a 0.');
+          setTimeout(() => setNotice(''), 4000);
+          return;
+        }
         const res = await api.post('/tienda/perfiles-envio', {
           nombre: 'Envío Gratis en Toda la Tienda',
           tipo: 'gratis',
           alcance: 'global',
-          costo: 0
+          costo: precio
         });
         if (res.data?.ok) {
           const pp = res.data.perfil;
-          const globalProfile = { id: pp.id, nombre: pp.nombre, tipo: pp.tipo, fullment_id: pp.fullment_id, costo: pp.costo, isGlobal: true };
+          const globalProfile = { id: pp.id, nombre: pp.nombre, tipo: pp.tipo, fullment_id: pp.fullment_id, ciudad_id: pp.ciudad_id || '', costo: pp.costo, isGlobal: true };
           setPerfilesEnvio(prev => [globalProfile, ...prev.filter(p => !p.isGlobal)]);
           setEnvioGratisTienda(true);
           setNotice('Envío gratis en toda la tienda activado. Los demás perfiles quedan congelados.');
@@ -418,6 +415,7 @@ const MarketConfig = () => {
         }
         setPerfilesEnvio(prev => prev.filter(p => !p.isGlobal));
         setEnvioGratisTienda(false);
+        setEnvioGratisPrecio('');
         setNotice('Envío gratis en toda la tienda desactivado.');
       }
     } catch (err) {
@@ -443,6 +441,19 @@ const MarketConfig = () => {
       return;
     }
 
+    if (!nuevoEnvio.ciudad_id) {
+      setNotice('Error: Debes seleccionar la ciudad destino del perfil.');
+      setTimeout(() => setNotice(''), 4000);
+      return;
+    }
+
+    const costo = Number(nuevoEnvio.costo);
+    if (nuevoEnvio.tipo === 'gratis' && (!costo || costo <= 0)) {
+      setNotice('Error: El precio del perfil de envío gratis es obligatorio y debe ser mayor a 0.');
+      setTimeout(() => setNotice(''), 4000);
+      return;
+    }
+
     (async () => {
       try {
         const res = await api.post('/tienda/perfiles-envio', {
@@ -450,14 +461,15 @@ const MarketConfig = () => {
           tipo: nuevoEnvio.tipo,
           alcance: nuevoEnvio.fullment_id ? 'ciudad' : 'global',
           fullment_id: nuevoEnvio.fullment_id ? Number(nuevoEnvio.fullment_id) : null,
-          costo: 0
+          ciudad_id: nuevoEnvio.ciudad_id ? Number(nuevoEnvio.ciudad_id) : null,
+          costo: nuevoEnvio.tipo === 'gratis' ? costo : 0
         });
         if (res.data?.ok) {
           setPerfilesEnvio(prev => [
             ...prev,
-            { id: res.data.perfil.id, nombre: res.data.perfil.nombre, tipo: res.data.perfil.tipo, fullment_id: res.data.perfil.fullment_id, costo: res.data.perfil.costo, isGlobal: res.data.perfil.alcance === 'global' }
+            { id: res.data.perfil.id, nombre: res.data.perfil.nombre, tipo: res.data.perfil.tipo, fullment_id: res.data.perfil.fullment_id, ciudad_id: res.data.perfil.ciudad_id || '', costo: res.data.perfil.costo, isGlobal: res.data.perfil.alcance === 'global' }
           ]);
-          setNuevoEnvio({ nombre: '', tipo: 'cobro', fullment_id: '' });
+          setNuevoEnvio({ nombre: '', tipo: 'cobro', fullment_id: '', ciudad_id: '', costo: '' });
           setNotice('Perfil de envío creado correctamente.');
           setTimeout(() => setNotice(''), 3000);
         }
@@ -749,13 +761,26 @@ const MarketConfig = () => {
                     backgroundColor: envioGratisTienda ? '#7e22ce' : '#cbd5e1',
                     transition: '.4s', borderRadius: '24px'
                   }}>
-                    <span style={{
-                      position: 'absolute', content: '""', height: '18px', width: '18px',
-                      left: envioGratisTienda ? '28px' : '3px', bottom: '3px',
-                      backgroundColor: 'white', transition: '.4s', borderRadius: '50%'
-                    }}></span>
+                  <span style={{
+                    position: 'absolute', content: '""', height: '18px', width: '18px',
+                    left: envioGratisTienda ? '28px' : '3px', bottom: '3px',
+                    backgroundColor: 'white', transition: '.4s', borderRadius: '50%'
+                  }}></span>
                   </span>
                 </label>
+                {!envioGratisTienda && (
+                  <div className="config-form-group" style={{ margin: 0, width: '200px' }}>
+                    <label>Precio por unidad (se suma al costo del producto)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      placeholder="Ej. 5000"
+                      value={envioGratisPrecio}
+                      onChange={(e) => setEnvioGratisPrecio(e.target.value)}
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Formulario de nuevo perfil (deshabilitado si envío gratis tienda está activo) */}
@@ -783,12 +808,26 @@ const MarketConfig = () => {
                       <option value="cobro">De cobro</option>
                     </select>
                   </div>
+                  {nuevoEnvio.tipo === 'gratis' && (
+                    <div className="config-form-group" style={{ margin: 0 }}>
+                      <label>Precio por unidad (se suma al costo del producto)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        placeholder="Ej. 5000"
+                        value={nuevoEnvio.costo}
+                        disabled={envioGratisTienda}
+                        onChange={(e) => setNuevoEnvio({ ...nuevoEnvio, costo: e.target.value })}
+                      />
+                    </div>
+                  )}
                   <div className="config-form-group" style={{ margin: 0 }}>
                     <label>Seleccionar Centro de Distribución</label>
                     <select
                       value={nuevoEnvio.fullment_id}
                       disabled={envioGratisTienda}
-                      onChange={(e) => setNuevoEnvio({ ...nuevoEnvio, fullment_id: e.target.value })}
+                      onChange={(e) => setNuevoEnvio({ ...nuevoEnvio, fullment_id: e.target.value, ciudad_id: '' })}
                     >
                       <option value="">Selecciona un centro registrado</option>
                       {fullments.map((f) => (
@@ -796,6 +835,21 @@ const MarketConfig = () => {
                       ))}
                     </select>
                   </div>
+                  {nuevoEnvio.fullment_id && (
+                    <div className="config-form-group" style={{ margin: 0 }}>
+                      <label>Ciudad destino (donde aplica este perfil)</label>
+                      <select
+                        value={nuevoEnvio.ciudad_id}
+                        disabled={envioGratisTienda}
+                        onChange={(e) => setNuevoEnvio({ ...nuevoEnvio, ciudad_id: e.target.value })}
+                      >
+                        <option value="">Selecciona la ciudad destino</option>
+                        {ciudades.map((c) => (
+                          <option key={c.id} value={c.id}>{c.nombre}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
                 <div style={{ marginTop: '1rem', textAlign: 'right' }}>
                   <button type="submit" className="config-btn-primary" disabled={envioGratisTienda}>
@@ -828,8 +882,16 @@ const MarketConfig = () => {
                       )}
                     </div>
                     <p style={{ margin: '0.2rem 0' }}>Tipo: <strong>{perfil.tipo.toUpperCase()}</strong></p>
+                    {perfil.tipo === 'gratis' && (
+                      <p style={{ margin: 0 }}>Precio por unidad: <strong>${Number(perfil.costo || 0).toLocaleString('es-CO')}</strong></p>
+                    )}
                     {perfil.fullment_id ? (
-                      <p style={{ margin: 0 }}>Centro de distribución: <strong>{getFullmentNombre(perfil.fullment_id)}</strong></p>
+                      <>
+                        <p style={{ margin: 0 }}>Centro de distribución: <strong>{getFullmentNombre(perfil.fullment_id)}</strong></p>
+                        {perfil.ciudad_id && (
+                          <p style={{ margin: 0 }}>Ciudad destino: <strong>{ciudades.find(c => Number(c.id) === Number(perfil.ciudad_id))?.nombre || `ID ${perfil.ciudad_id}`}</strong></p>
+                        )}
+                      </>
                     ) : (
                       <p style={{ margin: 0 }}>Alcance: <strong>Global (Toda la tienda)</strong></p>
                     )}
@@ -1212,7 +1274,7 @@ const MarketConfig = () => {
                     ← Volver a centros de distribución
                   </button>
                   <h3>Gestionar Productos para {editingFullment.ciudad_nombre} ({editingFullment.departamento_nombre})</h3>
-                  <p>Selecciona los productos de tu tienda que estarán asignados a este centro de distribución.</p>
+                  <p>Estos son los productos asignados a este centro de distribución.</p>
                 </div>
               </div>
 
@@ -1222,7 +1284,7 @@ const MarketConfig = () => {
                 <form onSubmit={handleSaveFullmentProducts}>
                   <div style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: '1rem', border: '1px solid #e2e8f0', marginBottom: '1.5rem', maxHeight: '400px', overflowY: 'auto' }}>
                     {storeProducts.length === 0 ? (
-                      <p style={{ color: '#64748b' }}>No tienes productos registrados en tu tienda.</p>
+                      <p style={{ color: '#64748b' }}>Este centro de distribución no tiene productos asignados.</p>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                         {storeProducts.map((p) => {

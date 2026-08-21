@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingBag, ArrowLeft, Package, MapPin, Sparkles, CheckCircle, Clock, ChevronRight } from 'lucide-react';
+import { ShoppingBag, ArrowLeft, Package, MapPin, Sparkles, CheckCircle, Clock, ChevronRight, Truck } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../../services/api';
 import { SkeletonList } from '../../components/SkeletonLoader';
@@ -121,7 +121,63 @@ export default function Compras() {
               return { label: st || 'Aprobada', bg: 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' };
             };
 
+            const getShipmentStatusBadge = (st) => {
+              const s = (st || '').toLowerCase();
+              if (s.includes('delivered') || s.includes('entregado') || s.includes('recibido') || s.includes('complete')) {
+                return { label: 'Entregado', bg: 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' };
+              }
+              if (s.includes('cancelled') || s.includes('cancelada') || s.includes('failed') || s.includes('fallido') || s.includes('rejected')) {
+                return { label: 'Cancelado', bg: 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800' };
+              }
+              if (s.includes('in_transit') || s.includes('transito') || s.includes('tránsito') || s.includes('route') || s.includes('viaje')) {
+                return { label: 'En tránsito', bg: 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800' };
+              }
+              if (s.includes('shipped') || s.includes('despachado') || s.includes('recogido') || s.includes('guia') || s.includes('generada') || s.includes('generated') || s.includes('created')) {
+                return { label: 'Despachado', bg: 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800' };
+              }
+              return { label: st || 'Pendiente', bg: 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800' };
+            };
+
             const statusInfo = getStatusBadge(order.status);
+
+            const renderItem = (item, iIdx) => {
+              const itemImage = getProductImage(item);
+              return (
+                <div
+                  key={item.id || iIdx}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(`/product/${item.public_id || item.product_id}`);
+                  }}
+                  className="flex items-center gap-3.5 p-2 rounded-xl bg-white dark:bg-zinc-800/80 hover:bg-slate-100/80 dark:hover:bg-zinc-800 transition-colors cursor-pointer border border-slate-200/60 dark:border-zinc-700/50"
+                >
+                  <div className="w-12 h-12 bg-white dark:bg-zinc-900 rounded-lg overflow-hidden shrink-0 border border-slate-200 dark:border-zinc-700">
+                    <img
+                      src={itemImage}
+                      alt={item.product_name}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.target.src = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60';
+                      }}
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0 text-left">
+                    <h4 className="font-semibold text-slate-800 dark:text-slate-200 text-xs sm:text-sm truncate">{item.product_name}</h4>
+                    <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      <span>Cant: {item.quantity}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`${statusInfo.bg} text-xs font-semibold px-3 py-1 rounded-full border flex items-center gap-1`}>
+                      <CheckCircle size={12} /> {statusInfo.label}
+                    </span>
+                    <span className="font-extrabold text-slate-900 dark:text-white text-base">
+                      {formatPrice(order.amount)}
+                    </span>
+                  </div>
+                </div>
+              );
+            };
 
             return (
               <div
@@ -147,46 +203,47 @@ export default function Compras() {
                   </div>
                 </div>
 
-                {/* Order Items - Minimalist Horizontal Row */}
+                {/* Order Shipments & Items */}
                 <div className="space-y-2">
-                  {order.items && order.items.map((item, iIdx) => {
-                    const itemImage = getProductImage(item);
-                    return (
-                      <div
-                        key={item.id || iIdx}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/product/${item.public_id || item.product_id}`);
-                        }}
-                        className="flex items-center gap-3.5 p-2 rounded-xl bg-white dark:bg-zinc-800/80 hover:bg-slate-100/80 dark:hover:bg-zinc-800 transition-colors cursor-pointer border border-slate-200/60 dark:border-zinc-700/50"
-                      >
-                        <div className="w-12 h-12 bg-white dark:bg-zinc-900 rounded-lg overflow-hidden shrink-0 border border-slate-200 dark:border-zinc-700">
-                          <img
-                            src={itemImage}
-                            alt={item.product_name}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              e.target.src = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60';
-                            }}
-                          />
-                        </div>
-                        <div className="flex-1 min-w-0 text-left">
-                          <h4 className="font-semibold text-slate-800 dark:text-slate-200 text-xs sm:text-sm truncate">{item.product_name}</h4>
-                          <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                            <span>Cant: {item.quantity}</span>
+                  {order.shipments && order.shipments.length > 0 ? (
+                    order.shipments.map((shipment, sIdx) => {
+                      const shipmentItems = order.items ? order.items.filter(item => item.shipment_id === shipment.id) : [];
+                      const shipStatus = getShipmentStatusBadge(shipment.fulfillment_status);
+                      return (
+                        <div
+                          key={shipment.id || sIdx}
+                          className="rounded-xl border border-slate-200/60 dark:border-zinc-700/50 bg-white dark:bg-zinc-800/80 p-2 space-y-2"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                            <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                              <Truck size={12} className="text-fuchsia-600 dark:text-fuchsia-400" />
+                              Envío #{shipment.shipment_number || (sIdx + 1)}
+                              {(shipment.carrier || shipment.service) && (
+                                <span className="text-slate-400 font-normal">
+                                  · {shipment.carrier || 'Estándar'}{shipment.service ? ` (${shipment.service})` : ''}
+                                </span>
+                              )}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              {shipment.tracking_code && (
+                                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">#{shipment.tracking_code}</span>
+                              )}
+                              <span className={`${shipStatus.bg} text-[10px] font-semibold px-2.5 py-0.5 rounded-full border flex items-center gap-1`}>
+                                <CheckCircle size={10} /> {shipStatus.label}
+                              </span>
+                            </div>
                           </div>
+                          {shipmentItems.length > 0 ? (
+                            <div className="space-y-1.5">
+                              {shipmentItems.map((item, iIdx) => renderItem(item, iIdx))}
+                            </div>
+                          ) : null}
                         </div>
-                        <div className="flex items-center gap-3">
-                          <span className={`${statusInfo.bg} text-xs font-semibold px-3 py-1 rounded-full border flex items-center gap-1`}>
-                            <CheckCircle size={12} /> {statusInfo.label}
-                          </span>
-                          <span className="font-extrabold text-slate-900 dark:text-white text-base">
-                            {formatPrice(order.amount)}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  ) : (
+                    order.items && order.items.map((item, iIdx) => renderItem(item, iIdx))
+                  )}
                 </div>
               </div>
             );

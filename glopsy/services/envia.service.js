@@ -59,31 +59,38 @@ export const getShippingOptionsFromEnvia = async (items = [], destinationCiudadI
     // ignore cache errors
   }
   // Quick-path: if single package and it's associated to a known tipo_empaque id, try tipo cache
+  // (cache-only read, never blocks on a separate API call)
   const singleTipoId = (items.length === 1 && items[0].tipoId) ? items[0].tipoId : null;
   if (singleTipoId) {
     try {
-      const tipoCached = await getShippingOptionsForTipoEmpaque(singleTipoId, destinationCiudadId, tiendaId, { mode });
-      if (tipoCached) return tipoCached;
+      const cachedTipo = await getShippingOptionsForTipoEmpaqueCached(singleTipoId, destinationCiudadId, tiendaId, { mode: opts.mode || 'prueba' });
+      if (cachedTipo) return cachedTipo;
     } catch (e) {
       // ignore and continue
     }
   }
   // Determine token: prefer DB (checkout_integrations) if tiendaId provided, otherwise fall back to env var
-  let dbRow;
-  if (tiendaId) {
-    try {
-      const { rows } = await pool.query(
-        `SELECT access_token, mode FROM checkout_integrations WHERE tienda_id = $1 AND provider = 'envia' ORDER BY (mode = 'produccion') DESC LIMIT 1`,
-        [tiendaId]
-      );
-      dbRow = rows[0];
-    } catch (e) {
-      // ignore DB lookup errors, fallback to env
-      console.error('Error consultando checkout_integrations para Envia:', e.message);
-    }
-  }
+  const [dbRow, destRows] = await Promise.all([
+    tiendaId
+      ? pool.query(
+          `SELECT access_token, mode FROM checkout_integrations WHERE tienda_id = $1 AND provider = 'envia' ORDER BY (mode = 'produccion') DESC LIMIT 1`,
+          [tiendaId]
+        ).then(r => r.rows[0]).catch(e => {
+          console.error('Error consultando checkout_integrations para Envia:', e.message);
+          return null;
+        })
+      : Promise.resolve(null),
+    pool.query(
+      `SELECT c.nombre AS ciudad_nombre, c.codigo_postal, c.codigo_dane, d.nombre AS departamento_nombre
+       FROM ciudades c
+       LEFT JOIN departamentos d ON c.departamento_id = d.id
+       WHERE c.id = $1
+       LIMIT 1`,
+      [destinationCiudadId]
+    ).then(r => r.rows).catch(() => [])
+  ]);
 
-    const accessToken = dbRow?.access_token ? decryptSecret(dbRow.access_token) : (process.env.ENVIA_API_TOKEN || process.env.ENVIA_TOKEN);
+  const accessToken = dbRow?.access_token ? decryptSecret(dbRow.access_token) : (process.env.ENVIA_API_TOKEN || process.env.ENVIA_TOKEN);
   const mode = dbRow?.mode || opts.mode || 'prueba';
   if (!accessToken) {
     // No token available -> cannot query Envia
@@ -94,56 +101,50 @@ export const getShippingOptionsFromEnvia = async (items = [], destinationCiudadI
   const baseEnviaUrl = getBaseEnviaUrl(isProd);
   const apiUrl = `${baseEnviaUrl.replace(/\/$/, '')}/ship/rate`;
 
-  // Resolve destination info
-  const { rows: destRows } = await pool.query(
-    `SELECT c.nombre AS ciudad_nombre, c.codigo_postal, c.codigo_dane, d.nombre AS departamento_nombre
-     FROM ciudades c
-     LEFT JOIN departamentos d ON c.departamento_id = d.id
-     WHERE c.id = $1
-     LIMIT 1`,
-    [destinationCiudadId]
-  );
-
   const destCityCode = ensure8DigitDane(destRows[0]?.codigo_dane);
   const destState = destRows[0]?.departamento_nombre || 'Bogotá D.C.';
   const destPostalCode = destRows[0]?.codigo_postal || '110011';
 
-  // Resolve origin from first item fullment or tienda fullment
+  // Resolve origin from first item fullment or tienda fullment (parallel, never block main flow)
   let originCityCode = ensure8DigitDane('11001');
   let originState = 'Bogotá D.C.';
   let originPostalCode = '110011';
 
   // Only attempt to resolve origin from DB if the first item's id looks like a numeric product id
   if (items[0]?.id && /^\d+$/.test(String(items[0].id))) {
-    const { rows: originRows } = await pool.query(
-      `SELECT c.nombre AS ciudad_nombre, c.codigo_postal, c.codigo_dane, d.nombre AS departamento_nombre
-       FROM produc p
-       LEFT JOIN fullments f ON p.fullm_id = f.id
-       LEFT JOIN ciudades c ON f.ciudad_id = c.id
-       LEFT JOIN departamentos d ON c.departamento_id = d.id
-       WHERE p.id = $1
-       LIMIT 1`,
-      [items[0].id]
-    );
-    if (originRows[0]?.ciudad_nombre) {
-      originCityCode = ensure8DigitDane(originRows[0].codigo_dane);
-      originState = originRows[0].departamento_nombre || originState;
-      originPostalCode = originRows[0].codigo_postal || originPostalCode;
-    } else if (tiendaId) {
-      const { rows: storeFullmentRows } = await pool.query(
+    try {
+      const originRows = await pool.query(
         `SELECT c.nombre AS ciudad_nombre, c.codigo_postal, c.codigo_dane, d.nombre AS departamento_nombre
-         FROM fullments f
-         JOIN ciudades c ON f.ciudad_id = c.id
+         FROM produc p
+         LEFT JOIN fullments f ON p.fullm_id = f.id
+         LEFT JOIN ciudades c ON f.ciudad_id = c.id
          LEFT JOIN departamentos d ON c.departamento_id = d.id
-         WHERE f.tienda_id = $1 AND f.estado = 'activo'
+         WHERE p.id = $1
          LIMIT 1`,
-        [tiendaId]
-      );
-      if (storeFullmentRows[0]?.ciudad_nombre) {
-        originCityCode = ensure8DigitDane(storeFullmentRows[0].codigo_dane);
-        originState = storeFullmentRows[0].departamento_nombre || originState;
-        originPostalCode = storeFullmentRows[0].codigo_postal || originPostalCode;
+        [items[0].id]
+      ).then(r => r.rows).catch(() => []);
+      if (originRows[0]?.ciudad_nombre) {
+        originCityCode = ensure8DigitDane(originRows[0].codigo_dane);
+        originState = originRows[0].departamento_nombre || originState;
+        originPostalCode = originRows[0].codigo_postal || originPostalCode;
+      } else if (tiendaId) {
+        const storeFullmentRows = await pool.query(
+          `SELECT c.nombre AS ciudad_nombre, c.codigo_postal, c.codigo_dane, d.nombre AS departamento_nombre
+           FROM fullments f
+           JOIN ciudades c ON f.ciudad_id = c.id
+           LEFT JOIN departamentos d ON c.departamento_id = d.id
+           WHERE f.tienda_id = $1 AND f.estado = 'activo'
+           LIMIT 1`,
+          [tiendaId]
+        ).then(r => r.rows).catch(() => []);
+        if (storeFullmentRows[0]?.ciudad_nombre) {
+          originCityCode = ensure8DigitDane(storeFullmentRows[0].codigo_dane);
+          originState = storeFullmentRows[0].departamento_nombre || originState;
+          originPostalCode = storeFullmentRows[0].codigo_postal || originPostalCode;
+        }
       }
+    } catch (e) {
+      // keep defaults on origin lookup failure
     }
   }
 
@@ -179,7 +180,7 @@ export const getShippingOptionsFromEnvia = async (items = [], destinationCiudadI
 
   console.log('ENVIA: cotizando tarifas', { apiUrl, mode: isProd ? 'produccion' : 'prueba', token: maskToken(accessToken) });
 
-  const requestTimeout = Number(process.env.ENVIA_REQUEST_TIMEOUT || 10000); // ms
+  const requestTimeout = Number(process.env.ENVIA_REQUEST_TIMEOUT || 6000); // ms
   const maxRetries = Number(process.env.ENVIA_REQUEST_MAX_RETRIES || 1); // number of retries after initial attempt
 
   const doCarrierRequest = async (carrierName) => {
@@ -195,12 +196,18 @@ export const getShippingOptionsFromEnvia = async (items = [], destinationCiudadI
         return res.data?.data || res.data?.rates || res.data?.response || res.data || [];
       } catch (err) {
         lastErr = err;
+        const status = err.response?.status;
         const isTimeout = err.code === 'ECONNABORTED' || (err.message && err.message.toLowerCase().includes('timeout'));
+        // No retry on client errors (4xx) — retrying auth/validation won't help
+        if (status >= 400 && status < 500) {
+          console.log(`ENVIA: error carrier ${carrierName} (HTTP ${status}):`, err.response?.data || err.message);
+          break;
+        }
         console.log(`ENVIA: error carrier ${carrierName} attempt ${attempt + 1}/${maxRetries + 1}:`, isTimeout ? `timeout ${requestTimeout}ms` : (err.response?.data || err.message));
         attempt += 1;
         if (attempt > maxRetries) break;
         // exponential backoff before retry
-        const backoffMs = Math.min(2000, 200 * Math.pow(2, attempt));
+        const backoffMs = Math.min(1000, 150 * Math.pow(2, attempt));
         await new Promise(r => setTimeout(r, backoffMs));
       }
     }
@@ -264,7 +271,6 @@ export const getShippingOptionsFromEnvia = async (items = [], destinationCiudadI
 export const getShippingOptionsForTipoEmpaque = async (tipoId, destinationCiudadId, tiendaId, opts = {}) => {
   if (!tipoId) return null;
   const mode = opts.mode || 'prueba';
-  const isProd = String(mode).toLowerCase() === 'produccion';
   const cacheKey = `envia:tipo:${tipoId}:${tiendaId || 'global'}:${destinationCiudadId}:${mode}`;
   try {
     const cached = await redisClient.get(cacheKey).catch(() => null);
@@ -297,12 +303,12 @@ export const getShippingOptionsForTipoEmpaque = async (tipoId, destinationCiudad
     }
   const accessToken = dbRow?.access_token ? decryptSecret(dbRow.access_token) : (process.env.ENVIA_API_TOKEN || process.env.ENVIA_TOKEN);
     if (!accessToken) return null;
-    const isProdFinal = dbRow?.mode ? String(dbRow.mode).toLowerCase() === 'produccion' : isProd;
+    const isProdFinal = dbRow?.mode ? String(dbRow.mode).toLowerCase() === 'produccion' : String(mode).toLowerCase() === 'produccion';
     const baseEnviaUrl = getBaseEnviaUrl(isProdFinal);
     const apiUrl = `${baseEnviaUrl.replace(/\/$/, '')}/ship/rate`;
 
     try {
-      const res = await axios.post(apiUrl, payload, { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: Number(process.env.ENVIA_REQUEST_TIMEOUT || 10000) });
+      const res = await axios.post(apiUrl, payload, { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: Number(process.env.ENVIA_REQUEST_TIMEOUT || 6000) });
       const data = res.data?.data || res.data?.rates || res.data || [];
       // normalize to shippingOptions
       const options = Array.isArray(data) ? data.map(opt => ({ carrier: opt.carrierDescription || opt.carrier || opt.carrier_name || opt.name || opt.provider || 'envia', service: opt.serviceDescription || opt.service || opt.service_name || opt.type || opt.serviceName || 'Standard', price: Number(opt.totalprice || opt.totalPrice || opt.price || opt.rate || opt.cost || opt.total || opt.servicePrice || opt.basePrice || 0), delivery_estimate: opt.deliveryEstimate || opt.delivery_estimate || opt.days || opt.deliverytime || opt.transitTime || '---' })) : [];
@@ -316,6 +322,18 @@ export const getShippingOptionsForTipoEmpaque = async (tipoId, destinationCiudad
   } catch (err) {
     return null;
   }
+};
+
+// Cache-only read for a single tipo_empaque (no API call) — used as fast path in getShippingOptionsFromEnvia
+const getShippingOptionsForTipoEmpaqueCached = async (tipoId, destinationCiudadId, tiendaId, opts = {}) => {
+  if (!tipoId) return null;
+  const mode = opts.mode || 'prueba';
+  const cacheKey = `envia:tipo:${tipoId}:${tiendaId || 'global'}:${destinationCiudadId}:${mode}`;
+  try {
+    const cached = await redisClient.get(cacheKey).catch(() => null);
+    if (cached) return JSON.parse(cached);
+  } catch {}
+  return null;
 };
 
 // Invalidate cached rates for a given tienda (and optional global)

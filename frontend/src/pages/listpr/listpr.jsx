@@ -1,24 +1,30 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Search, Heart, MapPin, ShoppingCart, Star, Truck, ArrowUpDown, Filter, ChevronDown, X } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
+import { isLoggedIn } from '../../utils/session';
 import { SkeletonList } from '../../components/SkeletonLoader';
 import { useSEO } from '../../utils/seo';
+import { trackEvent } from '../../utils/analytics';
 import './listpr.css';
 
 export default function Listpr() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   useSEO({
     title: 'Tienda — Compra Productos en Línea',
     description:
       'Explora miles de productos de tiendas verificadas en Glopsy. Filtra por categoría, precio, envío gratis y calificación. Compra con pagos seguros en Colombia.',
     path: '/listpr',
   });
-  const [query, setQuery] = useState('');
-  const [submittedQuery, setSubmittedQuery] = useState('');
+  const [query, setQuery] = useState(() => searchParams.get('q') || '');
+  const [submittedQuery, setSubmittedQuery] = useState(() => searchParams.get('q') || '');
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState(() => {
+    const cat = searchParams.get('categoria');
+    return cat ? Number(cat) : null;
+  });
   const [offset, setOffset] = useState(0);
   const [limit] = useState(12);
   const [total, setTotal] = useState(0);
@@ -82,6 +88,21 @@ export default function Listpr() {
       localStorage.setItem('glopsy_cart', JSON.stringify(existingCart));
       window.dispatchEvent(new Event('storage'));
 
+      trackEvent('add_to_cart', {
+        currency: 'COP',
+        value: finalPrice,
+        items: [
+          {
+            item_id: String(p.public_id || p.id),
+            item_name: p.name,
+            item_brand: p.tienda_nombre || 'Glopsy',
+            item_category: p.categoria_nombre || '',
+            price: finalPrice,
+            quantity: 1,
+          },
+        ],
+      });
+
       setToastMessage('¡Producto agregado al carrito!');
       setTimeout(() => setToastMessage(''), 3000);
     } catch (err) {
@@ -108,8 +129,7 @@ export default function Listpr() {
       })
       .catch(err => console.error('Error al cargar categorías:', err));
 
-    const token = localStorage.getItem('token');
-    if (token) {
+    if (isLoggedIn()) {
       api.get('/product/favorites')
         .then(res => {
           if (res.data.ok) {
@@ -147,6 +167,21 @@ export default function Listpr() {
       if (data.ok) {
         const newProducts = data.products || [];
         setTotal(data.total || 0);
+        if (newProducts.length > 0 && !isAppend) {
+          trackEvent('view_item_list', {
+            currency: 'COP',
+            item_list_id: 'catalog',
+            item_list_name: 'Catálogo de productos',
+            items: newProducts.map(p => ({
+              item_id: String(p.public_id || p.id),
+              item_name: p.name,
+              item_brand: p.tienda_nombre || 'Glopsy',
+              item_category: p.categoria_nombre || '',
+              price: Number(p.suggested_price || p.base_price || 0),
+              quantity: 1,
+            })),
+          });
+        }
         if (isAppend) {
           setProducts(prev => {
             const existingIds = new Set(prev.map(p => p.id));
@@ -167,6 +202,7 @@ export default function Listpr() {
 
   // Carga inicial y al cambiar búsqueda, categoría, orden o filtros
   useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
     setOffset(0);
     fetchProducts(submittedQuery, selectedCategory, 0, false);
   }, [submittedQuery, selectedCategory, sortBy, priceMin, priceMax, minRating, freeShipping, fetchProducts]);
@@ -194,12 +230,15 @@ export default function Listpr() {
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     setSubmittedQuery(query);
+    trackEvent('search', {
+      search_term: query.trim(),
+      search_type: 'catalog',
+    });
   };
 
   const handleToggleFavorite = async (productId, e) => {
     e.stopPropagation();
-    const token = localStorage.getItem('token');
-    if (!token) {
+    if (!isLoggedIn()) {
       navigate('/login');
       return;
     }
@@ -214,6 +253,18 @@ export default function Listpr() {
             next.delete(productId);
           }
           return next;
+        });
+        const p = products.find(prod => Number(prod.id) === Number(productId));
+        const item = {
+          item_id: String(p?.public_id || productId),
+          item_name: p?.name || 'Producto',
+          price: Number(p?.suggested_price || p?.base_price || 0),
+          quantity: 1,
+        };
+        trackEvent(res.data.favorited ? 'add_to_wishlist' : 'remove_from_wishlist', {
+          currency: 'COP',
+          value: item.price,
+          items: [item],
         });
       }
     } catch (err) {
@@ -511,7 +562,24 @@ export default function Listpr() {
               return (
                 <div
                   key={p.id}
-                  onClick={() => navigate(`/product/${p.public_id || p.id}`)}
+                  onClick={() => {
+                    trackEvent('select_item', {
+                      currency: 'COP',
+                      item_list_id: 'catalog',
+                      item_list_name: 'Catálogo de productos',
+                      items: [
+                        {
+                          item_id: String(p.public_id || p.id),
+                          item_name: p.name,
+                          item_brand: p.tienda_nombre || 'Glopsy',
+                          item_category: p.categoria_nombre || '',
+                          price: finalPrice,
+                          quantity: 1,
+                        },
+                      ],
+                    });
+                    navigate(`/product/${p.public_id || p.id}`);
+                  }}
                   className="bg-white rounded-none shadow-sm hover:shadow-xl transition-all duration-300 border border-slate-200 flex flex-col sm:flex-row overflow-hidden group cursor-pointer relative min-h-[14rem] sm:min-h-[13rem]"
                 >
                   {/* Image Container */}

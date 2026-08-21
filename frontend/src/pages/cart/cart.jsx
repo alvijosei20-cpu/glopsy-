@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ShoppingCart, Trash2, CreditCard } from 'lucide-react';
+import { trackEvent } from '../../utils/analytics';
 import './cart.css';
 
 export default function Cart() {
@@ -11,16 +12,43 @@ export default function Cart() {
     try {
       const items = JSON.parse(localStorage.getItem('glopsy_cart') || '[]');
       setCartItems(items);
+      if (items.length > 0) {
+        trackEvent('view_cart', {
+          currency: 'COP',
+          value: items.reduce((acc, item) => acc + (Number(item.price || 0) * Number(item.quantity || 1)), 0),
+          items: items.map(item => ({
+            item_id: String(item.external_id || item.id || ''),
+            item_name: item.name || '',
+            price: Number(item.price || 0),
+            quantity: Number(item.quantity || 1),
+          })),
+        });
+      }
     } catch {
       setCartItems([]);
     }
   }, []);
 
+  const buildCartItemsPayload = (list) =>
+    list.map(item => ({
+      item_id: String(item.external_id || item.id || ''),
+      item_name: item.name || '',
+      price: Number(item.price || 0),
+      quantity: Number(item.quantity || 1),
+    }));
+
   const updateQuantity = (index, delta) => {
     const updated = [...cartItems];
     const newQty = updated[index].quantity + delta;
     if (newQty <= 0) {
-      updated.splice(index, 1);
+      const removed = updated.splice(index, 1);
+      if (removed.length > 0) {
+        trackEvent('remove_from_cart', {
+          currency: 'COP',
+          value: Number(removed[0].price || 0) * Number(removed[0].quantity || 1),
+          items: buildCartItemsPayload(removed),
+        });
+      }
     } else {
       updated[index].quantity = newQty;
     }
@@ -31,7 +59,14 @@ export default function Cart() {
 
   const removeItem = (index) => {
     const updated = [...cartItems];
-    updated.splice(index, 1);
+    const removed = updated.splice(index, 1);
+    if (removed.length > 0) {
+      trackEvent('remove_from_cart', {
+        currency: 'COP',
+        value: Number(removed[0].price || 0) * Number(removed[0].quantity || 1),
+        items: buildCartItemsPayload(removed),
+      });
+    }
     setCartItems(updated);
     localStorage.setItem('glopsy_cart', JSON.stringify(updated));
     window.dispatchEvent(new Event('storage'));
@@ -160,7 +195,14 @@ export default function Cart() {
               </div>
 
               <button
-                onClick={() => navigate('/checkout')}
+                onClick={() => {
+                  trackEvent('begin_checkout', {
+                    currency: 'COP',
+                    value: subtotal,
+                    items: buildCartItemsPayload(cartItems),
+                  });
+                  navigate('/checkout');
+                }}
                 className="w-full bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-bold py-4 rounded-2xl shadow-lg shadow-fuchsia-600/30 text-sm mb-4 transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 <CreditCard size={18} />

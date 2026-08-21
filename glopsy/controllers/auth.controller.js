@@ -16,6 +16,7 @@ import {
   verifyBiometricLoginService,
 } from '../services/auth.service.js';
 import { pool } from '../db.js';
+import { setAuthCookie, clearAuthCookie } from '../utils/cookies.js';
 import {
   cleanString,
   cleanNullableString,
@@ -86,7 +87,8 @@ export const googleCallback = async (req, res) => {
     });
 
     // El fragmento no se envía a servidores ni a cabeceras Referer.
-    res.redirect(`${process.env.FRONTEND_URL}/auth/success#token=${encodeURIComponent(token)}`);
+    setAuthCookie(res, token);
+    res.redirect(`${process.env.FRONTEND_URL}/auth/success`);
   } catch (error) {
     console.error('Error en callback de Google:', error.response?.data || error.message);
     res.status(500).json({ message: 'Error en la autenticación con Google' });
@@ -149,7 +151,8 @@ export const discordCallback = async (req, res) => {
       provider_id: discordUser.id,
     });
 
-    res.redirect(`${process.env.FRONTEND_URL}/auth/success#token=${encodeURIComponent(token)}`);
+    setAuthCookie(res, token);
+    res.redirect(`${process.env.FRONTEND_URL}/auth/success`);
   } catch (error) {
     console.error('Error en callback de Discord:', error.response?.data || error.message);
     res.status(500).json({ message: 'Error en la autenticación con Discord' });
@@ -390,6 +393,7 @@ export const deleteCard = async (req, res) => {
 export const logout = async (req, res) => {
   try {
     await revokeSession(req.auth.userId);
+    clearAuthCookie(res);
     return res.status(204).send();
   } catch (error) {
     console.error('Error al cerrar sesión:', error.message);
@@ -412,7 +416,8 @@ export const registerEmail = async (req, res) => {
       return res.status(400).json({ ok: false, message: 'La contraseña es demasiado larga (máx. 128 caracteres).' });
     }
     const { user, token } = await registerWithEmail({ email, password, name });
-    res.status(201).json({ ok: true, user, token });
+    setAuthCookie(res, token);
+    res.status(201).json({ ok: true, user });
   } catch (error) {
     console.error('Error en registro con email:', error.message);
     res.status(400).json({ ok: false, message: error.message || 'Error al registrar usuario.' });
@@ -430,7 +435,8 @@ export const loginEmail = async (req, res) => {
       return res.status(400).json({ ok: false, message: 'Correo o contraseña incorrectos.' });
     }
     const { user, token } = await loginWithEmail({ email, password });
-    res.json({ ok: true, user, token });
+    setAuthCookie(res, token);
+    res.json({ ok: true, user });
   } catch (error) {
     console.error('Error en login con email:', error.message);
     res.status(401).json({ ok: false, message: error.message || 'Correo o contraseña incorrectos.' });
@@ -547,7 +553,8 @@ export const biometricLoginVerifyController = async (req, res) => {
     const response = req.body;
     const reqOrigin = req.get('origin');
     const { user, token } = await verifyBiometricLoginService(response, reqOrigin);
-    return res.json({ ok: true, user, token });
+    setAuthCookie(res, token);
+    return res.json({ ok: true, user });
   } catch (error) {
     console.error('Error al verificar inicio de sesión biométrico:', error.message);
     return res.status(401).json({ ok: false, message: error.message || 'Autenticación biométrica fallida.' });

@@ -7,14 +7,7 @@ export default function AuthSuccess() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const token = new URLSearchParams(window.location.hash.slice(1)).get('token');
-
-    if (!token) {
-      navigate('/login?error=oauth', { replace: true });
-      return;
-    }
-
-    login(token)
+    login()
       .then(() => navigate('/panel', { replace: true }))
       .catch(() => navigate('/login?error=oauth', { replace: true }));
   }, [login, navigate]);

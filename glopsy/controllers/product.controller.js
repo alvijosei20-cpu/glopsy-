@@ -1,5 +1,5 @@
 import { obtenerProductoPorId } from '../services/mastershopService.js';
-import { saveProductForUser, getProductsForUser, searchQueryProducts, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, cancelOrderForUser, updateOrderAddressForUser, getProductReviews, getUserReviewStatus, addProductReview, updateProductReview, deleteProductReview } from '../services/product.service.js';
+import { saveProductForUser, getProductsForUser, searchQueryProducts, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, cancelOrderForUser, updateOrderAddressForUser, getProductReviews, getUserReviewStatus, getOrderReviewsStatus, addProductReview, updateProductReview, deleteProductReview } from '../services/product.service.js';
 import { validatePaymentBiometricNonce } from '../services/auth.service.js';
 import { pool } from '../db.js';
 import {
@@ -41,9 +41,10 @@ const requirePaymentBiometric = async (userId, biometricNonce) => {
 
 export const getProductById = async (req, res) => {
   const productId = cleanString(req.params.id, { maxLength: 100 });
+  const ciudad = cleanString(req.query.ciudad, { maxLength: 100 }) || null;
 
   try {
-    const producto = await getProductByPublicId(productId);
+    const producto = await getProductByPublicId(productId, ciudad);
     res.json({
       ok: true,
       product: producto,
@@ -160,7 +161,8 @@ export const getFavoritesProductsController = async (req, res) => {
     if (!userId) {
       return res.status(401).json({ ok: false, message: 'No autorizado' });
     }
-    const products = await getFavoriteProductsDetails(userId);
+    const ciudad = cleanString(req.query.ciudad, { maxLength: 100 }) || null;
+    const products = await getFavoriteProductsDetails(userId, ciudad);
     res.json({ ok: true, products });
   } catch (error) {
     console.error('Error al obtener productos favoritos:', error.message);
@@ -363,6 +365,29 @@ export const getOrderByHashController = async (req, res) => {
   } catch (error) {
     console.error('Error al obtener detalle de orden por hash:', error.message);
     res.status(500).json({ ok: false, message: 'Error al obtener el detalle del pedido.' });
+  }
+};
+
+export const getOrderReviewsStatusController = async (req, res) => {
+  try {
+    const hash = cleanString(req.params.hash, { maxLength: 100 });
+    if (!hash) {
+      return res.status(400).json({ ok: false, message: 'Hash de orden requerido.' });
+    }
+    const userId = req.auth?.userId || null;
+    const guestHash = cleanString(req.query.guestHash || req.headers['x-guest-hash'], { maxLength: 64 }) || null;
+    if (!userId && !guestHash) {
+      return res.status(401).json({ ok: false, message: 'Autenticación requerida para ver el pedido.' });
+    }
+    const order = await getOrderByHash(hash, userId, guestHash);
+    if (!order) {
+      return res.status(404).json({ ok: false, message: 'Pedido no encontrado.' });
+    }
+    const reviewStatus = userId ? await getOrderReviewsStatus(order.id, userId) : {};
+    res.json({ ok: true, review_status: reviewStatus });
+  } catch (error) {
+    console.error('Error al obtener estado de reseñas de la orden:', error.message);
+    res.status(500).json({ ok: false, message: 'Error al obtener el estado de reseñas del pedido.' });
   }
 };
 

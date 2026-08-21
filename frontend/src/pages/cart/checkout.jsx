@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { ShoppingCart, ArrowLeft, ShieldCheck, Phone, Home, Check, ChevronDown, ChevronUp, Truck, Package, DollarSign, CreditCard } from 'lucide-react';
 import api from '../../services/api';
+import { isLoggedIn } from '../../utils/session';
 import { requireBiometricPayment } from '../../utils/webauthn';
+import { trackEvent } from '../../utils/analytics';
 import './cart.css';
 
 const fallbackDepartamentos = [
@@ -51,8 +53,7 @@ export default function Checkout() {
   const [loadingSavedCard, setLoadingSavedCard] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
+    if (isLoggedIn()) {
       api.get('/auth/cards')
         .then(res => {
           if (res.data.ok && Array.isArray(res.data.cards)) {
@@ -64,8 +65,7 @@ export default function Checkout() {
   }, []);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) return;
+    if (!isLoggedIn()) return;
     api.get('/auth/checkout-defaults')
       .then(res => {
         if (res.data.ok && res.data.defaults) {
@@ -122,13 +122,23 @@ export default function Checkout() {
                   reject(bioErr);
                   return;
                 }
+                trackEvent('add_payment_info', {
+                  currency: 'COP',
+                  value: total,
+                  items: cartItemsConPrecio.map(item => ({
+                    item_id: String(item.external_id || item.id || ''),
+                    item_name: item.name || '',
+                    price: Number(item.price || 0),
+                    quantity: Number(item.quantity || 1),
+                  })),
+                });
                 api.post('/product/process-mp-payment', {
                   formData,
                   preferenceId: preferenceData.preferenceId,
                   guestHash,
                   shipping_cost: shippingCost,
                   shipping_payload: { grouped: shipmentsGrouped },
-                  items: cartItems,
+                  items: cartItemsConPrecio,
                   biometric_nonce: biometricNonce,
                   customer_info: {
                     departamento_id: selectedDepartamentoId,
@@ -142,6 +152,7 @@ export default function Checkout() {
                     setCheckoutSuccess(true);
                     localStorage.removeItem('glopsy_cart');
                     window.dispatchEvent(new Event('storage'));
+                    firePurchase(res.data.payment?.id, null, total);
                     resolve();
                   } else {
                     alert(res.data.message || 'Error en el pago');
@@ -185,6 +196,12 @@ export default function Checkout() {
       setCheckoutSuccess(true);
       localStorage.removeItem('glopsy_cart');
       window.dispatchEvent(new Event('storage'));
+      try {
+        const snapshot = JSON.parse(sessionStorage.getItem('glopsy_checkout_snapshot') || 'null');
+        if (snapshot) {
+          firePurchase(searchParams.get('collection_id') || null, snapshot.items, snapshot.value);
+        }
+      } catch {}
     }
 
     try {
@@ -232,7 +249,7 @@ export default function Checkout() {
       setLoadingShipping(true);
       try {
         const res = await api.post('/product/calculate-shipping', {
-          items: cartItems,
+                  items: cartItemsConPrecio,
           destination_ciudad_id: Number(selectedCiudadId)
         });
         if (res.data.ok) {
@@ -262,8 +279,36 @@ export default function Checkout() {
     return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(num);
   };
 
-  const subtotal = cartItems.reduce((acc, item) => acc + (Number(item.price || 0) * Number(item.quantity || 1)), 0);
+  const backendPriceOf = (item) => {
+    const pi = perItem.find(x => String(x.itemId) === String(item.id));
+    return pi && pi.price != null ? Number(pi.price) : null;
+  };
+  const cartItemsConPrecio = cartItems.map(item => {
+    const bp = backendPriceOf(item);
+    return bp != null ? { ...item, price: bp } : item;
+  });
+  const subtotal = cartItemsConPrecio.reduce((acc, item) => acc + (Number(item.price || 0) * Number(item.quantity || 1)), 0);
   const total = subtotal + Number(shippingCost || 0);
+
+  const checkoutItemsForGA = () =>
+    cartItemsConPrecio.map(item => ({
+      item_id: String(item.external_id || item.id || ''),
+      item_name: item.name || '',
+      price: Number(item.price || 0),
+      quantity: Number(item.quantity || 1),
+    }));
+
+  const firePurchase = (transactionId, items, value) => {
+    const txnId = String(transactionId || `glopsy_${Date.now()}`);
+    trackEvent('purchase', {
+      transaction_id: txnId,
+      currency: 'COP',
+      value,
+      shipping: Number(shippingCost || 0),
+      items: items || checkoutItemsForGA(),
+    });
+    sessionStorage.removeItem('glopsy_checkout_snapshot');
+  };
 
   const handleCheckout = async (e) => {
     e.preventDefault();
@@ -276,10 +321,17 @@ export default function Checkout() {
       return;
     }
 
+    const checkoutItems = cartItemsConPrecio.map(item => ({
+      item_id: String(item.external_id || item.id || ''),
+      item_name: item.name || '',
+      price: Number(item.price || 0),
+      quantity: Number(item.quantity || 1),
+    }));
+
     setLoadingCheckout(true);
     try {
       const res = await api.post('/product/create-preference', {
-        items: cartItems,
+                  items: cartItemsConPrecio,
         shipping_cost: shippingCost,
         customer_info: {
           departamento_id: selectedDepartamentoId,
@@ -296,6 +348,16 @@ export default function Checkout() {
           publicKey: res.data.public_key
         });
         setShowBricks(true);
+        sessionStorage.setItem('glopsy_checkout_snapshot', JSON.stringify({
+          items: checkoutItems,
+          value: total,
+          shipping: shippingCost,
+        }));
+        trackEvent('begin_checkout', {
+          currency: 'COP',
+          value: total,
+          items: checkoutItems,
+        });
       } else {
         alert('No se pudo iniciar la preferencia de pago con Mercado Pago.');
       }
@@ -327,7 +389,7 @@ export default function Checkout() {
       }
       const res = await api.post('/product/process-saved-card-payment', {
         card_id: cardId,
-        items: cartItems,
+                  items: cartItemsConPrecio,
         shipping_cost: shippingCost,
         shipping_payload: { grouped: shipmentsGrouped },
         biometric_nonce: bio.nonce || null,
@@ -341,9 +403,21 @@ export default function Checkout() {
       });
 
       if (res.data.ok) {
+        trackEvent('add_payment_info', {
+          currency: 'COP',
+          value: total,
+          payment_type: 'saved_card',
+          items: cartItemsConPrecio.map(item => ({
+            item_id: String(item.external_id || item.id || ''),
+            item_name: item.name || '',
+            price: Number(item.price || 0),
+            quantity: Number(item.quantity || 1),
+          })),
+        });
         setCheckoutSuccess(true);
         localStorage.removeItem('glopsy_cart');
         window.dispatchEvent(new Event('storage'));
+        firePurchase(res.data.payment?.id, null, total);
       } else {
         alert(res.data.message || 'Error en el pago 1-clic');
       }

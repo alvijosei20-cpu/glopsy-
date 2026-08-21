@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 
 import { apiLimiter } from './middlewares/limiters.js';
 import productRoutes from './routes/product.routes.js';
@@ -36,6 +37,7 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json({ limit: '2mb' }));
+app.use(cookieParser());
 
 // Registro de Módulos de Rutas
 app.use('/api/product', productRoutes);

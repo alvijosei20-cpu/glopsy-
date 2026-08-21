@@ -58,9 +58,9 @@ export const Login = () => {
       if (!window.PublicKeyCredential) {
         if (email && email.trim()) {
           const resVerify = await api.post('/auth/biometric/login-verify', { simulated: true, email: email.trim() });
-          if (resVerify.data.ok && resVerify.data.token) {
+          if (resVerify.data.ok) {
             localStorage.setItem('glopsy_biometric_login', 'true');
-            await login(resVerify.data.token);
+            await login();
             navigate('/panel', { replace: true });
             return;
           }
@@ -105,9 +105,9 @@ export const Login = () => {
       };
 
       const resVerify = await api.post('/auth/biometric/login-verify', authResponse);
-      if (resVerify.data.ok && resVerify.data.token) {
+      if (resVerify.data.ok) {
         localStorage.setItem('glopsy_biometric_login', 'true');
-        await login(resVerify.data.token);
+        await login();
         navigate('/panel', { replace: true });
       } else {
         if (isAuto) {
@@ -125,9 +125,9 @@ export const Login = () => {
       if (email && email.trim()) {
         try {
           const resVerify = await api.post('/auth/biometric/login-verify', { simulated: true, email: email.trim() });
-          if (resVerify.data.ok && resVerify.data.token) {
+          if (resVerify.data.ok) {
             localStorage.setItem('glopsy_biometric_login', 'true');
-            await login(resVerify.data.token);
+            await login();
             navigate('/panel', { replace: true });
             return;
           }
@@ -155,8 +155,8 @@ export const Login = () => {
       const payload = isRegister ? { email, password, name } : { email, password };
       const res = await api.post(endpoint, payload);
 
-      if (res.data.ok && res.data.token) {
-        await login(res.data.token);
+      if (res.data.ok) {
+        await login();
         navigate('/panel', { replace: true });
       } else {
         setError(res.data.message || 'Error de autenticación');

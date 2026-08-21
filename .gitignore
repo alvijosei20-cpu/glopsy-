@@ -3,3 +3,6 @@ node_modules/
 *.deb
 
 dump.rdb
+personal/finnhub-trades/sem_estado.json
+personal/finnhub-trades/server_test.log
+personal/finnhub-trades/__pycache__/

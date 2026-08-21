@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getProductById, saveProduct, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, createPreferenceController, processMpPaymentController, processSavedCardPaymentController, getTiposEmpaqueController, getUserComprasController, searchOrdersController, getOrderByHashController, recordPurchaseController, cancelOrderController, updateOrderAddressController, getProductReviewsController, getUserReviewController, addReviewController, updateReviewController, deleteReviewController } from '../controllers/product.controller.js';
+import { getProductById, saveProduct, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, createPreferenceController, processMpPaymentController, processSavedCardPaymentController, getTiposEmpaqueController, getUserComprasController, searchOrdersController, getOrderByHashController, getOrderReviewsStatusController, recordPurchaseController, cancelOrderController, updateOrderAddressController, getProductReviewsController, getUserReviewController, addReviewController, updateReviewController, deleteReviewController } from '../controllers/product.controller.js';
 import { requireAuth, optionalAuth } from '../middlewares/auth.js';
 import { tiendaLimiter, heavyLimiter } from '../middlewares/limiters.js';
 
@@ -27,6 +27,7 @@ router.get('/mine', requireAuth, getMyProducts);
 router.get('/compras', optionalAuth, getUserComprasController);
 router.get('/compras/buscar', optionalAuth, searchOrdersController);
 router.get('/compras/hash/:hash', optionalAuth, getOrderByHashController);
+router.get('/compras/hash/:hash/reviews', optionalAuth, getOrderReviewsStatusController);
 router.patch('/compras/:hash/cancel', optionalAuth, cancelOrderController);
 router.patch('/compras/:hash/address', optionalAuth, updateOrderAddressController);
 router.get('/tipos-empaque', getTiposEmpaqueController);

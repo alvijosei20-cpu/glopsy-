@@ -1,10 +1,17 @@
 import jwt from 'jsonwebtoken';
 import { redisClient } from '../services/redis.service.js';
+import { AUTH_COOKIE } from '../utils/cookies.js';
+
+const extractToken = (req) => {
+  const [scheme, headerToken] = (req.headers.authorization || '').split(' ');
+  if (scheme === 'Bearer' && headerToken) return headerToken;
+  return req.cookies?.[AUTH_COOKIE] || null;
+};
 
 export const requireAuth = async (req, res, next) => {
-  const [scheme, token] = (req.headers.authorization || '').split(' ');
+  const token = extractToken(req);
 
-  if (scheme !== 'Bearer' || !token) {
+  if (!token) {
     return res.status(401).json({ ok: false, message: 'Autenticación requerida.' });
   }
 
@@ -27,9 +34,9 @@ export const requireAuth = async (req, res, next) => {
 };
 
 export const optionalAuth = async (req, res, next) => {
-  const [scheme, token] = (req.headers.authorization || '').split(' ');
+  const token = extractToken(req);
 
-  if (scheme === 'Bearer' && token) {
+  if (token) {
     try {
       const payload = jwt.verify(token, process.env.JWT_SECRET);
       req.auth = payload;

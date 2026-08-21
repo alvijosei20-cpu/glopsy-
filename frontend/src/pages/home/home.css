@@ -1,1 +1,163 @@
+@keyframes homeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
 
+.home-slide-enter {
+  animation: homeSlideIn 500ms ease both;
+}
+
+@keyframes homeFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.home-fade-in {
+  animation: homeFadeIn 400ms ease both;
+}
+
+.home-stagger-1 {
+  animation: homeSlideIn 450ms ease 60ms both;
+}
+
+.home-stagger-2 {
+  animation: homeSlideIn 450ms ease 160ms both;
+}
+
+.home-stagger-3 {
+  animation: homeSlideIn 450ms ease 260ms both;
+}
+
+.home-stagger-4 {
+  animation: homeSlideIn 450ms ease 360ms both;
+}
+
+@keyframes homeBgShift {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.home-bg-animated {
+  background-size: 200% 200%;
+  animation: homeBgShift 9s ease-in-out infinite;
+}
+
+@keyframes homeBlobFloat {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  33% {
+    transform: translate3d(24px, -20px, 0) scale(1.12);
+  }
+  66% {
+    transform: translate3d(-18px, 16px, 0) scale(0.94);
+  }
+}
+
+.home-blob {
+  animation: homeBlobFloat 8s ease-in-out infinite;
+}
+
+.home-blob-slow {
+  animation: homeBlobFloat 12s ease-in-out infinite reverse;
+}
+
+@keyframes homeFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.home-fade-up {
+  animation: homeFadeUp 400ms ease both;
+}
+
+@keyframes homeFadeLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes homeFadeRight {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes homePop {
+  0% {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.home-fade-left {
+  animation: homeFadeLeft 400ms ease both;
+}
+
+.home-fade-right {
+  animation: homeFadeRight 400ms ease both;
+}
+
+.home-pop {
+  animation: homePop 400ms ease both;
+}
+
+.home-no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.home-no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-slide-enter,
+  .home-fade-in,
+  .home-stagger-1,
+  .home-stagger-2,
+  .home-stagger-3,
+  .home-stagger-4 {
+    animation: none;
+  }
+
+  .home-bg-animated,
+  .home-blob,
+  .home-blob-slow {
+    animation: none;
+  }
+}

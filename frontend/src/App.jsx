@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import './App.css';
 import Navbar from './components/navbar';
 
@@ -7,6 +7,7 @@ import { LoadingScreen, ConfiguringScreen } from './components/LoadingScreen';
 import ErrorBoundary from './components/ErrorBoundary';
 // 1. IMPORTAR useAuth JUNTO A AuthProvider
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { loadGA, trackPageView } from './utils/analytics';
 
 const Home = lazy(() => import('./pages/home/home'));
 const Cart = lazy(() => import('./pages/cart/cart'));
@@ -53,9 +54,20 @@ function MainApp() {
   const [showSplash, setShowSplash] = useState(false);
   const [loading, setLoading] = useState(true);
   const { user, isLoading } = useAuth();
+  const location = useLocation();
   const [locationReady, setLocationReady] = useState(
     sessionStorage.getItem('location_confirmed') === 'true'
   );
+
+  useEffect(() => {
+    loadGA();
+  }, []);
+
+  useEffect(() => {
+    if (!locationReady) return;
+    const t = setTimeout(() => trackPageView(location.pathname + location.search), 300);
+    return () => clearTimeout(t);
+  }, [location, locationReady]);
 
   useEffect(() => {
     const checkLocation = () => {

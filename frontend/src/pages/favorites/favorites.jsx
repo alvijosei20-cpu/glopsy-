@@ -3,6 +3,7 @@ import { Heart, ShoppingBag, ArrowLeft, Star, MapPin, Store as StoreIcon, Sparkl
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../../services/api';
 import { SkeletonList } from '../../components/SkeletonLoader';
+import { trackEvent } from '../../utils/analytics';
 
 export default function Favorites() {
   const navigate = useNavigate();
@@ -13,9 +14,26 @@ export default function Favorites() {
   useEffect(() => {
     const fetchFavorites = async () => {
       try {
-        const res = await api.get('/product/favorite-products');
+        const userCity = sessionStorage.getItem('location_city') || 'Bogotá D.C.';
+        const res = await api.get('/product/favorite-products', { params: { ciudad: userCity } });
         if (res.data.ok) {
-          setProducts(res.data.products || []);
+          const favs = res.data.products || [];
+          setProducts(favs);
+          if (favs.length > 0) {
+            trackEvent('view_item_list', {
+              currency: 'COP',
+              item_list_id: 'wishlist',
+              item_list_name: 'Favoritos',
+              items: favs.map(p => ({
+                item_id: String(p.public_id || p.id),
+                item_name: p.name,
+                item_brand: p.tienda_nombre || 'Glopsy',
+                item_category: p.categoria_nombre || '',
+                price: Number(p.suggested_price || p.base_price || 0),
+                quantity: 1,
+              })),
+            });
+          }
         }
       } catch (err) {
         console.error('Error al cargar productos favoritos:', err);
@@ -56,6 +74,19 @@ export default function Favorites() {
         setProducts(prev => prev.filter(p => p.id !== productId));
         setToastMessage('Producto eliminado de favoritos');
         setTimeout(() => setToastMessage(''), 3000);
+        const p = products.find(prod => Number(prod.id) === Number(productId));
+        trackEvent('remove_from_wishlist', {
+          currency: 'COP',
+          value: Number(p?.suggested_price || p?.base_price || 0),
+          items: [
+            {
+              item_id: String(p?.public_id || productId),
+              item_name: p?.name || 'Producto',
+              price: Number(p?.suggested_price || p?.base_price || 0),
+              quantity: 1,
+            },
+          ],
+        });
       }
     } catch (err) {
       console.error('Error al quitar de favoritos:', err);
@@ -90,6 +121,23 @@ export default function Favorites() {
       }
       localStorage.setItem('glopsy_cart', JSON.stringify(existingCart));
       window.dispatchEvent(new Event('storage'));
+
+      trackEvent('add_to_cart', {
+        currency: 'COP',
+        value: finalPrice,
+        item_list_id: 'wishlist',
+        item_list_name: 'Favoritos',
+        items: [
+          {
+            item_id: String(p.public_id || p.id),
+            item_name: p.name,
+            item_brand: p.tienda_nombre || 'Glopsy',
+            item_category: p.categoria_nombre || '',
+            price: finalPrice,
+            quantity: 1,
+          },
+        ],
+      });
 
       setToastMessage('¡Producto agregado al carrito!');
       setTimeout(() => setToastMessage(''), 3000);
@@ -174,7 +222,24 @@ export default function Favorites() {
             return (
               <div
                 key={p.id}
-                onClick={() => navigate(`/product/${p.public_id || p.id}`)}
+                onClick={() => {
+                  trackEvent('select_item', {
+                    currency: 'COP',
+                    item_list_id: 'wishlist',
+                    item_list_name: 'Favoritos',
+                    items: [
+                      {
+                        item_id: String(p.public_id || p.id),
+                        item_name: p.name,
+                        item_brand: p.tienda_nombre || 'Glopsy',
+                        item_category: p.categoria_nombre || '',
+                        price: price,
+                        quantity: 1,
+                      },
+                    ],
+                  });
+                  navigate(`/product/${p.public_id || p.id}`);
+                }}
                 className="group bg-white rounded-2xl border border-slate-100 hover:border-slate-200 p-3 sm:p-4 shadow-2xs hover:shadow-md transition-all duration-200 flex flex-row items-center gap-3.5 sm:gap-5 cursor-pointer relative"
               >
                 {/* Product Image Thumbnail */}

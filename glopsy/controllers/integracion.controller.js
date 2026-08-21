@@ -75,11 +75,13 @@ export const createIntegracionController = ({
       });
     } catch (error) {
       console.error('Error al consultar producto en integración:', error.message);
-      const status = error.response?.status || 400;
-      return res.status(status).json({
-        ok: false,
-        message: error.response?.data?.message || error.message || 'No fue posible consultar el producto.',
-      });
+      const externalStatus = error.response?.status;
+      const isAuthError = externalStatus === 401 || externalStatus === 403;
+      const status = isAuthError ? 400 : externalStatus || 400;
+      const message = isAuthError
+        ? 'La API key de la integración es inválida o está expirada. Verifícala en Mi Tienda.'
+        : error.response?.data?.message || error.message || 'No fue posible consultar el producto.';
+      return res.status(status).json({ ok: false, message });
     }
   },
 });

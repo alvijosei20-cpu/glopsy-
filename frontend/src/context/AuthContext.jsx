@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import api from '../services/api';
+import { isLoggedIn } from '../utils/session';
 
 const AuthContext = createContext(null);
 
@@ -10,7 +11,7 @@ export const AuthProvider = ({ children }) => {
   const [tiendaLoading, setTiendaLoading] = useState(false);
 
   const fetchUserStore = useCallback(async () => {
-    if (!localStorage.getItem('token')) {
+    if (!isLoggedIn()) {
       setTienda(null);
       return null;
     }
@@ -36,7 +37,7 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const restoreSession = async () => {
-      if (!localStorage.getItem('token')) {
+      if (!isLoggedIn()) {
         setIsLoading(false);
         return;
       }
@@ -44,7 +45,6 @@ export const AuthProvider = ({ children }) => {
       try {
         await fetchCurrentUser();
       } catch {
-        localStorage.removeItem('token');
         localStorage.removeItem('user');
       } finally {
         setIsLoading(false);
@@ -59,8 +59,7 @@ export const AuthProvider = ({ children }) => {
     else setTienda(null);
   }, [user, fetchUserStore]);
 
-  const login = useCallback(async (token) => {
-    localStorage.setItem('token', token);
+  const login = useCallback(async () => {
     const u = await fetchCurrentUser();
     const guestHash = localStorage.getItem('glopsy_guest_hash');
     if (guestHash) {
@@ -78,7 +77,6 @@ export const AuthProvider = ({ children }) => {
       await api.post('/auth/logout');
     } finally {
       // El cierre local siempre se completa incluso si la red falla.
-      localStorage.removeItem('token');
       localStorage.removeItem('user');
       setUser(null);
       setTienda(null);

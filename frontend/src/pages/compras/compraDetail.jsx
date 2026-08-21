@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Package, ArrowLeft, MapPin, Clock, CheckCircle, Truck, Phone, XCircle, Sparkles, ChevronDown } from 'lucide-react';
+import { Package, ArrowLeft, MapPin, Clock, CheckCircle, Truck, Phone, XCircle, Sparkles, ChevronDown, Star } from 'lucide-react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -16,6 +16,9 @@ export default function CompraDetail() {
   const [editingAddr, setEditingAddr] = useState(false);
   const [newDireccion, setNewDireccion] = useState('');
   const [newTelefono, setNewTelefono] = useState('');
+  const [reviewStatus, setReviewStatus] = useState(null);
+  const [reviewDraft, setReviewDraft] = useState({});
+  const [submittingReview, setSubmittingReview] = useState(false);
 
   useEffect(() => {
     const fetchOrder = async () => {
@@ -29,6 +32,14 @@ export default function CompraDetail() {
           setOrder(found);
           setNewDireccion(found.direccion || '');
           setNewTelefono(found.telefono || '');
+          if (user) {
+            try {
+              const revRes = await api.get(`/product/compras/hash/${hash}/reviews`, {
+                headers: guestHash ? { 'x-guest-hash': guestHash } : {}
+              });
+              if (revRes.data.ok) setReviewStatus(revRes.data.review_status || {});
+            } catch {}
+          }
         }
       } catch (err) {
         console.error('Error al cargar detalle de orden:', err);
@@ -37,7 +48,7 @@ export default function CompraDetail() {
       }
     };
     fetchOrder();
-  }, [hash]);
+  }, [hash, user]);
 
   const addNotification = (title) => {
     try {
@@ -111,6 +122,98 @@ export default function CompraDetail() {
     }
   };
 
+  const getShipmentTracking = (shipment) => {
+    if (shipment.tracking_code) return shipment.tracking_code;
+    try {
+      const p = typeof shipment.payload === 'string' ? JSON.parse(shipment.payload) : shipment.payload;
+      const src = p?.webhook || p;
+      return src?.guide || src?.tracking || src?.waybill || src?.guide_number || src?.guideNumber || src?.tracking_id || src?.trackingId || p?.guide || p?.tracking || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const getShipmentTrackingUrl = (shipment) => {
+    if (shipment.shipping_url) return shipment.shipping_url;
+    try {
+      const p = typeof shipment.payload === 'string' ? JSON.parse(shipment.payload) : shipment.payload;
+      const src = p?.webhook || p;
+      return src?.shipping_url || src?.tracking_url || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const isShipmentDelivered = (status) => {
+    const s = (status || '').toLowerCase();
+    return ['entregado', 'delivered', 'recibido', 'completado', 'complete', 'confirmed'].some(k => s.includes(k));
+  };
+
+  const handleSubmitReview = async (item) => {
+    if (!user) {
+      alert('Debes iniciar sesión para calificar productos.');
+      navigate('/login');
+      return;
+    }
+    const draft = reviewDraft[item.product_id] || {};
+    const rating = Number(draft.rating);
+    if (!rating || rating < 1 || rating > 5) {
+      alert('Selecciona una calificación de 1 a 5 estrellas.');
+      return;
+    }
+    setSubmittingReview(true);
+    try {
+      const existing = reviewStatus?.[item.product_id]?.review;
+      const res = existing
+        ? await api.put(`/product/${item.product_id}/review`, {
+            rating,
+            comment: draft.comment || ''
+          })
+        : await api.post(`/product/${item.product_id}/review`, {
+            rating,
+            comment: draft.comment || ''
+          });
+      if (res.data.ok) {
+        setReviewStatus(prev => ({
+          ...prev,
+          [String(item.product_id)]: {
+            delivered: true,
+            canReview: false,
+            review: res.data.review
+          }
+        }));
+        setReviewDraft(prev => ({ ...prev, [item.product_id]: { rating, comment: draft.comment || '' } }));
+        setToastMessage(existing ? 'Calificación actualizada' : '¡Gracias por tu calificación!');
+        setTimeout(() => setToastMessage(''), 3000);
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || 'Error al enviar la calificación.');
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  const renderStars = (item) => {
+    const current = reviewDraft[item.product_id]?.rating || 0;
+    return (
+      <div className="flex items-center gap-1">
+        {[1, 2, 3, 4, 5].map((star) => (
+          <button
+            key={star}
+            onClick={() => setReviewDraft(prev => ({ ...prev, [item.product_id]: { ...prev[item.product_id], rating: star } }))}
+            className="cursor-pointer p-0.5 transition-transform hover:scale-125"
+            aria-label={`${star} estrellas`}
+          >
+            <Star
+              size={20}
+              className={`${star <= current ? 'text-amber-400 fill-amber-400' : 'text-slate-300 dark:text-zinc-600'}`}
+            />
+          </button>
+        ))}
+      </div>
+    );
+  };
+
   const getProductImage = (p) => {
     try {
       if (p.image && typeof p.image === 'string' && p.image.startsWith('http')) return p.image;
@@ -149,6 +252,23 @@ export default function CompraDetail() {
       return { label: 'Cancelada', bg: 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800' };
     }
     return { label: st || 'Aprobada', bg: 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' };
+  };
+
+  const getShipmentStatusBadge = (st) => {
+    const s = (st || '').toLowerCase();
+    if (s.includes('delivered') || s.includes('entregado') || s.includes('recibido') || s.includes('complete')) {
+      return { label: 'Entregado', bg: 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' };
+    }
+    if (s.includes('cancelled') || s.includes('cancelada') || s.includes('failed') || s.includes('fallido') || s.includes('rejected')) {
+      return { label: 'Cancelado', bg: 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800' };
+    }
+    if (s.includes('in_transit') || s.includes('transito') || s.includes('tránsito') || s.includes('route') || s.includes('viaje')) {
+      return { label: 'En tránsito', bg: 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800' };
+    }
+    if (s.includes('shipped') || s.includes('despachado') || s.includes('recogido') || s.includes('guia') || s.includes('generada') || s.includes('generated') || s.includes('created')) {
+      return { label: 'Despachado', bg: 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800' };
+    }
+    return { label: st || 'Pendiente', bg: 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800' };
   };
 
   if (loading) {
@@ -319,10 +439,46 @@ export default function CompraDetail() {
                   <span className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                     <Truck size={14} className="text-fuchsia-600 dark:text-fuchsia-400" /> Envío #{shipment.shipment_number || (sIdx + 1)} — {shipment.carrier || 'Estándar'} ({shipment.service || 'Estándar'})
                   </span>
-                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
-                    Costo: {formatPrice(shipment.shipping_cost)}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                      Costo: {formatPrice(shipment.shipping_cost)}
+                    </span>
+                    {(() => {
+                      const shipStatus = getShipmentStatusBadge(shipment.fulfillment_status);
+                      return (
+                        <span className={`${shipStatus.bg} text-[10px] sm:text-xs font-semibold px-2.5 py-1 rounded-full border flex items-center gap-1`}>
+                          <CheckCircle size={11} /> {shipStatus.label}
+                        </span>
+                      );
+                    })()}
+                  </div>
                 </div>
+
+                {(() => {
+                  const tracking = getShipmentTracking(shipment);
+                  const trackingUrl = getShipmentTrackingUrl(shipment);
+                  if (!tracking && !trackingUrl) return null;
+                  return (
+                    <div className="flex items-center gap-2 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
+                      {tracking && (
+                        <span className="font-mono bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 px-2 py-0.5 rounded">
+                          Guía: {tracking}
+                        </span>
+                      )}
+                      {trackingUrl && (
+                        <a
+                          href={trackingUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-fuchsia-600 dark:text-fuchsia-400 font-semibold hover:underline"
+                        >
+                          Rastrear envío →
+                        </a>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <div className="space-y-2">
                   {shipmentItems.map((item, iIdx) => {
@@ -354,6 +510,76 @@ export default function CompraDetail() {
                     );
                   })}
                 </div>
+
+                {user && isShipmentDelivered(shipment.fulfillment_status) && (
+                  <div className="border-t border-slate-200/70 dark:border-zinc-800 pt-3">
+                    <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 mb-3">
+                      <Star size={14} className="text-amber-400 fill-amber-400" /> Califica los productos de este envío
+                    </h4>
+                    <div className="space-y-3">
+                      {shipmentItems.map((item, rIdx) => {
+                        const st = reviewStatus?.[item.product_id];
+                        const draft = reviewDraft[item.product_id] || {};
+                        return (
+                          <div key={item.id || rIdx} className="flex flex-col sm:flex-row sm:items-center gap-2 justify-between bg-white dark:bg-zinc-800/60 border border-slate-200/60 dark:border-zinc-700/50 rounded-xl p-3">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <img
+                                src={getProductImage(item)}
+                                alt={item.product_name}
+                                className="w-9 h-9 rounded-lg object-cover border border-slate-200 dark:border-zinc-700"
+                                onError={(e) => {
+                                  e.target.src = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60';
+                                }}
+                              />
+                              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate">{item.product_name}</span>
+                            </div>
+
+                            {st?.review ? (
+                              <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-0.5">
+                                  {[1, 2, 3, 4, 5].map((star) => (
+                                    <Star
+                                      key={star}
+                                      size={14}
+                                      className={star <= st.review.rating ? 'text-amber-400 fill-amber-400' : 'text-slate-300 dark:text-zinc-600'}
+                                    />
+                                  ))}
+                                </div>
+                                <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[160px]">
+                                  {st.review.comment || 'Calificado'}
+                                </span>
+                                <button
+                                  onClick={() => setReviewDraft(prev => ({ ...prev, [item.product_id]: { rating: st.review.rating, comment: st.review.comment || '' } }))}
+                                  className="text-[11px] font-semibold text-fuchsia-600 dark:text-fuchsia-400 hover:underline cursor-pointer"
+                                >
+                                  Editar
+                                </button>
+                              </div>
+                            ) : st?.canReview ? (
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                {renderStars(item)}
+                                <input
+                                  type="text"
+                                  placeholder="Comentario (opcional)"
+                                  value={draft.comment || ''}
+                                  onChange={(e) => setReviewDraft(prev => ({ ...prev, [item.product_id]: { ...prev[item.product_id], comment: e.target.value } }))}
+                                  className="w-full sm:w-56 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-800 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
+                                />
+                                <button
+                                  onClick={() => handleSubmitReview(item)}
+                                  disabled={submittingReview}
+                                  className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
+                                >
+                                  {submittingReview ? 'Enviando...' : 'Enviar'}
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })

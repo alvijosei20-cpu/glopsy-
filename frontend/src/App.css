@@ -13,7 +13,7 @@ html.dark .app-shell {
   width: min(100% - 2rem, 80rem);
   min-height: calc(100vh - 4rem);
   margin: 0 auto;
-  padding: 2rem 0;
+  padding: 0.75rem 0;
 }
 
 .app-content h1 {
@@ -30,6 +30,6 @@ html.dark .app-content h1 {
 @media (max-width: 640px) {
   .app-content {
     width: min(100% - 1.5rem, 80rem);
-    padding: 1.5rem 0;
+    padding: 0.5rem 0;
   }
 }

@@ -3,6 +3,7 @@ import { Package, Search, Clock, CheckCircle, ChevronRight, Sparkles, User, File
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../../services/api';
 import { useSEO } from '../../utils/seo';
+import { trackEvent } from '../../utils/analytics';
 
 export default function ConsultarPedido() {
   const navigate = useNavigate();
@@ -27,6 +28,10 @@ export default function ConsultarPedido() {
     setErrorMsg('');
     setLoading(true);
     setSearched(true);
+    trackEvent('search', {
+      search_term: query.trim(),
+      search_type: 'order_tracking',
+    });
     try {
       const guestHash = localStorage.getItem('glopsy_guest_hash');
       const res = await api.get(`/product/compras/buscar?q=${encodeURIComponent(query.trim())}`, {

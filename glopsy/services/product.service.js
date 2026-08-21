@@ -412,19 +412,31 @@ const SORT_CLAUSES = {
   rating: '(SELECT COALESCE(AVG(rv.rating), 0) FROM reviews rv WHERE rv.product_id = p.id) DESC, review_count DESC',
 };
 
+// Costo del perfil de envío gratis aplicable a un producto según la ciudad del usuario
+const freeShippingCostoExpr = (cityPh) => `COALESCE((
+  SELECT pe.costo FROM perfiles_envio pe
+  LEFT JOIN ciudades ci ON pe.ciudad_id = ci.id
+  WHERE pe.tipo_envio = 'gratis' AND pe.estado = 'activo'
+    AND (
+      (pe.alcance = 'global' AND pe.tienda_id = p.tienda_id)
+      OR (pe.alcance = 'ciudad' AND pe.id = p.perfil_envio_id AND ${cityPh}::text IS NOT NULL
+          AND (LOWER(ci.nombre) = LOWER(${cityPh}::text) OR ci.id::text = ${cityPh}::text))
+    )
+  LIMIT 1
+), 0)`;
+
 const buildSearchWhere = (idx) => {
   const { search, city, cat, pMin, pMax, minRate, freeShip } = idx;
   const freeShippingExpr = `EXISTS (
     SELECT 1 
     FROM perfiles_envio pe
-    LEFT JOIN fullments pf ON pe.fullment_id = pf.id
-    LEFT JOIN ciudades ci ON pf.ciudad_id = ci.id
-    WHERE (pe.tienda_id = p.tienda_id OR pe.id = p.perfil_envio_id)
-      AND pe.tipo_envio = 'gratis'
+    LEFT JOIN ciudades ci ON pe.ciudad_id = ci.id
+    WHERE pe.tipo_envio = 'gratis'
       AND (
-        pe.alcance = 'global' 
+        (pe.alcance = 'global' AND pe.tienda_id = p.tienda_id)
         OR (
           pe.alcance = 'ciudad' 
+          AND pe.id = p.perfil_envio_id
           AND $${city}::text IS NOT NULL 
           AND (
             LOWER(ci.nombre) = LOWER($${city}::text)
@@ -467,14 +479,13 @@ export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadNam
   const freeShippingExpr = `EXISTS (
     SELECT 1 
     FROM perfiles_envio pe
-    LEFT JOIN fullments pf ON pe.fullment_id = pf.id
-    LEFT JOIN ciudades ci ON pf.ciudad_id = ci.id
-    WHERE (pe.tienda_id = p.tienda_id OR pe.id = p.perfil_envio_id)
-      AND pe.tipo_envio = 'gratis'
+    LEFT JOIN ciudades ci ON pe.ciudad_id = ci.id
+    WHERE pe.tipo_envio = 'gratis'
       AND (
-        pe.alcance = 'global' 
+        (pe.alcance = 'global' AND pe.tienda_id = p.tienda_id)
         OR (
           pe.alcance = 'ciudad' 
+          AND pe.id = p.perfil_envio_id
           AND $2::text IS NOT NULL 
           AND (
             LOWER(ci.nombre) = LOWER($2::text)
@@ -494,7 +505,7 @@ export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadNam
       p.tienda_id,
       p.name,
       p.base_price,
-      p.suggested_price,
+      (COALESCE(p.suggested_price, p.base_price) + ${freeShippingCostoExpr('$2')}) AS suggested_price,
       p.stock_total,
       p.images,
       p.description,
@@ -590,13 +601,14 @@ export const toggleProductFavorite = async (userId, productId) => {
   }
 };
 
-export const getProductByPublicId = async (identifier) => {
-  const cacheKey = `product:detail:${identifier}`;
+export const getProductByPublicId = async (identifier, ciudad = null) => {
+  const cacheKey = `product:detail:${identifier}:${String(ciudad || '').toLowerCase()}`;
   const cached = await redisClient.get(cacheKey).catch(() => null);
   if (cached) return JSON.parse(cached);
 
   let queryText = `
     SELECT p.*, c.nombre AS ciudad_nombre, cat.nombre AS categoria_nombre,
+      (COALESCE(p.suggested_price, p.base_price) + ${freeShippingCostoExpr('$2')}) AS suggested_price_efectivo,
       (
         SELECT COUNT(*) FROM reviews rv WHERE rv.product_id = p.id
       ) AS review_count,
@@ -632,10 +644,10 @@ export const getProductByPublicId = async (identifier) => {
   let values = [];
   if (/^\d+$/.test(identifier)) {
     queryText += ` WHERE p.id = $1 LIMIT 1`;
-    values = [parseInt(identifier, 10)];
+    values = [parseInt(identifier, 10), ciudad];
   } else {
     queryText += ` WHERE p.public_id = $1 LIMIT 1`;
-    values = [String(identifier)];
+    values = [String(identifier), ciudad];
   }
 
   const { rows } = await pool.query(queryText, values);
@@ -643,6 +655,7 @@ export const getProductByPublicId = async (identifier) => {
     const row = rows[0];
     const producto = {
       ...row,
+      suggested_price: row.suggested_price_efectivo ?? row.suggested_price,
       images: typeof row.images === 'string' ? JSON.parse(row.images) : row.images,
       variants: typeof row.variants === 'string' ? JSON.parse(row.variants) : row.variants,
       warranties: typeof row.warranties === 'string' ? JSON.parse(row.warranties) : row.warranties,
@@ -661,34 +674,48 @@ export const reserveStockForSession = async (items, identifier) => {
   }
 
   const reservationKey = `cart:reserve:${identifier}`;
+  const client = await pool.connect();
 
-  const existingRes = await redisClient.get(reservationKey);
-  if (existingRes) {
-    try {
-      const oldItems = JSON.parse(existingRes);
-      for (const oldItem of oldItems) {
-        await pool.query(
-          `UPDATE produc SET stock_total = stock_total + $1 WHERE id = $2`,
-          [oldItem.quantity, oldItem.id]
-        );
+  try {
+    await client.query('BEGIN');
+
+    const existingRes = await redisClient.get(reservationKey);
+    if (existingRes) {
+      try {
+        const oldItems = JSON.parse(existingRes);
+        for (const oldItem of oldItems) {
+          await client.query(
+            `UPDATE produc SET stock_total = stock_total + $1 WHERE id = $2`,
+            [oldItem.quantity, oldItem.id]
+          );
+        }
+      } catch {}
+    }
+
+    for (const item of items) {
+      const pId = Number(item.id);
+      const qty = Number(item.quantity) || 1;
+
+      const result = await client.query(
+        `UPDATE produc SET stock_total = stock_total - $1 WHERE id = $2 AND stock_total >= $1`,
+        [qty, pId]
+      );
+
+      if (result.rowCount === 0) {
+        const { rows } = await client.query(`SELECT stock_total FROM produc WHERE id = $1 LIMIT 1`, [pId]);
+        if (!rows[0]) {
+          throw new Error(`Producto con ID ${pId} no encontrado.`);
+        }
+        throw new Error(`Stock insuficiente para el producto (Disponible: ${rows[0].stock_total}, Solicitado: ${qty}).`);
       }
-    } catch {}
-  }
-
-  for (const item of items) {
-    const pId = Number(item.id);
-    const qty = Number(item.quantity) || 1;
-
-    const { rows } = await pool.query(`SELECT stock_total FROM produc WHERE id = $1 LIMIT 1`, [pId]);
-    if (!rows[0]) {
-      throw new Error(`Producto con ID ${pId} no encontrado.`);
-    }
-    const currentStock = rows[0].stock_total;
-    if (currentStock < qty) {
-      throw new Error(`Stock insuficiente para el producto (Disponible: ${currentStock}, Solicitado: ${qty}).`);
     }
 
-    await pool.query(`UPDATE produc SET stock_total = stock_total - $1 WHERE id = $2`, [qty, pId]);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
 
   await redisClient.set(reservationKey, JSON.stringify(items), { EX: 900 });
@@ -757,7 +784,7 @@ export const calculateShippingCost = async (items, destinationCiudadId) => {
   }
 
   if (storeFree) {
-    const perItem = items.map(it => ({ itemId: it.id, shippingCost: 0, isFree: true }));
+    const perItem = items.map(it => ({ itemId: it.id, price: Number(it.price || 0), shippingCost: 0, isFree: true }));
     let productsTotal = 0;
     for (const it of items) {
       const price = Number(it.price || 0) || 0;
@@ -784,7 +811,7 @@ export const calculateShippingCost = async (items, destinationCiudadId) => {
   const productIds = items.filter(i => i.id).map(i => Number(i.id)).filter(Boolean);
   let productRows = [];
   if (productIds.length > 0) {
-    const { rows } = await pool.query(`SELECT id, product_owner, fullm_id, tienda_id, peso, largo, alto, ancho, tipo_empaque_id, perfil_envio_id FROM produc WHERE id = ANY($1::int[])`, [productIds]);
+    const { rows } = await pool.query(`SELECT id, product_owner, fullm_id, tienda_id, peso, largo, alto, ancho, tipo_empaque_id, perfil_envio_id, suggested_price, base_price FROM produc WHERE id = ANY($1::int[])`, [productIds]);
     productRows = rows;
     // If any product references tipo_empaque_id, fetch those packagings
     const tipoIds = Array.from(new Set(productRows.map(p => p.tipo_empaque_id).filter(Boolean)));
@@ -814,17 +841,16 @@ export const calculateShippingCost = async (items, destinationCiudadId) => {
   // Build groups by idbusiness + originCiudadId
   // Precompute fullment-based free-shipping info and product-level free-shipping info
   const perfilEnvioIds = Array.from(new Set(productRows.map(p => p.perfil_envio_id).filter(Boolean)));
-  const freePerfilSet = new Set();
+  const freePerfilCosto = new Map();
   if (perfilEnvioIds.length > 0) {
     const { rows: peRows } = await pool.query(`
-      SELECT pe.id, pe.alcance, pe.fullment_id, f.ciudad_id
+      SELECT pe.id, pe.alcance, pe.ciudad_id, pe.costo
       FROM perfiles_envio pe
-      LEFT JOIN fullments f ON pe.fullment_id = f.id
       WHERE pe.id = ANY($1::int[]) AND pe.tipo_envio = 'gratis'
     `, [perfilEnvioIds]);
     for (const r of peRows) {
-      if (r.alcance === 'global') freePerfilSet.add(r.id);
-      if (r.alcance === 'ciudad' && Number(r.ciudad_id) === Number(destinationCiudadId)) freePerfilSet.add(r.id);
+      const applies = r.alcance === 'global' || (r.alcance === 'ciudad' && r.ciudad_id !== null && Number(r.ciudad_id) === Number(destinationCiudadId));
+      if (applies) freePerfilCosto.set(r.id, Number(r.costo) || 0);
     }
   }
 
@@ -847,11 +873,17 @@ export const calculateShippingCost = async (items, destinationCiudadId) => {
     if (!originCiudadId) originCiudadId = item.fullm_id || null;
 
     const itemPerfilId = p?.perfil_envio_id || null;
-    const isFree = storeFree || (itemPerfilId && freePerfilSet.has(Number(itemPerfilId)));
+    let freeCosto = null;
+    if (itemPerfilId && freePerfilCosto.has(Number(itemPerfilId))) {
+      freeCosto = Number(freePerfilCosto.get(Number(itemPerfilId))) || 0;
+    }
+    const isFree = freeCosto !== null;
+    const precioBase = Number(p?.suggested_price ?? p?.base_price ?? item.price ?? 0);
+    const precioEfectivo = isFree ? precioBase + freeCosto : precioBase;
 
     const key = `${String(idbusiness)}::${String(originCiudadId)}::${String(destinationCiudadId)}`;
     if (!grouped[key]) grouped[key] = { idbusiness, originCiudadId, destinationCiudadId, items: [] };
-    grouped[key].items.push({ ...item, _productRow: p, _isFree: Boolean(isFree) });
+    grouped[key].items.push({ ...item, _productRow: p, _isFree: Boolean(isFree), _precioUnitario: precioEfectivo });
   }
 
   const groupedResults = [];
@@ -879,7 +911,7 @@ export const calculateShippingCost = async (items, destinationCiudadId) => {
       const weight = Number(it.weight || (tipo?.peso) || it._productRow?.peso || process.env.ENVIA_DEFAULT_WEIGHT || 1);
       for (let i = 0; i < qty; i++) {
         const dims = [l, w, h].sort((a, b) => b - a); // allow rotation
-        units.push({ id: it.id, name: it.name, l: dims[0], w: dims[1], h: dims[2], weight, volume: dims[0] * dims[1] * dims[2], tipoId: it._productRow?.tipo_empaque_id || null, _isFree: Boolean(it._isFree) });
+        units.push({ id: it.id, name: it.name, l: dims[0], w: dims[1], h: dims[2], weight, volume: dims[0] * dims[1] * dims[2], tipoId: it._productRow?.tipo_empaque_id || null, _isFree: Boolean(it._isFree), _price: Number(it._precioUnitario) || 0 });
       }
     }
     units.sort((a, b) => b.volume - a.volume);
@@ -918,16 +950,15 @@ export const calculateShippingCost = async (items, destinationCiudadId) => {
     let selectedCarrier = null;
 
     if (storeFree || nonFreeItems.length === 0) {
-      // All items in group are free or store has global free shipping -> no quotation needed
+      // All items in group are free -> envío gratis (el costo ya está incluido en el precio unitario)
       for (const it of grp.items) {
-        perItemResultsLocal.push({ itemId: it.id, shippingCost: 0, shippingOptions: [], isFree: true });
+        perItemResultsLocal.push({ itemId: it.id, price: Number(it._precioUnitario) || 0, shippingCost: 0, shippingOptions: [], isFree: true });
       }
-      const shippingCost = 0;
-      groupedResultsLocal.push({ key, idbusiness: grp.idbusiness, originCiudadId: grp.originCiudadId, destinationCiudadId: grp.destinationCiudadId, items: grp.items, shippingCost, shippingOptions: [], selected_carrier: null });
+      groupedResultsLocal.push({ key, idbusiness: grp.idbusiness, originCiudadId: grp.originCiudadId, destinationCiudadId: grp.destinationCiudadId, items: grp.items, shippingCost: 0, shippingOptions: [], selected_carrier: null });
     } else {
       // Some or all items are not free -> quote ONLY nonFreeItems
       for (const it of freeItems) {
-        perItemResultsLocal.push({ itemId: it.id, shippingCost: 0, shippingOptions: [], isFree: true });
+        perItemResultsLocal.push({ itemId: it.id, price: Number(it._precioUnitario) || 0, shippingCost: 0, shippingOptions: [], isFree: true });
       }
 
       const packages = packItemsIntoBoxes(nonFreeItems);
@@ -950,7 +981,7 @@ export const calculateShippingCost = async (items, destinationCiudadId) => {
         for (const ii of pkgItems) {
           const share = (ii.weight || 0) / pkgWeightSum;
           const itemCost = Math.round((r.shippingCost || 0) * share);
-          perItemResultsLocal.push({ itemId: ii.id, shippingCost: itemCost, shippingOptions: r.shippingOptions, isFree: false });
+          perItemResultsLocal.push({ itemId: ii.id, price: Number(ii._price) || 0, shippingCost: itemCost, shippingOptions: r.shippingOptions, isFree: false });
         }
       }
 
@@ -986,13 +1017,14 @@ export const calculateShippingCost = async (items, destinationCiudadId) => {
     overallCost += Number(g.shippingCost || 0);
   }
 
-  // Also compute products total (sum base_price * quantity) when available
+  // Also compute products total (sum effective price * quantity)
   let productsTotal = 0;
-  for (const it of items) {
-    const p = prodMap.get(Number(it.id));
-    const price = Number(p?.base_price ?? it.price ?? 0) || 0;
-    const qty = Number(it.quantity || 1) || 1;
-    productsTotal += price * qty;
+  for (const grp of Object.values(grouped)) {
+    for (const it of grp.items) {
+      const price = Number(it._precioUnitario ?? it.price ?? 0) || 0;
+      const qty = Number(it.quantity || 1) || 1;
+      productsTotal += price * qty;
+    }
   }
 
   const grandTotal = productsTotal + overallCost;
@@ -1142,16 +1174,17 @@ export const processMpPaymentForCart = async (userId, formData, preferenceId, cu
   return paymentResponse;
 };
 
-export const getFavoriteProductsDetails = async (userId) => {
+export const getFavoriteProductsDetails = async (userId, ciudad = null) => {
   const { rows } = await pool.query(
-    `SELECT p.*, f.created_at as favorited_at 
+    `SELECT p.*, f.created_at as favorited_at,
+       (COALESCE(p.suggested_price, p.base_price) + ${freeShippingCostoExpr('$2')}) AS suggested_price_efectivo
      FROM favoritos f
      JOIN produc p ON f.product_id = p.id
      WHERE f.user_id = $1
      ORDER BY f.created_at DESC`,
-    [userId]
+    [userId, ciudad]
   );
-  return rows;
+  return rows.map(r => ({ ...r, suggested_price: r.suggested_price_efectivo ?? r.suggested_price }));
 };
 
 export const getProductReviews = async (productId) => {
@@ -1222,26 +1255,66 @@ export const getUserReviewStatus = async (userId, productId) => {
   const pId = parseInt(productId, 10);
   const review = await getUserReviewForProduct(userId, pId);
   if (review) return { review, canReview: false };
-  const purchase = await findCompletedPurchaseForReview(userId, pId);
-  return { review: null, canReview: Boolean(purchase) };
+  const shipment = await findDeliveredShipmentForReview(userId, pId);
+  return { review: null, canReview: Boolean(shipment) };
 };
 
-const findCompletedPurchaseForReview = async (userId, productId) => {
+const isShipmentDelivered = (status) => {
+  const s = String(status || '').toLowerCase();
+  return ['entregado', 'delivered', 'recibido', 'completado', 'complete', 'confirmed'].some(k => s.includes(k));
+};
+
+const findDeliveredShipmentForReview = async (userId, productId) => {
   const { rows } = await pool.query(
-    `SELECT o.id, o.order_number
-     FROM orders o
-     JOIN order_items oi ON oi.order_id = o.id
-     WHERE o.status = 'Completado'
-       AND o.user_id = $1
+    `SELECT o.id, o.order_number, oi.shipment_id, os.fulfillment_status
+     FROM order_items oi
+     JOIN orders o ON o.id = oi.order_id
+     JOIN order_shipments os ON os.id = oi.shipment_id
+     WHERE o.user_id = $1
        AND oi.product_id = $2
+       AND LOWER(COALESCE(os.fulfillment_status, '')) IN ('entregado', 'delivered', 'recibido', 'completado', 'complete')
        AND NOT EXISTS (
          SELECT 1 FROM reviews r WHERE r.order_id = o.id AND r.product_id = $2
        )
-     ORDER BY o.created_at DESC
+     ORDER BY os.updated_at DESC
      LIMIT 1`,
     [userId, productId]
   );
   return rows[0] || null;
+};
+
+export const getOrderReviewsStatus = async (orderId, userId) => {
+  if (!userId || !orderId) return {};
+
+  const { rows: items } = await pool.query(
+    `SELECT oi.product_id, oi.shipment_id, os.fulfillment_status
+     FROM order_items oi
+     JOIN order_shipments os ON os.id = oi.shipment_id
+     WHERE oi.order_id = $1`,
+    [orderId]
+  );
+
+  const { rows: reviews } = await pool.query(
+    `SELECT product_id, shipment_id, rating, comment, created_at
+     FROM reviews WHERE order_id = $1 AND user_id = $2`,
+    [orderId, userId]
+  );
+
+  const byProduct = {};
+  for (const r of reviews) byProduct[String(r.product_id)] = r;
+
+  const result = {};
+  for (const item of items) {
+    const delivered = isShipmentDelivered(item.fulfillment_status);
+    const existing = byProduct[String(item.product_id)];
+    result[String(item.product_id)] = {
+      shipment_id: item.shipment_id,
+      delivered,
+      canReview: delivered && !existing,
+      review: existing || null,
+    };
+  }
+  return result;
 };
 
 export const addProductReview = async (userId, productId, { rating, comment }) => {
@@ -1250,19 +1323,19 @@ export const addProductReview = async (userId, productId, { rating, comment }) =
   if (!pId) throw new Error('ID de producto inválido.');
   if (!rate || rate < 1 || rate > 5) throw new Error('La calificación debe estar entre 1 y 5 estrellas.');
 
-  const purchase = await findCompletedPurchaseForReview(userId, pId);
-  if (!purchase) {
-    throw new Error('Solo puedes calificar productos que hayas comprado y que estén completados.');
+  const shipment = await findDeliveredShipmentForReview(userId, pId);
+  if (!shipment) {
+    throw new Error('Solo puedes calificar productos cuyo envío haya sido entregado.');
   }
 
   const text = comment && String(comment).trim() ? String(comment).trim().slice(0, 2000) : null;
 
   const { rows } = await pool.query(
-    `INSERT INTO reviews (product_id, user_id, order_id, rating, comment)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO reviews (product_id, user_id, order_id, shipment_id, rating, comment)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (product_id, user_id, order_id) DO NOTHING
-     RETURNING id, product_id, order_id, rating, comment, created_at`,
-    [pId, userId, purchase.id, rate, text]
+     RETURNING id, product_id, order_id, shipment_id, rating, comment, created_at`,
+    [pId, userId, shipment.id, shipment.shipment_id || null, rate, text]
   );
   if (rows.length === 0) {
     throw new Error('Ya calificaste este producto en esta compra.');
