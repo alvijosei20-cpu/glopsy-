@@ -1,0 +1,7 @@
+{
+  "name": "glopsy-repo",
+  "private": true,
+  "scripts": {
+    "build": "cd glopsy/frontend && npm ci && npm run build"
+  }
+}

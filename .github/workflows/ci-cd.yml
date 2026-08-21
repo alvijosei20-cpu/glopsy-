@@ -21,6 +21,8 @@ jobs:
           cache-dependency-path: glopsy/back/package-lock.json
       - run: npm ci
       - run: npm test
+        env:
+          APP_ENC_KEY: ci-test-key-not-for-production
 
   build-frontend:
     runs-on: ubuntu-latest

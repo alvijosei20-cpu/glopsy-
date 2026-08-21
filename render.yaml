@@ -10,7 +10,7 @@ services:
     plan: free
     region: oregon
     healthCheckPath: /api/health
-    dockerCommand: sh -c "node scripts/migrate.mjs && node server.js"
+    preDeployCommand: node scripts/migrate.mjs
     envVars:
       - key: NODE_ENV
         value: production
