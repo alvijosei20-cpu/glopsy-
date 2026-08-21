@@ -11,14 +11,14 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: glopsy
+        working-directory: glopsy/back
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: glopsy/package-lock.json
+          cache-dependency-path: glopsy/back/package-lock.json
       - run: npm ci
       - run: npm test
 
@@ -26,14 +26,14 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: frontend
+        working-directory: glopsy/frontend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: glopsy/frontend/package-lock.json
       - run: npm ci
       - run: npm run build
         env:
@@ -55,5 +55,5 @@ jobs:
           script: |
             cd ~/app
             git pull --ff-only
-            docker compose up -d --build
+            docker compose -f glopsy/back/docker-compose.yml up -d --build
             docker image prune -f

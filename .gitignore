@@ -1,10 +1,21 @@
+# Dependencias
 node_modules/
-.env
-.env.production
-.env.*.local
-*.deb
 
+# Secretos y config local
+.env
+.env.*.local
+*.pem
+certs/
+
+# Artefactos de build
+dist/
+build/
+*.jar
+*.keystore
+*.deb
+*.apk
+*.log
 dump.rdb
-personal/finnhub-trades/sem_estado.json
-personal/finnhub-trades/server_test.log
-personal/finnhub-trades/__pycache__/
+
+# Proyecto personal (local)
+personal/
