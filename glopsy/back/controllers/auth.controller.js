@@ -52,6 +52,10 @@ export const googleLogin = (req, res) => {
 export const googleCallback = async (req, res) => {
   const code = cleanString(req.query.code, { maxLength: 2000 });
 
+  if (req.query.error) {
+    return res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
+  }
+
   if (!code) {
     return res.status(400).json({ message: 'Código de autorización no provisto' });
   }
@@ -112,6 +116,10 @@ export const discordLogin = (req, res) => {
 
 export const discordCallback = async (req, res) => {
   const code = cleanString(req.query.code, { maxLength: 2000 });
+
+  if (req.query.error) {
+    return res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
+  }
 
   if (!code) {
     return res.status(400).json({ message: 'Código de autorización no provisto' });
