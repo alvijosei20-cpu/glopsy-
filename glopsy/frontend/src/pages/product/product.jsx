@@ -413,7 +413,7 @@ export default function ProductDetail() {
           availability: Number(product.stock_total || 0) > 0
             ? 'https://schema.org/InStock'
             : 'https://schema.org/OutOfStock',
-          url: `https://glopsy.app/product/${id}`,
+          url: `https://app.glopsy.shop/product/${id}`,
           seller: { '@type': 'Organization', name: product.tienda_nombre || 'Glopsy' },
         },
       }

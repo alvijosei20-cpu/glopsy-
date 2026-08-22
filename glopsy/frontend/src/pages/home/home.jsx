@@ -324,10 +324,10 @@ export default function Home() {
       '@context': 'https://schema.org',
       '@type': 'WebSite',
       name: 'Glopsy',
-      url: 'https://glopsy.app/',
+      url: 'https://app.glopsy.shop/',
       potentialAction: {
         '@type': 'SearchAction',
-        target: 'https://glopsy.app/listpr?q={search_term_string}',
+        target: 'https://app.glopsy.shop/listpr?q={search_term_string}',
         'query-input': 'required name=search_term_string',
       },
     },

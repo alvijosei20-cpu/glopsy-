@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 
 const SITE_NAME = 'Glopsy';
-const SITE_URL = 'https://glopsy.app';
+const SITE_URL = 'https://app.glopsy.shop';
 
 function setMeta(attr, key, content) {
   if (!content) return;

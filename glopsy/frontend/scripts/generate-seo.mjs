@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.resolve(__dirname, '../dist');
-const SITE_URL = process.env.SITE_URL || 'https://glopsy.app';
+const SITE_URL = process.env.SITE_URL || 'https://app.glopsy.shop';
 const API_URL = process.env.SEO_API || 'http://localhost:3000/api';
 
 const INDEX = path.join(DIST, 'index.html');
