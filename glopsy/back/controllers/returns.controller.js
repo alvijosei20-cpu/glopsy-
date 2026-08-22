@@ -34,6 +34,39 @@ const generateReturnNumber = () => {
   return `RET-${Date.now().toString().slice(-6)}-${suffix}`;
 };
 
+// Suma días hábiles (lunes a viernes) a una fecha
+const addBusinessDays = (date, days) => {
+  const d = new Date(date);
+  let added = 0;
+  while (added < days) {
+    d.setDate(d.getDate() + 1);
+    const dow = d.getDay();
+    if (dow !== 0 && dow !== 6) added += 1;
+  }
+  return d;
+};
+
+const RETURN_WINDOW_DAYS = 5;
+
+// Verifica que la entrega esté dentro de la ventana de devolución (5 días hábiles)
+const isWithinReturnWindow = (deliveredAt) => {
+  if (!deliveredAt) return true;
+  const delivered = new Date(deliveredAt);
+  const deadline = addBusinessDays(delivered, RETURN_WINDOW_DAYS);
+  const now = new Date();
+  return now <= deadline && delivered <= now;
+};
+
+const getOrderDeliveredAt = async (orderId) => {
+  const { rows } = await pool.query(
+    `SELECT MAX(delivered_at) AS delivered_at
+     FROM order_shipments
+     WHERE order_id = $1 AND delivered_at IS NOT NULL`,
+    [orderId]
+  );
+  return rows[0]?.delivered_at || null;
+};
+
 const resolveOrder = async (orderId) => {
   const id = toInt(orderId, { min: 1 });
   if (!id) return null;
@@ -125,6 +158,18 @@ export const requestReturn = async (req, res) => {
 
     // 2) Resolvemos la orden local (si existe)
     order = await resolveOrder(orderId);
+
+    // 2b) Validamos ventana de devolución: máximo 5 días hábiles desde la entrega
+    const deliveredAt = order ? await getOrderDeliveredAt(order.id) : null;
+    if (deliveredAt && !isWithinReturnWindow(deliveredAt)) {
+      const deadline = addBusinessDays(new Date(deliveredAt), RETURN_WINDOW_DAYS);
+      return res.status(400).json({
+        ok: false,
+        message: 'La ventana de devolución (5 días hábiles desde la entrega) ya expiró.',
+        deliveredAt,
+        deadline: deadline.toISOString(),
+      });
+    }
 
     // 3) Construimos la lista de productos a devolver
     const skus = hasMany

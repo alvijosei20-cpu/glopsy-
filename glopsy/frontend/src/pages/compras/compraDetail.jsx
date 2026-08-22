@@ -154,6 +154,31 @@ export default function CompraDetail() {
     return ['entregado', 'delivered', 'recibido', 'completado', 'complete', 'confirmed'].some(k => s.includes(k));
   };
 
+  const addBusinessDays = (date, days) => {
+    const d = new Date(date);
+    let added = 0;
+    while (added < days) {
+      d.setDate(d.getDate() + 1);
+      const dow = d.getDay();
+      if (dow !== 0 && dow !== 6) added += 1;
+    }
+    return d;
+  };
+
+  const canReturnShipment = (shipment) => {
+    if (!isShipmentDelivered(shipment.fulfillment_status)) return false;
+    const deliveredAt = shipment.delivered_at;
+    if (!deliveredAt) return true;
+    const deadline = addBusinessDays(new Date(deliveredAt), 5);
+    const now = new Date();
+    return now <= deadline && new Date(deliveredAt) <= now;
+  };
+
+  const returnDeadline = (shipment) => {
+    if (!shipment.delivered_at) return null;
+    return addBusinessDays(new Date(shipment.delivered_at), 5).toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' });
+  };
+
   const handleSubmitReview = async (item) => {
     if (!user) {
       alert('Debes iniciar sesión para calificar productos.');
@@ -517,10 +542,10 @@ export default function CompraDetail() {
                   </div>
                 </div>
 
-                {user && isShipmentDelivered(shipment.fulfillment_status) && shipmentItems.length > 0 && (
+                {user && canReturnShipment(shipment) && shipmentItems.length > 0 && (
                   <div className="flex items-center justify-between gap-2 pt-1">
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Este envío fue entregado. Puedes solicitar una devolución.
+                      Este envío fue entregado. Puedes solicitar una devolución{returnDeadline(shipment) ? ` hasta el ${returnDeadline(shipment)}` : ''}.
                     </p>
                     <button
                       onClick={() => openReturnModal({ ...shipment, _items: shipmentItems }, shipmentItems)}
@@ -528,6 +553,14 @@ export default function CompraDetail() {
                     >
                       <RotateCcw size={13} /> Solicitar Devolución
                     </button>
+                  </div>
+                )}
+
+                {user && isShipmentDelivered(shipment.fulfillment_status) && !canReturnShipment(shipment) && shipmentItems.length > 0 && (
+                  <div className="pt-1">
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
+                      <XCircle size={12} /> La ventana de devolución (5 días hábiles desde la entrega) ha expirado.
+                    </p>
                   </div>
                 )}
 

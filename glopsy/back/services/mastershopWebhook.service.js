@@ -78,6 +78,10 @@ const updateOrderShipmentsFromWebhook = async (orderId, { logistics, idStatus, c
     const sets = ['updated_at = NOW()'];
     if (statusId) { sets.push(`mastershop_status_id = $${params.length + 1}`); params.push(statusId); }
     if (status || fulfillmentStatus) { sets.push(`fulfillment_status = $${params.length + 1}`); params.push(fulfillmentStatus || status); }
+    // Fija delivered_at una sola vez cuando el envío pasa a entregado
+    if (statusId === 8 || /deliver|entregad/i.test(String(fulfillmentStatus || status || ''))) {
+      sets.push(`delivered_at = COALESCE(delivered_at, NOW())`);
+    }
     if (tracking) { sets.push(`tracking_code = $${params.length + 1}`); params.push(tracking); }
     if (shippingUrl) { sets.push(`shipping_url = $${params.length + 1}`); params.push(shippingUrl); }
     if (carrier) { sets.push(`carrier = $${params.length + 1}`); params.push(carrier); }
