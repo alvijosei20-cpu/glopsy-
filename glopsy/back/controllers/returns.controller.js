@@ -203,24 +203,12 @@ export const requestReturn = async (req, res) => {
       createdReturns.push(rows[0]);
     }
 
-    // 4) Consultamos la devolución de la orden en Mastershop si existe (GET /api/orders/return/:idOrder).
-    //    Mastershop gestiona la recogida/garantías internamente; aquí solo registramos su estado.
-    let msReturnInfo = null;
-    try {
-      const returnRes = await axios.get(`${getMastershopBaseUrl()}/orders/return/${orderId}`, {
-        headers: { 'ms-api-key': apiKey },
-        timeout: 8000,
-      });
-      msReturnInfo = returnRes.data?.data || returnRes.data;
-    } catch (returnError) {
-      console.warn('[Returns] No se pudo consultar devolución en Mastershop:', returnError.response?.data || returnError.message);
-    }
-
+    // 4) Mastershop gestiona las devoluciones como NOVEDAD/POSTVENTA internamente
+    //    (panel de Mastershop). No se crea nada vía API: solo registramos el ticket local.
     return res.status(201).json({
       ok: true,
-      message: `Solicitud de devolución creada para ${createdReturns.length} producto(s). Pendiente de gestión.`,
+      message: `Solicitud de devolución creada para ${createdReturns.length} producto(s).`,
       returns: createdReturns,
-      mastershop: msReturnInfo,
     });
   } catch (error) {
     console.error('Error al solicitar devolución:', error.response?.data || error.message);
