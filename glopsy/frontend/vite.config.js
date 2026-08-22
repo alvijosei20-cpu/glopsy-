@@ -14,6 +14,13 @@ export default defineConfig({
       key: './certs/localhost-key.pem',
       cert: './certs/localhost-cert.pem',
     },
+    proxy: {
+      '/api': {
+        target: 'https://localhost:3000',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
   },
   build: {
     rolldownOptions: {
