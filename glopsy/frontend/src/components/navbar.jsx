@@ -251,11 +251,8 @@ export default function Navbar() {
             <img
               src="/glopsy.png"
               alt="Glopsy"
-              className="h-8 w-auto object-contain group-hover:scale-105 transition-transform"
+              className="h-12 w-auto object-contain group-hover:scale-105 transition-transform"
             />
-            <span className="font-bold text-xl tracking-wide bg-gradient-to-r from-fuchsia-600 to-pink-600 bg-clip-text text-transparent">
-              Glopsy
-            </span>
           </Link>
 
           {/* Navegación Desktop */}
