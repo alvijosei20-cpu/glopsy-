@@ -31,6 +31,22 @@ const generateReturnNumber = () => {
   return `RET-${Date.now().toString().slice(-6)}-${suffix}`;
 };
 
+// Cambia el estado de la orden en Mastershop a "En Reclamación / Garantía" (id_status 11)
+const setMastershopOrderStatus = async (apiKey, orderId, statusName, idStatus = 11) => {
+  const baseUrl = getMastershopBaseUrl();
+  const payload = { status: statusName, id_status: idStatus };
+
+  await axios.put(`${baseUrl}/orders/${orderId}`, payload, {
+    headers: { 'ms-api-key': apiKey, 'Content-Type': 'application/json' },
+    timeout: 8000,
+  }).catch(async () => {
+    await axios.patch(`${baseUrl}/orders/${orderId}`, payload, {
+      headers: { 'ms-api-key': apiKey, 'Content-Type': 'application/json' },
+      timeout: 8000,
+    });
+  });
+};
+
 // Suma días hábiles (lunes a viernes) a una fecha
 const addBusinessDays = (date, days) => {
   const d = new Date(date);
@@ -203,12 +219,21 @@ export const requestReturn = async (req, res) => {
       createdReturns.push(rows[0]);
     }
 
-    // 4) Mastershop gestiona las devoluciones como NOVEDAD/POSTVENTA internamente
-    //    (panel de Mastershop). No se crea nada vía API: solo registramos el ticket local.
+    // 4) Cambiamos el estado de la orden en Mastershop a "En Reclamación / Garantía"
+    //    para que la novedad/postventa quede registrada y se gestione internamente.
+    let statusUpdated = false;
+    try {
+      await setMastershopOrderStatus(apiKey, orderId, reason === 'garantia' ? 'Garantía' : 'En Reclamación');
+      statusUpdated = true;
+    } catch (statusError) {
+      console.warn('[Returns] No se pudo actualizar el estado de la orden en Mastershop:', statusError.response?.data || statusError.message);
+    }
+
     return res.status(201).json({
       ok: true,
       message: `Solicitud de devolución creada para ${createdReturns.length} producto(s).`,
       returns: createdReturns,
+      mastershopStatusUpdated: statusUpdated,
     });
   } catch (error) {
     console.error('Error al solicitar devolución:', error.response?.data || error.message);
