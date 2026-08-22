@@ -19,6 +19,7 @@ const Panel = lazy(() => import('./pages/panel/panel'));
 const Market = lazy(() => import('./pages/market/market'));
 const MarketConfig = lazy(() => import('./pages/market/MarketConfig'));
 const Analytics = lazy(() => import('./pages/market/Analytics'));
+const ProductsManage = lazy(() => import('./pages/market/ProductsManage'));
 const Publish = lazy(() => import('./pages/publish/publish'));
 const Listpr = lazy(() => import('./pages/listpr/listpr'));
 const Favorites = lazy(() => import('./pages/favorites/favorites'));
@@ -204,6 +205,7 @@ function MainApp() {
           <Route path="/market" element={<StoreRoute><Market /></StoreRoute>} />
           <Route path="/market/config" element={<StoreRoute><MarketConfig /></StoreRoute>} />
           <Route path="/market/analytics" element={<StoreRoute><Analytics /></StoreRoute>} />
+          <Route path="/market/products" element={<StoreRoute><ProductsManage /></StoreRoute>} />
           <Route path="/publish" element={<StoreRoute><Publish /></StoreRoute>} />
 
           

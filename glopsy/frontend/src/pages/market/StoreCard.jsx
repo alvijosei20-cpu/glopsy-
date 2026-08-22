@@ -1,7 +1,7 @@
 import React from 'react';
-import { CirclePause, CirclePlay, Settings, Send, BarChart3 } from 'lucide-react';
+import { CirclePause, CirclePlay, Settings, Send, BarChart3, Package } from 'lucide-react';
 
-const StoreCard = React.memo(function StoreCard({ tienda, updating, onToggleStatus, onConfig, onPublish, onAnalytics }) {
+const StoreCard = React.memo(function StoreCard({ tienda, updating, onToggleStatus, onConfig, onPublish, onAnalytics, onProducts }) {
   if (!tienda) return null;
   return (
     <article className="store-card" style={{ position: 'relative', overflow: 'hidden' }}>
@@ -95,6 +95,13 @@ const StoreCard = React.memo(function StoreCard({ tienda, updating, onToggleStat
           onClick={onPublish}
         >
           <Send size={18} /> Publicar
+        </button>
+        <button
+          className="action-button action-button--products"
+          type="button"
+          onClick={onProducts}
+        >
+          <Package size={18} /> Productos
         </button>
         <button
           className="action-button action-button--analytics"

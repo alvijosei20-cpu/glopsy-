@@ -308,6 +308,100 @@ export const getProductsForUser = async (userId) => {
   return rows;
 };
 
+export const getProductsForUserManagement = async (userId) => {
+  const { rows } = await pool.query(
+    `SELECT id, public_id, name, base_price, suggested_price, stock_total,
+            status, images, variants, external_product_id, created_at, updated_at
+     FROM produc
+     WHERE tienda_id = $1
+     ORDER BY updated_at DESC, id DESC`,
+    [userId]
+  );
+  return rows.map((p) => ({
+    ...p,
+    images: typeof p.images === 'string' ? JSON.parse(p.images) : p.images,
+    variants: typeof p.variants === 'string' ? JSON.parse(p.variants) : p.variants,
+  }));
+};
+
+export const setProductStatusForUser = async (userId, productId, status) => {
+  const allowed = ['active', 'paused'];
+  if (!allowed.includes(status)) {
+    throw new Error('Estado de producto inválido. Usa active o paused.');
+  }
+
+  const { rows } = await pool.query(
+    `UPDATE produc SET status = $3, updated_at = NOW()
+     WHERE id = $2 AND tienda_id = $1
+     RETURNING id, public_id, name, status`,
+    [userId, productId, status]
+  );
+
+  if (rows.length === 0) {
+    throw new Error('Producto no encontrado o no pertenece a tu tienda.');
+  }
+
+  await invalidateProductCache(rows[0].id, rows[0].public_id).catch(() => {});
+  return rows[0];
+};
+
+export const deleteProductForUser = async (userId, productId) => {
+  const { rows } = await pool.query(
+    `UPDATE produc SET status = 'deleted', updated_at = NOW()
+     WHERE id = $2 AND tienda_id = $1
+     RETURNING id, public_id, name, status`,
+    [userId, productId]
+  );
+
+  if (rows.length === 0) {
+    throw new Error('Producto no encontrado o no pertenece a tu tienda.');
+  }
+
+  await invalidateProductCache(rows[0].id, rows[0].public_id).catch(() => {});
+  return rows[0];
+};
+
+export const addProductImagesForUser = async (userId, productId, newImages) => {
+  const imageList = sanitizeArray(
+    newImages,
+    (u) => ({ src: cleanUrl(u?.src ?? u, { maxLength: 2048 }) }),
+    { maxLength: 20 }
+  ).filter((i) => i && i.src);
+
+  if (imageList.length === 0) {
+    throw new Error('Debes proporcionar al menos una imagen válida.');
+  }
+
+  const { rows } = await pool.query(
+    `SELECT id, images FROM produc WHERE id = $2 AND tienda_id = $1 LIMIT 1`,
+    [userId, productId]
+  );
+  if (rows.length === 0) {
+    throw new Error('Producto no encontrado o no pertenece a tu tienda.');
+  }
+
+  const current = Array.isArray(rows[0].images)
+    ? rows[0].images
+    : typeof rows[0].images === 'string'
+      ? JSON.parse(rows[0].images)
+      : [];
+
+  const merged = [...current, ...imageList].slice(0, 20);
+
+  const updated = await pool.query(
+    `UPDATE produc SET images = $3, updated_at = NOW()
+     WHERE id = $2 AND tienda_id = $1
+     RETURNING id, public_id, name, images`,
+    [userId, productId, JSON.stringify(merged)]
+  );
+
+  await invalidateProductCache(updated.rows[0].id, updated.rows[0].public_id).catch(() => {});
+  return {
+    ...updated.rows[0],
+    images: typeof updated.rows[0].images === 'string' ? JSON.parse(updated.rows[0].images) : updated.rows[0].images,
+  };
+};
+
 export const getProductsByFullment = async (userId, fullmentId) => {
   const { rows } = await pool.query(
     `SELECT id, name, base_price, suggested_price, stock_total, fullm_id, perfil_envio_id, selected_variant_id, selected_options, created_at
@@ -446,7 +540,8 @@ const buildSearchWhere = (idx) => {
       )
   )`;
   const where = `
-    ($${search}::text IS NULL OR $${search} = '' OR p.name ILIKE '%' || $${search} || '%' OR p.description ILIKE '%' || $${search} || '%')
+    COALESCE(p.status, 'active') = 'active'
+    AND ($${search}::text IS NULL OR $${search} = '' OR p.name ILIKE '%' || $${search} || '%' OR p.description ILIKE '%' || $${search} || '%')
     AND ($${cat}::int IS NULL OR p.categoria_id = $${cat})
     AND ($${pMin}::numeric IS NULL OR COALESCE(p.suggested_price, p.base_price) >= $${pMin})
     AND ($${pMax}::numeric IS NULL OR COALESCE(p.suggested_price, p.base_price) <= $${pMax})
@@ -643,10 +738,10 @@ export const getProductByPublicId = async (identifier, ciudad = null) => {
   `;
   let values = [];
   if (/^\d+$/.test(identifier)) {
-    queryText += ` WHERE p.id = $1 LIMIT 1`;
+    queryText += ` WHERE p.id = $1 AND COALESCE(p.status, 'active') = 'active' LIMIT 1`;
     values = [parseInt(identifier, 10), ciudad];
   } else {
-    queryText += ` WHERE p.public_id = $1 LIMIT 1`;
+    queryText += ` WHERE p.public_id = $1 AND COALESCE(p.status, 'active') = 'active' LIMIT 1`;
     values = [String(identifier), ciudad];
   }
 

@@ -121,6 +121,7 @@ const Market = () => {
         onConfig={() => navigate('/market/config')}
         onPublish={() => navigate('/publish')}
         onAnalytics={() => navigate('/market/analytics')}
+        onProducts={() => navigate('/market/products')}
       />
       {notice && <p className="panel__notice" role="status">{notice}</p>}
 

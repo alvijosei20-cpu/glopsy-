@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getProductById, saveProduct, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, createPreferenceController, processMpPaymentController, processSavedCardPaymentController, getTiposEmpaqueController, getUserComprasController, searchOrdersController, getOrderByHashController, getOrderReviewsStatusController, recordPurchaseController, cancelOrderController, updateOrderAddressController, getProductReviewsController, getUserReviewController, addReviewController, updateReviewController, deleteReviewController } from '../controllers/product.controller.js';
+import { getProductById, saveProduct, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, createPreferenceController, processMpPaymentController, processSavedCardPaymentController, getTiposEmpaqueController, getUserComprasController, searchOrdersController, getOrderByHashController, getOrderReviewsStatusController, recordPurchaseController, cancelOrderController, updateOrderAddressController, getProductReviewsController, getUserReviewController, addReviewController, updateReviewController, deleteReviewController, getMyProductsManagement, pauseProduct, activateProduct, deleteProduct, addProductImages } from '../controllers/product.controller.js';
 import { requireAuth, optionalAuth } from '../middlewares/auth.js';
 import { tiendaLimiter, heavyLimiter } from '../middlewares/limiters.js';
 
@@ -34,6 +34,13 @@ router.get('/tipos-empaque', getTiposEmpaqueController);
 
 // Endpoint: GET /api/product (and /search)
 router.get('/', searchProducts);
+
+// Gestión de productos de la tienda (deben ir antes de /:id)
+router.get('/manage', requireAuth, getMyProductsManagement);
+router.patch('/:id/pause', requireAuth, pauseProduct);
+router.patch('/:id/activate', requireAuth, activateProduct);
+router.delete('/:id', requireAuth, deleteProduct);
+router.post('/:id/images', requireAuth, addProductImages);
 
 // Endpoint: POST /api/product
 router.post('/', requireAuth, tiendaLimiter, saveProduct);

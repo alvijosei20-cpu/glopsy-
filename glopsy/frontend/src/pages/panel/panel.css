@@ -75,6 +75,8 @@ font-size:1.75rem; }
 
 .action-button--publish { color:#fff; background:#2563eb; border-color:#1d4ed8; }
 
+.action-button--products { color:#fff; background:#db2777; border-color:#be185d; }
+
 .action-button--analytics { color:#fff; background:#0f766e; border-color:#115e59; }
 
 .store-card--placeholder,.store-card--empty { display:block; text-align:center; color:#64748b; }

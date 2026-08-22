@@ -1,5 +1,5 @@
 import { obtenerProductoPorId } from '../services/mastershopService.js';
-import { saveProductForUser, getProductsForUser, searchQueryProducts, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, cancelOrderForUser, updateOrderAddressForUser, getProductReviews, getUserReviewStatus, getOrderReviewsStatus, addProductReview, updateProductReview, deleteProductReview } from '../services/product.service.js';
+import { saveProductForUser, getProductsForUser, getProductsForUserManagement, setProductStatusForUser, deleteProductForUser, addProductImagesForUser, searchQueryProducts, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, cancelOrderForUser, updateOrderAddressForUser, getProductReviews, getUserReviewStatus, getOrderReviewsStatus, addProductReview, updateProductReview, deleteProductReview } from '../services/product.service.js';
 import { validatePaymentBiometricNonce } from '../services/auth.service.js';
 import { pool } from '../db.js';
 import {
@@ -80,6 +80,62 @@ export const saveProduct = async (req, res) => {
       ok: false,
       message: error.message || 'Error al intentar guardar el producto.',
     });
+  }
+};
+
+export const getMyProductsManagement = async (req, res) => {
+  try {
+    const userId = req.auth.userId;
+    const products = await getProductsForUserManagement(userId);
+    res.json({ ok: true, products });
+  } catch (error) {
+    console.error('Error al obtener productos para gestión:', error.message);
+    res.status(500).json({ ok: false, message: 'Error al obtener los productos de la tienda.' });
+  }
+};
+
+export const pauseProduct = async (req, res) => {
+  try {
+    const userId = req.auth.userId;
+    const product = await setProductStatusForUser(userId, toInt(req.params.id), 'paused');
+    res.json({ ok: true, message: 'Producto pausado.', product });
+  } catch (error) {
+    console.error('Error al pausar producto:', error.message);
+    res.status(400).json({ ok: false, message: error.message || 'No se pudo pausar el producto.' });
+  }
+};
+
+export const activateProduct = async (req, res) => {
+  try {
+    const userId = req.auth.userId;
+    const product = await setProductStatusForUser(userId, toInt(req.params.id), 'active');
+    res.json({ ok: true, message: 'Producto activado.', product });
+  } catch (error) {
+    console.error('Error al activar producto:', error.message);
+    res.status(400).json({ ok: false, message: error.message || 'No se pudo activar el producto.' });
+  }
+};
+
+export const deleteProduct = async (req, res) => {
+  try {
+    const userId = req.auth.userId;
+    const product = await deleteProductForUser(userId, toInt(req.params.id));
+    res.json({ ok: true, message: 'Producto eliminado.', product });
+  } catch (error) {
+    console.error('Error al eliminar producto:', error.message);
+    res.status(400).json({ ok: false, message: error.message || 'No se pudo eliminar el producto.' });
+  }
+};
+
+export const addProductImages = async (req, res) => {
+  try {
+    const userId = req.auth.userId;
+    const { images } = req.body;
+    const product = await addProductImagesForUser(userId, toInt(req.params.id), images);
+    res.json({ ok: true, message: 'Imágenes agregadas al producto.', product });
+  } catch (error) {
+    console.error('Error al agregar imágenes:', error.message);
+    res.status(400).json({ ok: false, message: error.message || 'No se pudieron agregar las imágenes.' });
   }
 };
 
