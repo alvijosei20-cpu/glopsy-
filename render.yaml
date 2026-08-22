@@ -42,6 +42,12 @@ services:
         sync: false
       - key: GOOGLE_REDIRECT_URI
         sync: false
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+      - key: DISCORD_REDIRECT_URI
+        sync: false
       - key: DASHBOARD_ORIGIN
         sync: false
       - key: ENVIA_TOKEN
