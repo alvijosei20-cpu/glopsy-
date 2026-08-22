@@ -26,9 +26,6 @@ const getMastershopApiKey = async (tiendaId) => {
 const getMastershopBaseUrl = () =>
   process.env.MASTERSHOP_API_URL || 'https://prod.api.mastershop.com/api';
 
-const getReturnEndpoint = (orderId) =>
-  process.env.MASTERSHOP_RETURN_URL || `${getMastershopBaseUrl()}/orders/${orderId}/returns`;
-
 const generateReturnNumber = () => {
   const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
   return `RET-${Date.now().toString().slice(-6)}-${suffix}`;
@@ -177,7 +174,6 @@ export const requestReturn = async (req, res) => {
       : [{ sku: productSku, quantity: 1 }];
 
     const createdReturns = [];
-    let pickupResult = null;
 
     for (const entry of skus) {
       const product = await resolveProductBySku(order?.tienda_id || tiendaId, entry.sku);
@@ -207,37 +203,24 @@ export const requestReturn = async (req, res) => {
       createdReturns.push(rows[0]);
     }
 
-    // 4) Notificamos a Mastershop la solicitud de recogida (logística inversa / garantías)
-    const pickupPayload = {
-      return_number: createdReturns.map((r) => r.return_number),
-      order_id: orderId,
-      items: skus,
-      reason,
-      customer_notes: customerNotes,
-      pickup_requested: true,
-    };
-
+    // 4) Consultamos la devolución de la orden en Mastershop si existe (GET /api/orders/return/:idOrder).
+    //    Mastershop gestiona la recogida/garantías internamente; aquí solo registramos su estado.
+    let msReturnInfo = null;
     try {
-      const pickup = await axios.post(getReturnEndpoint(orderId), pickupPayload, {
-        headers: { 'ms-api-key': apiKey, 'Content-Type': 'application/json' },
+      const returnRes = await axios.get(`${getMastershopBaseUrl()}/orders/return/${orderId}`, {
+        headers: { 'ms-api-key': apiKey },
         timeout: 8000,
       });
-      pickupResult = pickup.data;
-      for (const r of createdReturns) {
-        await pool.query(
-          `UPDATE returns SET mastershop_status = $2, payload = jsonb_set(COALESCE(payload, '{}'::jsonb), '{pickup}', $3::jsonb), updated_at = NOW() WHERE id = $1`,
-          [r.id, 'PICKUP_SCHEDULED', JSON.stringify(pickupResult)]
-        );
-      }
-    } catch (pickupError) {
-      console.warn('[Returns] Mastershop rechazó la recogida:', pickupError.response?.data || pickupError.message);
+      msReturnInfo = returnRes.data?.data || returnRes.data;
+    } catch (returnError) {
+      console.warn('[Returns] No se pudo consultar devolución en Mastershop:', returnError.response?.data || returnError.message);
     }
 
     return res.status(201).json({
       ok: true,
-      message: `Solicitud de devolución creada para ${createdReturns.length} producto(s). Pendiente de recogida.`,
+      message: `Solicitud de devolución creada para ${createdReturns.length} producto(s). Pendiente de gestión.`,
       returns: createdReturns,
-      mastershop: pickupResult,
+      mastershop: msReturnInfo,
     });
   } catch (error) {
     console.error('Error al solicitar devolución:', error.response?.data || error.message);
@@ -248,6 +231,65 @@ export const requestReturn = async (req, res) => {
       ok: false,
       message: 'No fue posible procesar la solicitud de devolución.',
     });
+  }
+};
+
+// ==========================================
+// Completar devoluciones cuando la orden se marca como DEVUELTA en Mastershop (id_status 10)
+// ==========================================
+export const completeReturnsForOrder = async (mastershopOrderId, mastershopData) => {
+  try {
+    if (!mastershopOrderId) return 0;
+
+    const order = await resolveOrder(mastershopOrderId);
+    if (!order) return 0;
+
+    const { rows } = await pool.query(
+      `SELECT * FROM returns
+       WHERE (order_id = $1 OR order_ref = $2)
+         AND status != $3
+       ORDER BY id DESC`,
+      [order.id, String(mastershopOrderId), RETURN_STATUS.COMPLETED]
+    );
+
+    if (rows.length === 0) return 0;
+
+    let completed = 0;
+    for (const ret of rows) {
+      await pool.query(
+        `UPDATE returns SET status = $2, mastershop_status = $3,
+           payload = jsonb_set(COALESCE(payload, '{}'::jsonb), '{returned}', $4::jsonb),
+           updated_at = NOW()
+         WHERE id = $1`,
+        [ret.id, RETURN_STATUS.COMPLETED, 'RETURNED', JSON.stringify(mastershopData || {})]
+      );
+
+      const quantity = toInt(ret.quantity, { min: 1, fallback: 1 });
+      let stockUpdated = 0;
+      if (ret.product_id) {
+        const stockRes = await pool.query(
+          `UPDATE produc SET stock_total = stock_total + $1, updated_at = NOW() WHERE id = $2`,
+          [quantity, ret.product_id]
+        );
+        stockUpdated = stockRes.rowCount || 0;
+      } else if (ret.product_sku) {
+        const prod = await resolveProductBySku(ret.tienda_id, ret.product_sku);
+        if (prod) {
+          const stockRes = await pool.query(
+            `UPDATE produc SET stock_total = stock_total + $1, updated_at = NOW() WHERE id = $2`,
+            [quantity, prod.id]
+          );
+          stockUpdated = stockRes.rowCount || 0;
+        }
+      }
+      completed += 1;
+      console.log(`[Returns] Orden ${mastershopOrderId} devuelta: ticket ${ret.return_number} completado, stock restituido: ${stockUpdated}`);
+    }
+
+    return completed;
+  } catch (error) {
+    console.error('[Returns] Error completando devoluciones:', error.message);
+    return 0;
   }
 };
 

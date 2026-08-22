@@ -1,6 +1,7 @@
 import { pool } from '../db.js';
 import { redisClient } from './redis.service.js';
 import { cleanString, toNumber } from '../utils/validation.js';
+import { completeReturnsForOrder } from '../controllers/returns.controller.js';
 
 const MASTERSHOP_STATUS_NAMES = {
   1: 'Por Confirmar',
@@ -185,6 +186,22 @@ export const processMastershopWebhookEvent = async (payload) => {
       });
 
       console.log(`[Mastershop Webhook] Orden ${orderId}: ${updatedOrders} orden(es), ${updatedShipments} envío(s) actualizados.`);
+
+      // Si la orden pasó a DEVUELTA (id_status 10 / fulfillment_status returned),
+      // completamos los tickets de devolución pendientes y reponemos el stock.
+      const returnedIdStatus = toNumber(data?.id_status, { min: 1, fallback: 0 });
+      const returnedFulfillment = cleanString(data?.fulfillment_status, { maxLength: 50 });
+      const isReturned =
+        returnedIdStatus === 10 ||
+        /^returned$/i.test(returnedFulfillment) ||
+        /devuelta|devuelt/i.test(cleanString(data?.status, { maxLength: 50 }));
+
+      if (isReturned) {
+        const completed = await completeReturnsForOrder(orderId, data);
+        if (completed > 0) {
+          console.log(`[Mastershop Webhook] Orden ${orderId} devuelta: ${completed} devolución(es) completada(s).`);
+        }
+      }
     }
   }
 
