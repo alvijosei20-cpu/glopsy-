@@ -192,7 +192,7 @@ export default function ProductsManage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {filtered.map((product) => {
             const isActive = product.status === 'active';
             const img = getImage(product);
@@ -200,18 +200,22 @@ export default function ProductsManage() {
             return (
               <article
                 key={product.id}
-                className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden shadow-sm hover:shadow-md transition-all duration-300"
+                className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col sm:flex-row overflow-hidden group min-h-[16rem] sm:min-h-[15rem]"
               >
-                <div className="relative h-40 bg-slate-100 dark:bg-zinc-800">
+                <div className="relative w-full sm:w-2/5 h-44 sm:h-full sm:min-h-[15rem] bg-slate-100 dark:bg-zinc-800 overflow-hidden flex items-center justify-center border-b sm:border-b-0 sm:border-r border-slate-200 dark:border-zinc-800 shrink-0">
                   {img ? (
-                    <img src={img} alt={product.name} className="w-full h-full object-cover" />
+                    <img
+                      src={img}
+                      alt={product.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-slate-300 dark:text-zinc-600">
                       <Package size={40} />
                     </div>
                   )}
                   <span
-                    className={`absolute top-2 right-2 text-[10px] font-bold px-2.5 py-1 rounded-full border flex items-center gap-1 ${
+                    className={`absolute top-2 right-2 text-[10px] font-bold px-2.5 py-1 rounded-full border flex items-center gap-1 shadow-md ${
                       isActive
                         ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
                         : 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
@@ -222,20 +226,22 @@ export default function ProductsManage() {
                   </span>
                 </div>
 
-                <div className="p-4 space-y-3">
+                <div className="w-full sm:w-3/5 p-3.5 sm:p-4 flex flex-col flex-grow justify-between">
                   <div>
-                    <h3 className="font-bold text-slate-900 dark:text-white text-sm truncate">{product.name}</h3>
-                    <p className="text-slate-500 dark:text-slate-400 text-xs mt-0.5">
+                    <h3 className="font-bold text-slate-900 dark:text-white text-sm sm:text-base line-clamp-2 group-hover:text-fuchsia-600 transition-colors leading-snug">
+                      {product.name}
+                    </h3>
+                    <p className="text-slate-500 dark:text-slate-400 text-xs mt-1.5">
                       {formatPrice(product.suggested_price || product.base_price)} · Stock: {product.stock_total}
                     </p>
                     {imageCount > 0 && (
-                      <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+                      <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
                         {imageCount} imagen(es)
                       </p>
                     )}
                   </div>
 
-                  <div className="flex gap-2 pt-1 border-t border-slate-100 dark:border-zinc-800">
+                  <div className="flex gap-2 pt-2.5 mt-2.5 border-t border-slate-100 dark:border-zinc-800">
                     <button
                       onClick={() => setImageModal(product)}
                       className="flex-1 flex items-center justify-center gap-1.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-slate-300 hover:text-fuchsia-600 dark:hover:text-fuchsia-400 hover:border-fuchsia-300 dark:hover:border-fuchsia-800 px-2.5 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
