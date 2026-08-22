@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Package, ArrowLeft, MapPin, Clock, CheckCircle, Truck, Phone, XCircle, Sparkles, ChevronDown, Star } from 'lucide-react';
+import { Package, ArrowLeft, MapPin, Clock, CheckCircle, Truck, Phone, XCircle, Sparkles, ChevronDown, Star, RotateCcw, X } from 'lucide-react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -19,6 +19,10 @@ export default function CompraDetail() {
   const [reviewStatus, setReviewStatus] = useState(null);
   const [reviewDraft, setReviewDraft] = useState({});
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [returnModal, setReturnModal] = useState(null);
+  const [returnReason, setReturnReason] = useState('');
+  const [returnNotes, setReturnNotes] = useState('');
+  const [submittingReturn, setSubmittingReturn] = useState(false);
 
   useEffect(() => {
     const fetchOrder = async () => {
@@ -190,6 +194,46 @@ export default function CompraDetail() {
       alert(err.response?.data?.message || 'Error al enviar la calificación.');
     } finally {
       setSubmittingReview(false);
+    }
+  };
+
+  const openReturnModal = (item) => {
+    setReturnModal(item);
+    setReturnReason('');
+    setReturnNotes('');
+  };
+
+  const handleSubmitReturn = async () => {
+    if (!user) {
+      alert('Debes iniciar sesión para solicitar una devolución.');
+      navigate('/login');
+      return;
+    }
+    if (!returnModal) return;
+    if (!returnReason) {
+      alert('Selecciona el motivo de la devolución (garantía o cambio).');
+      return;
+    }
+    setSubmittingReturn(true);
+    try {
+      const orderId = order.order_number || order.id;
+      const productSku = returnModal.public_id || String(returnModal.product_id || '');
+      const res = await api.post('/returns/request', {
+        orderId,
+        reason: returnReason,
+        customerNotes: returnNotes,
+        productSku,
+      });
+      if (res.data.ok) {
+        setToastMessage('¡Devolución solicitada con éxito! Te contactaremos para coordinar la recogida.');
+        setTimeout(() => setToastMessage(''), 4000);
+        setReturnModal(null);
+      }
+    } catch (err) {
+      console.error('Error al solicitar devolución:', err);
+      alert(err.response?.data?.message || 'Error al solicitar la devolución.');
+    } finally {
+      setSubmittingReturn(false);
     }
   };
 
@@ -503,8 +547,18 @@ export default function CompraDetail() {
                           <h4 className="font-semibold text-slate-800 dark:text-slate-200 text-xs sm:text-sm truncate">{item.product_name}</h4>
                           <span className="text-[11px] text-slate-500 dark:text-slate-400">Cant: {item.quantity}</span>
                         </div>
-                        <div className="text-right font-bold text-slate-900 dark:text-white text-xs sm:text-sm pr-1">
-                          {formatPrice(item.line_total)}
+                        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 sm:gap-3">
+                          {user && isShipmentDelivered(shipment.fulfillment_status) && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); openReturnModal(item); }}
+                              className="flex items-center gap-1.5 bg-white dark:bg-zinc-800 text-fuchsia-600 dark:text-fuchsia-400 border border-fuchsia-200 dark:border-fuchsia-900/60 hover:bg-fuchsia-50 dark:hover:bg-zinc-800 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer"
+                            >
+                              <RotateCcw size={13} /> Devolución
+                            </button>
+                          )}
+                          <div className="text-right font-bold text-slate-900 dark:text-white text-xs sm:text-sm pr-1">
+                            {formatPrice(item.line_total)}
+                          </div>
                         </div>
                       </div>
                     );
@@ -621,6 +675,104 @@ export default function CompraDetail() {
             <XCircle size={16} />
             {cancelling ? 'Cancelando...' : 'Cancelar Pedido'}
           </button>
+        </div>
+      )}
+
+      {/* Return Request Modal */}
+      {returnModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setReturnModal(null)}>
+          <div
+            className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-2xl border border-slate-200 dark:border-zinc-700 shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-zinc-800">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <RotateCcw size={18} className="text-fuchsia-600 dark:text-fuchsia-400" /> Solicitar Devolución
+              </h3>
+              <button
+                onClick={() => setReturnModal(null)}
+                className="p-1 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                aria-label="Cerrar"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-4">
+              <div className="flex items-center gap-3 bg-slate-50 dark:bg-zinc-800/70 rounded-xl p-3 border border-slate-200 dark:border-zinc-700">
+                <div className="w-11 h-11 bg-white dark:bg-zinc-900 rounded-lg overflow-hidden shrink-0 border border-slate-200 dark:border-zinc-700">
+                  <img
+                    src={getProductImage(returnModal)}
+                    alt={returnModal.product_name}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.target.src = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60';
+                    }}
+                  />
+                </div>
+                <div className="min-w-0">
+                  <h4 className="font-semibold text-slate-800 dark:text-slate-200 text-sm truncate">{returnModal.product_name}</h4>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400">Cant: {returnModal.quantity}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">¿Por qué motivo lo devuelves?</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => setReturnReason('garantia')}
+                    className={`flex flex-col items-center gap-1.5 px-4 py-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                      returnReason === 'garantia'
+                        ? 'bg-fuchsia-50 dark:bg-fuchsia-950/40 border-fuchsia-400 dark:border-fuchsia-700 text-fuchsia-700 dark:text-fuchsia-300'
+                        : 'bg-white dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-slate-400 hover:border-fuchsia-300 dark:hover:border-fuchsia-800'
+                    }`}
+                  >
+                    <CheckCircle size={18} />
+                    Garantía
+                  </button>
+                  <button
+                    onClick={() => setReturnReason('cambio')}
+                    className={`flex flex-col items-center gap-1.5 px-4 py-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                      returnReason === 'cambio'
+                        ? 'bg-fuchsia-50 dark:bg-fuchsia-950/40 border-fuchsia-400 dark:border-fuchsia-700 text-fuchsia-700 dark:text-fuchsia-300'
+                        : 'bg-white dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-slate-400 hover:border-fuchsia-300 dark:hover:border-fuchsia-800'
+                    }`}
+                  >
+                    <Truck size={18} />
+                    Cambio
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">Notas adicionales (opcional)</label>
+                <textarea
+                  value={returnNotes}
+                  onChange={(e) => setReturnNotes(e.target.value)}
+                  placeholder="Cuéntanos qué pasó con tu producto..."
+                  rows={3}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-800 dark:text-white text-sm resize-none focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
+                />
+              </div>
+            </div>
+
+            <div className="px-5 py-4 border-t border-slate-200 dark:border-zinc-800 flex gap-3">
+              <button
+                onClick={() => setReturnModal(null)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 text-sm font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSubmitReturn}
+                disabled={submittingReturn}
+                className="flex-1 py-2.5 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-sm font-semibold transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <RotateCcw size={15} />
+                {submittingReturn ? 'Enviando...' : 'Solicitar Devolución'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
