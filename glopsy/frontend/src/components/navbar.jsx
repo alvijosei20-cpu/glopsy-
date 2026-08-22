@@ -248,9 +248,11 @@ export default function Navbar() {
           
           {/* Logo */}
           <Link to="/" className="flex-shrink-0 flex items-center gap-2 cursor-pointer group">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-fuchsia-600 to-pink-500 flex items-center justify-center font-bold text-xl text-white shadow-md shadow-fuchsia-500/20 group-hover:scale-105 transition-transform">
-              G
-            </div>
+            <img
+              src="/glopsy.png"
+              alt="Glopsy"
+              className="h-8 w-auto object-contain group-hover:scale-105 transition-transform"
+            />
             <span className="font-bold text-xl tracking-wide bg-gradient-to-r from-fuchsia-600 to-pink-600 bg-clip-text text-transparent">
               Glopsy
             </span>
