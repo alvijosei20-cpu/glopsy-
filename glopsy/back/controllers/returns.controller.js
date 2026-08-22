@@ -311,6 +311,33 @@ export const reverseLogisticsWebhook = async (req, res) => {
 };
 
 // ==========================================
+// GET /api/returns (listado de devoluciones del usuario)
+// ==========================================
+export const listReturns = async (req, res) => {
+  try {
+    const userId = req.auth?.userId || null;
+    const { rows } = await pool.query(
+      `SELECT r.id, r.return_number, r.order_id, r.order_ref, r.product_sku, r.quantity,
+              r.reason, r.customer_notes, r.status, r.mastershop_status, r.mastershop_tracking,
+              r.created_at, r.updated_at,
+              p.name AS product_name, p.public_id,
+              p.images AS product_images,
+              o.order_hash, o.created_at AS order_created_at
+       FROM returns r
+       LEFT JOIN orders o ON o.id = r.order_id
+       LEFT JOIN produc p ON p.id = r.product_id
+       WHERE $1::bigint IS NULL OR o.user_id = $1
+       ORDER BY r.created_at DESC`,
+      [userId]
+    );
+    return res.json({ ok: true, returns: rows });
+  } catch (error) {
+    console.error('Error listando devoluciones:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible listar las devoluciones.' });
+  }
+};
+
+// ==========================================
 // GET /api/returns/:orderId (consulta estado de devolución)
 // ==========================================
 export const getReturnByOrder = async (req, res) => {
