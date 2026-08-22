@@ -313,7 +313,7 @@ export const getProductsForUserManagement = async (userId) => {
     `SELECT id, public_id, name, base_price, suggested_price, stock_total,
             status, images, variants, external_product_id, created_at, updated_at
      FROM produc
-     WHERE tienda_id = $1
+     WHERE tienda_id = $1 AND status != 'deleted'
      ORDER BY updated_at DESC, id DESC`,
     [userId]
   );

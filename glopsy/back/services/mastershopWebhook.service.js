@@ -218,9 +218,15 @@ export const processMastershopWebhookEvent = async (payload) => {
         : await resolveTiendaIdForWebhook(productId, publicId);
 
       await pool.query(
-        `INSERT INTO produc (tienda_id, id, public_id, name, base_price, updated_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())
-         ON CONFLICT (id) DO UPDATE SET tienda_id = EXCLUDED.tienda_id, name = EXCLUDED.name, base_price = EXCLUDED.base_price, updated_at = NOW()`,
+        `INSERT INTO produc (tienda_id, id, public_id, name, base_price, updated_at, status)
+         VALUES ($1, $2, $3, $4, $5, NOW(), 'active')
+         ON CONFLICT (id) DO UPDATE SET
+           tienda_id = EXCLUDED.tienda_id,
+           name = EXCLUDED.name,
+           base_price = EXCLUDED.base_price,
+           updated_at = NOW(),
+           -- Si el producto fue eliminado/pausado por el dueño, el webhook no lo revive
+           status = CASE WHEN produc.status = 'deleted' THEN produc.status ELSE EXCLUDED.status END`,
         [tiendaId, Number(productId) || Math.floor(Math.random() * 1000000), publicId || String(productId), name || 'Producto Webhook', price]
       );
 
