@@ -72,10 +72,10 @@
   .badge {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
+    gap: 4px;
+    padding: 2px 6px;
     border-radius: 999px;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 500;
     background: var(--background);
     color: var(--text-muted);
@@ -87,22 +87,19 @@
   .badge.bg-ok { background: rgba(34,197,94,0.15); }
   .badge.bg-down { background: rgba(157,23,77,0.25); }
   .badge.bg-warn { background: rgba(234,179,8,0.15); }
-  .badge .dot { width: 8px; height: 8px; border-radius: 999px; background: currentColor; }
+  .badge .dot { width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
   .item {
     display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    padding: 8px 0;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
     border-bottom: 1px solid var(--border);
   }
   .item:last-child { border-bottom: none; }
-  .item .icon { flex-shrink: 0; width: 16px; height: 16px; margin-top: 4px; }
   .item .body { min-width: 0; flex: 1; }
-  .item .title { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .item .sub { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .item .sub code { background: var(--background); padding: 2px 6px; border-radius: 4px; font-size: 11px; }
-  .item .right { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-  .commit-msg { font-size: 14px; }
+  .item .title { font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .sub { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .item .right { flex-shrink: 0; }
   .health-row {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -165,6 +162,7 @@
         <div class="health-cell"><div class="value" id="h-db">—</div><div class="label">PostgreSQL</div></div>
         <div class="health-cell"><div class="value" id="h-redis">—</div><div class="label">Redis</div></div>
         <div class="health-cell"><div class="value" id="h-uptime">—</div><div class="label">Uptime (s)</div></div>
+        <div class="health-cell"><div class="value" id="h-online">—</div><div class="label">Activos ahora</div></div>
         <div class="health-cell"><div class="value" id="h-last">—</div><div class="label">Último check</div></div>
       </div>
     </section>
@@ -227,14 +225,12 @@
     } else {
       const commits = await commitsRes.json();
       $('repo-body').innerHTML = commits.map((c) => {
-        const sha = c.sha.slice(0, 7);
         return (
           '<div class="item">' +
           '<div class="body">' +
-          '<div class="title commit-msg">' + esc(c.commit.message.split('\n')[0]) + '</div>' +
-          '<div class="sub"><code>' + sha + '</code><span>' + esc(c.commit.author.name) + '</span><span>·</span><span>' + relTime(c.commit.author.date) + '</span></div>' +
+          '<div class="title">' + esc(c.commit.message.split('\n')[0].slice(0, 60)) + '</div>' +
+          '<div class="sub"><span>' + esc(c.commit.author.name) + '</span><span>·</span><span>' + relTime(c.commit.author.date) + '</span></div>' +
           '</div>' +
-          '<div class="right"><a href="' + c.html_url + '" target="_blank" rel="noopener">↗</a></div>' +
           '</div>'
         );
       }).join('');
@@ -254,7 +250,7 @@
           '<div class="item">' +
           '<div class="body">' +
           '<div class="title">' + esc(r.name) + '</div>' +
-          '<div class="sub"><span>#' + r.run_number + '</span><span>·</span><span>' + relTime(r.created_at) + '</span><span>·</span><code>' + esc(r.head_commit.message.split('\n')[0]) + '</code></div>' +
+          '<div class="sub"><span>#' + r.run_number + '</span><span>·</span><span>' + relTime(r.created_at) + '</span></div>' +
           '</div>' +
           '<div class="right">' + badge(cls, status) + '</div>' +
           '</div>'
@@ -308,16 +304,37 @@
     ));
   }
 
+  // ---------- Usuarios activos (Google Analytics 4) ----------
+  async function fetchOnline() {
+    try {
+      const res = await fetch(API_URL + '/api/stats/online');
+      if (res.status === 503) {
+        $('h-online').textContent = '—';
+        $('h-online').style.color = 'var(--text-muted)';
+        return;
+      }
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const d = await res.json();
+      $('h-online').textContent = d.online;
+      $('h-online').style.color = d.online > 0 ? 'var(--ok)' : 'var(--warn)';
+    } catch (err) {
+      $('h-online').textContent = '—';
+      $('h-online').style.color = 'var(--text-muted)';
+    }
+  }
+
   function tick() {
     const now = Date.now();
     const auto = $('auto').checked;
     if (auto && now - lastGithub >= GITHUB_MS) fetchGitHub().catch(() => {});
     if (auto && now - lastHealth >= HEALTH_MS) fetchHealth();
+    if (auto && now - lastHealth >= HEALTH_MS) fetchOnline();
   }
 
   // Carga inicial
   fetchGitHub().catch(() => {});
   fetchHealth();
+  fetchOnline();
   setInterval(tick, 5000);
 
   // Actualizar el relativo en cada tick sin recargar datos
