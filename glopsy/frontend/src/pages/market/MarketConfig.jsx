@@ -1547,7 +1547,7 @@ const MarketConfig = () => {
                         onChange={(e) => setMercadoPagoConfig({ ...mercadoPagoConfig, webhook_secret: e.target.value })}
                         style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
                       />
-                      <small style={{ color: '#64748b', fontSize: '0.8rem' }}>Opcional. Úsalo para validar la firma de los webhooks en el endpoint /api/webhooks/mercadopago/webhook.</small>
+                      <small style={{ color: '#64748b', fontSize: '0.8rem' }}>Opcional. Úsalo para validar la firma de los webhooks en el endpoint /api/payments/mercadopago/webhook.</small>
                     </div>
                   </div>
 
