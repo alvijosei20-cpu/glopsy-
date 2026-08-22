@@ -1,3 +1,0 @@
-# SPA: cualquier ruta cae en index.html
-# Nota: /api/* lo maneja functions/api/[[path]].js (proxy al backend)
-/* /index.html 200
