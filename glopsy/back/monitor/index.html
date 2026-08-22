@@ -178,10 +178,10 @@
 
 <script>
   // Configuración. Se pueden sobreescribir con query params, ej:
-  // ?repo=alvijosei20-cpu/glopsy-&api=https://api.tu-dominio.com
+  // ?repo=alvijosei20-cpu/glopsy-&api=https://app.glopsy.shop
   const params = new URLSearchParams(location.search);
   const REPO = params.get('repo') || 'alvijosei20-cpu/glopsy-';
-  const API_URL = (params.get('api') || 'https://api.tu-dominio.com').replace(/\/$/, '');
+  const API_URL = (params.get('api') || 'https://app.glopsy.shop').replace(/\/$/, '');
 
   const GITHUB_MS = 5 * 60 * 1000;
   const HEALTH_MS = 20 * 1000;
