@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Globe, FileJson, Search, AlertCircle, Save, CheckCircle2, DollarSign, Tag, Layers, Image as ImageIcon, MapPin, Package } from 'lucide-react';
+import { Search, AlertCircle, Save, CheckCircle2, DollarSign, Tag, Layers, Image as ImageIcon, MapPin, Package } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { ApiLoadingModal } from '../../components/LoadingScreen';
 import api from '../../services/api';
@@ -250,7 +250,6 @@ export default function Publish() {
           <h1 id="publish-title">Publicar Producto</h1>
           <p>Consulta productos, selecciona el centro de distribución guardado, edita y publica.</p>
         </div>
-        <Globe aria-hidden="true" size={28} />
       </div>
 
       {error && (
