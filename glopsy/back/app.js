@@ -13,6 +13,7 @@ import geoRoutes from './routes/geo.routes.js';
 import healthRoutes from './routes/health.routes.js';
 import mastershopWebhookRoutes from './routes/mastershopWebhook.routes.js';
 import mercadopagoWebhookRoutes from './routes/mercadopagoWebhook.routes.js';
+import returnsRoutes from './routes/returns.routes.js';
 
 const app = express();
 
@@ -53,5 +54,6 @@ app.use('/api/geo', geoRoutes);
 app.use('/api/health', healthRoutes);
 app.use('/api/webhooks', mastershopWebhookRoutes);
 app.use('/api/payments', mercadopagoWebhookRoutes);
+app.use('/api/returns', returnsRoutes);
 
 export default app;
