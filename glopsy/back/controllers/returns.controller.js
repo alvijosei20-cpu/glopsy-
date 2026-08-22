@@ -1,0 +1,334 @@
+import axios from 'axios';
+import { pool } from '../db.js';
+import { cleanString, cleanText, toNumber, toInt } from '../utils/validation.js';
+
+// Estados locales del ticket de devolución
+const RETURN_STATUS = {
+  REQUESTED: 'RETURN_REQUESTED',
+  PICKUP_SCHEDULED: 'PICKUP_SCHEDULED',
+  IN_TRANSIT: 'IN_TRANSIT',
+  COMPLETED: 'RETURN_COMPLETED',
+  REJECTED: 'REJECTED',
+};
+
+// Estado que indica que el paquete devuelto llegó a bodega (webhook Mastershop)
+const WAREHOUSE_RECEIVED_STATUS = 'RECEIVED_IN_WAREHOUSE';
+
+// Obtiene la API key de Mastershop desde la tabla tienda_integraciones
+const getMastershopApiKey = async (tiendaId) => {
+  const { rows } = await pool.query(
+    `SELECT api_key FROM tienda_integraciones WHERE user_id = $1 AND provider = 'mastershop' LIMIT 1`,
+    [tiendaId || 1]
+  );
+  return rows[0]?.api_key || null;
+};
+
+const getMastershopBaseUrl = () =>
+  process.env.MASTERSHOP_API_URL || 'https://prod.api.mastershop.com/api';
+
+const getReturnEndpoint = (orderId) =>
+  process.env.MASTERSHOP_RETURN_URL || `${getMastershopBaseUrl()}/orders/${orderId}/returns`;
+
+const generateReturnNumber = () => {
+  const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `RET-${Date.now().toString().slice(-6)}-${suffix}`;
+};
+
+const resolveOrder = async (orderId) => {
+  const id = toInt(orderId, { min: 1 });
+  if (!id) return null;
+  const { rows } = await pool.query(
+    `SELECT * FROM orders WHERE id = $1 OR order_hash = $2 OR order_number = $3 OR payload->>'id_order' = $4 LIMIT 1`,
+    [id, String(orderId), String(orderId), String(orderId)]
+  );
+  return rows[0] || null;
+};
+
+const resolveProductBySku = async (tiendaId, sku) => {
+  if (!sku) return null;
+  const { rows } = await pool.query(
+    `SELECT id, stock_total FROM produc
+     WHERE tienda_id = $1 AND (external_product_id = $2 OR public_id = $2 OR id::text = $2)
+     LIMIT 1`,
+    [tiendaId || 1, cleanString(sku, { maxLength: 100 })]
+  );
+  return rows[0] || null;
+};
+
+// ==========================================
+// POST /api/returns/request
+// ==========================================
+export const requestReturn = async (req, res) => {
+  const orderId = cleanString(req.body.orderId ?? req.body.order_id, { maxLength: 100 });
+  const reason = cleanString(req.body.reason, { maxLength: 500 });
+  const customerNotes = cleanText(req.body.customerNotes ?? req.body.customer_notes, { maxLength: 2000 });
+  const productSku = cleanString(req.body.productSku ?? req.body.product_sku, { maxLength: 100 });
+
+  // Soporta devolución de múltiples productos (products: [{ sku, quantity }])
+  const products = Array.isArray(req.body.products)
+    ? req.body.products.map((p) => ({
+        sku: cleanString(p?.sku ?? p?.productSku ?? p?.public_id ?? p?.product_id, { maxLength: 100 }),
+        quantity: toInt(p?.quantity, { min: 1, fallback: 1 }),
+      })).filter((p) => p.sku)
+    : [];
+
+  const hasSingle = !!productSku;
+  const hasMany = products.length > 0;
+
+  if (!orderId || !reason) {
+    return res.status(400).json({
+      ok: false,
+      message: 'orderId y reason son obligatorios para solicitar la devolución.',
+    });
+  }
+
+  if (!hasSingle && !hasMany) {
+    return res.status(400).json({
+      ok: false,
+      message: 'Indica al menos un producto (productSku o products) a devolver.',
+    });
+  }
+
+  let order;
+  try {
+    // 1) Buscamos la orden en Mastershop para validar estado
+    const tiendaId = req.auth?.userId || 1;
+    const apiKey = await getMastershopApiKey(tiendaId);
+
+    if (!apiKey) {
+      return res.status(503).json({ ok: false, message: 'No hay integración Mastershop configurada.' });
+    }
+
+    const msResponse = await axios.get(`${getMastershopBaseUrl()}/orders/${orderId}`, {
+      headers: { 'ms-api-key': apiKey },
+      timeout: 8000,
+    });
+
+    const msOrder = msResponse.data?.data || msResponse.data;
+    const idStatus = toNumber(msOrder?.id_status, { min: 1, fallback: 0 });
+    const fulfillmentStatus = cleanString(msOrder?.fulfillment_status, { maxLength: 50 });
+    const statusName = cleanString(msOrder?.status, { maxLength: 50 });
+
+    const isDelivered =
+      idStatus === 8 ||
+      /deliver|entregad/i.test(fulfillmentStatus || '') ||
+      /entregad|delivered/i.test(statusName || '');
+
+    if (!isDelivered) {
+      return res.status(400).json({
+        ok: false,
+        message:
+          'La orden no está en estado ENTREGADO. Las devoluciones solo aplican a pedidos entregados.',
+        mastershopStatus: { id_status: idStatus, fulfillment_status: fulfillmentStatus, status: statusName },
+      });
+    }
+
+    // 2) Resolvemos la orden local (si existe)
+    order = await resolveOrder(orderId);
+
+    // 3) Construimos la lista de productos a devolver
+    const skus = hasMany
+      ? products
+      : [{ sku: productSku, quantity: 1 }];
+
+    const createdReturns = [];
+    let pickupResult = null;
+
+    for (const entry of skus) {
+      const product = await resolveProductBySku(order?.tienda_id || tiendaId, entry.sku);
+      const returnNumber = generateReturnNumber();
+
+      const { rows } = await pool.query(
+        `INSERT INTO returns (
+           return_number, order_id, order_ref, tienda_id, product_id, product_sku,
+           quantity, reason, customer_notes, status, mastershop_status, payload
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         RETURNING id, return_number, order_id, order_ref, product_sku, quantity, reason, status, created_at`,
+        [
+          returnNumber,
+          order?.id || null,
+          orderId,
+          order?.tienda_id || tiendaId,
+          product?.id || null,
+          entry.sku,
+          entry.quantity,
+          reason,
+          customerNotes || null,
+          RETURN_STATUS.REQUESTED,
+          statusName || null,
+          JSON.stringify({ mastershop: msOrder, orderHash: order?.order_hash || null }),
+        ]
+      );
+      createdReturns.push(rows[0]);
+    }
+
+    // 4) Notificamos a Mastershop la solicitud de recogida (logística inversa / garantías)
+    const pickupPayload = {
+      return_number: createdReturns.map((r) => r.return_number),
+      order_id: orderId,
+      items: skus,
+      reason,
+      customer_notes: customerNotes,
+      pickup_requested: true,
+    };
+
+    try {
+      const pickup = await axios.post(getReturnEndpoint(orderId), pickupPayload, {
+        headers: { 'ms-api-key': apiKey, 'Content-Type': 'application/json' },
+        timeout: 8000,
+      });
+      pickupResult = pickup.data;
+      for (const r of createdReturns) {
+        await pool.query(
+          `UPDATE returns SET mastershop_status = $2, payload = jsonb_set(COALESCE(payload, '{}'::jsonb), '{pickup}', $3::jsonb), updated_at = NOW() WHERE id = $1`,
+          [r.id, 'PICKUP_SCHEDULED', JSON.stringify(pickupResult)]
+        );
+      }
+    } catch (pickupError) {
+      console.warn('[Returns] Mastershop rechazó la recogida:', pickupError.response?.data || pickupError.message);
+    }
+
+    return res.status(201).json({
+      ok: true,
+      message: `Solicitud de devolución creada para ${createdReturns.length} producto(s). Pendiente de recogida.`,
+      returns: createdReturns,
+      mastershop: pickupResult,
+    });
+  } catch (error) {
+    console.error('Error al solicitar devolución:', error.response?.data || error.message);
+    if (error.response?.status === 404) {
+      return res.status(404).json({ ok: false, message: 'La orden no existe en Mastershop.' });
+    }
+    return res.status(500).json({
+      ok: false,
+      message: 'No fue posible procesar la solicitud de devolución.',
+    });
+  }
+};
+
+// ==========================================
+// POST /webhooks/mastershop/reverse-logistics
+// ==========================================
+export const reverseLogisticsWebhook = async (req, res) => {
+  try {
+    const data = req.body?.data || req.body;
+    const status = cleanString(
+      data?.status ?? data?.return_status ?? data?.id_status ?? data?.reverse_status,
+      { maxLength: 60 }
+    );
+    const returnNumber = cleanString(
+      data?.return_number ?? data?.returns_number ?? data?.reference,
+      { maxLength: 40 }
+    );
+    const orderRef = cleanString(
+      data?.order_id ?? data?.id_order ?? data?.order_ref ?? data?.order_number,
+      { maxLength: 100 }
+    );
+    const tracking = cleanString(
+      data?.tracking_code ?? data?.tracking ?? data?.guide,
+      { maxLength: 200 }
+    );
+
+    console.log(`[Returns Webhook] Estado: ${status} | Return: ${returnNumber} | Orden: ${orderRef}`);
+
+    // Localizamos el ticket de devolución por número de retorno, orden o tracking
+    let params = [];
+    let where = '';
+    if (returnNumber) {
+      params.push(returnNumber);
+      where = `return_number = $${params.length}`;
+    } else if (orderRef) {
+      params.push(String(orderRef), String(orderRef), String(orderRef));
+      where = `(order_ref = $${params.length - 2} OR order_id::text = $${params.length - 1} OR payload->>'orderHash' = $${params.length})`;
+    } else if (tracking) {
+      params.push(tracking);
+      where = `mastershop_tracking = $${params.length}`;
+    } else {
+      return res.status(400).json({ ok: false, message: 'No se pudo identificar la devolución en el webhook.' });
+    }
+
+    const { rows } = await pool.query(`SELECT * FROM returns WHERE ${where} ORDER BY id DESC LIMIT 1`, params);
+    const returnRecord = rows[0];
+
+    if (!returnRecord) {
+      return res.status(404).json({ ok: false, message: 'Devolución no encontrada para este webhook.' });
+    }
+
+    const updates = [`updated_at = NOW()`];
+    const updParams = [];
+    if (status) {
+      updParams.push(status);
+      updates.push(`mastershop_status = $${updParams.length}`);
+    }
+    if (tracking) {
+      updParams.push(tracking);
+      updates.push(`mastershop_tracking = $${updParams.length}`);
+    }
+    updParams.push(JSON.stringify(data));
+    updates.push(`payload = jsonb_set(COALESCE(payload, '{}'::jsonb), '{reverse_webhook}', $${updParams.length}::jsonb)`);
+
+    // Si el paquete llegó a bodega → RETURN_COMPLETED + incrementar stock
+    if (status && status.toUpperCase().includes(WAREHOUSE_RECEIVED_STATUS)) {
+      updParams.push(RETURN_STATUS.COMPLETED);
+      updates.push(`status = $${updParams.length}`);
+
+      await pool.query(`UPDATE returns SET ${updates.join(', ')} WHERE id = $1`, [...updParams, returnRecord.id]);
+
+      const quantity = toInt(returnRecord.quantity, { min: 1, fallback: 1 });
+      let stockUpdated = 0;
+      if (returnRecord.product_id) {
+        const stockRes = await pool.query(
+          `UPDATE produc SET stock_total = stock_total + $1, updated_at = NOW() WHERE id = $2`,
+          [quantity, returnRecord.product_id]
+        );
+        stockUpdated = stockRes.rowCount || 0;
+      } else if (returnRecord.product_sku) {
+        const prod = await resolveProductBySku(returnRecord.tienda_id, returnRecord.product_sku);
+        if (prod) {
+          const stockRes = await pool.query(
+            `UPDATE produc SET stock_total = stock_total + $1, updated_at = NOW() WHERE id = $2`,
+            [quantity, prod.id]
+          );
+          stockUpdated = stockRes.rowCount || 0;
+        }
+      }
+
+      return res.json({
+        ok: true,
+        message: 'Devolución completada y stock restituido.',
+        return: { ...returnRecord, status: RETURN_STATUS.COMPLETED },
+        stock_restored: stockUpdated,
+      });
+    }
+
+    // Otros estados (recogida, en tránsito, etc.) solo actualizan el ticket
+    await pool.query(`UPDATE returns SET ${updates.join(', ')} WHERE id = $1`, [...updParams, returnRecord.id]);
+    return res.json({ ok: true, message: 'Webhook de logística inversa procesado.', return: returnRecord });
+  } catch (error) {
+    console.error('Error procesando webhook de logística inversa:', error.response?.data || error.message);
+    return res.status(500).json({ ok: false, message: 'Error procesando webhook de logística inversa.' });
+  }
+};
+
+// ==========================================
+// GET /api/returns/:orderId (consulta estado de devolución)
+// ==========================================
+export const getReturnByOrder = async (req, res) => {
+  try {
+    const orderId = cleanString(req.params.orderId, { maxLength: 100 });
+    if (!orderId) {
+      return res.status(400).json({ ok: false, message: 'orderId inválido.' });
+    }
+    const { rows } = await pool.query(
+      `SELECT id, return_number, order_ref, product_sku, reason, status, mastershop_status, mastershop_tracking, created_at, updated_at
+       FROM returns
+       WHERE order_ref = $1 OR order_id::text = $1
+       ORDER BY id DESC`,
+      [orderId]
+    );
+    return res.json({ ok: true, returns: rows });
+  } catch (error) {
+    console.error('Error consultando devoluciones:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible consultar la devolución.' });
+  }
+};

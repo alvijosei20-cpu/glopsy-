@@ -22,6 +22,7 @@ export default function CompraDetail() {
   const [returnModal, setReturnModal] = useState(null);
   const [returnReason, setReturnReason] = useState('');
   const [returnNotes, setReturnNotes] = useState('');
+  const [selectedReturns, setSelectedReturns] = useState([]);
   const [submittingReturn, setSubmittingReturn] = useState(false);
 
   useEffect(() => {
@@ -197,10 +198,17 @@ export default function CompraDetail() {
     }
   };
 
-  const openReturnModal = (item) => {
-    setReturnModal(item);
+  const openReturnModal = (shipment, items) => {
+    setReturnModal(shipment);
+    setSelectedReturns(items.map((i) => i.product_id || i.id));
     setReturnReason('');
     setReturnNotes('');
+  };
+
+  const toggleReturnItem = (key) => {
+    setSelectedReturns((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
   };
 
   const handleSubmitReturn = async () => {
@@ -214,15 +222,26 @@ export default function CompraDetail() {
       alert('Selecciona el motivo de la devolución (garantía o cambio).');
       return;
     }
+    const allItems = returnModal._items || [];
+    const selectedItems = allItems.filter((i) =>
+      selectedReturns.includes(i.product_id || i.id)
+    );
+    if (selectedItems.length === 0) {
+      alert('Selecciona al menos un producto para devolver.');
+      return;
+    }
     setSubmittingReturn(true);
     try {
       const orderId = order.order_number || order.id;
-      const productSku = returnModal.public_id || String(returnModal.product_id || '');
+      const products = selectedItems.map((i) => ({
+        sku: i.public_id || String(i.product_id || ''),
+        quantity: Number(i.quantity || 1),
+      }));
       const res = await api.post('/returns/request', {
         orderId,
         reason: returnReason,
         customerNotes: returnNotes,
-        productSku,
+        products,
       });
       if (res.data.ok) {
         setToastMessage('¡Devolución solicitada con éxito! Te contactaremos para coordinar la recogida.');
@@ -498,6 +517,20 @@ export default function CompraDetail() {
                   </div>
                 </div>
 
+                {user && isShipmentDelivered(shipment.fulfillment_status) && shipmentItems.length > 0 && (
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Este envío fue entregado. Puedes solicitar una devolución.
+                    </p>
+                    <button
+                      onClick={() => openReturnModal({ ...shipment, _items: shipmentItems }, shipmentItems)}
+                      className="flex items-center gap-1.5 bg-white dark:bg-zinc-800 text-fuchsia-600 dark:text-fuchsia-400 border border-fuchsia-200 dark:border-fuchsia-900/60 hover:bg-fuchsia-50 dark:hover:bg-zinc-800 px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-semibold transition-colors cursor-pointer"
+                    >
+                      <RotateCcw size={13} /> Solicitar Devolución
+                    </button>
+                  </div>
+                )}
+
                 {(() => {
                   const tracking = getShipmentTracking(shipment);
                   const trackingUrl = getShipmentTrackingUrl(shipment);
@@ -547,18 +580,8 @@ export default function CompraDetail() {
                           <h4 className="font-semibold text-slate-800 dark:text-slate-200 text-xs sm:text-sm truncate">{item.product_name}</h4>
                           <span className="text-[11px] text-slate-500 dark:text-slate-400">Cant: {item.quantity}</span>
                         </div>
-                        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 sm:gap-3">
-                          {user && isShipmentDelivered(shipment.fulfillment_status) && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); openReturnModal(item); }}
-                              className="flex items-center gap-1.5 bg-white dark:bg-zinc-800 text-fuchsia-600 dark:text-fuchsia-400 border border-fuchsia-200 dark:border-fuchsia-900/60 hover:bg-fuchsia-50 dark:hover:bg-zinc-800 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer"
-                            >
-                              <RotateCcw size={13} /> Devolución
-                            </button>
-                          )}
-                          <div className="text-right font-bold text-slate-900 dark:text-white text-xs sm:text-sm pr-1">
-                            {formatPrice(item.line_total)}
-                          </div>
+                        <div className="text-right font-bold text-slate-900 dark:text-white text-xs sm:text-sm pr-1">
+                          {formatPrice(item.line_total)}
                         </div>
                       </div>
                     );
@@ -679,7 +702,10 @@ export default function CompraDetail() {
       )}
 
       {/* Return Request Modal */}
-      {returnModal && (
+      {returnModal && (() => {
+        const modalItems = returnModal._items || [];
+        const allSelected = modalItems.length > 0 && modalItems.every((i) => selectedReturns.includes(i.product_id || i.id));
+        return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setReturnModal(null)}>
           <div
             className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-2xl border border-slate-200 dark:border-zinc-700 shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200"
@@ -698,21 +724,53 @@ export default function CompraDetail() {
               </button>
             </div>
 
-            <div className="px-5 py-4 space-y-4">
-              <div className="flex items-center gap-3 bg-slate-50 dark:bg-zinc-800/70 rounded-xl p-3 border border-slate-200 dark:border-zinc-700">
-                <div className="w-11 h-11 bg-white dark:bg-zinc-900 rounded-lg overflow-hidden shrink-0 border border-slate-200 dark:border-zinc-700">
-                  <img
-                    src={getProductImage(returnModal)}
-                    alt={returnModal.product_name}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      e.target.src = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60';
-                    }}
-                  />
-                </div>
-                <div className="min-w-0">
-                  <h4 className="font-semibold text-slate-800 dark:text-slate-200 text-sm truncate">{returnModal.product_name}</h4>
-                  <span className="text-[11px] text-slate-500 dark:text-slate-400">Cant: {returnModal.quantity}</span>
+            <div className="px-5 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Envío #{returnModal.shipment_number} — {returnModal.carrier || 'Estándar'}. Selecciona qué productos vas a devolver.
+              </p>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">Productos del envío</label>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setSelectedReturns(allSelected ? [] : modalItems.map((i) => i.product_id || i.id))}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-fuchsia-200 dark:border-fuchsia-900/60 text-xs font-semibold text-fuchsia-600 dark:text-fuchsia-400 hover:bg-fuchsia-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2"><CheckCircle size={14} /> {allSelected ? 'Quitar todos' : 'Seleccionar todos'}</span>
+                    <span className="text-slate-400 dark:text-slate-500">{allSelected ? 'Todos seleccionados' : `${modalItems.length} producto(s)`}</span>
+                  </button>
+
+                  {modalItems.map((item) => {
+                    const key = item.product_id || item.id;
+                    const isChecked = selectedReturns.includes(key);
+                    return (
+                      <label
+                        key={key}
+                        className="flex items-center gap-3 p-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 cursor-pointer transition-colors hover:border-fuchsia-300 dark:hover:border-fuchsia-800"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleReturnItem(key)}
+                          className="w-4 h-4 accent-fuchsia-600 cursor-pointer shrink-0"
+                        />
+                        <div className="w-10 h-10 bg-white dark:bg-zinc-900 rounded-lg overflow-hidden shrink-0 border border-slate-200 dark:border-zinc-700">
+                          <img
+                            src={getProductImage(item)}
+                            alt={item.product_name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              e.target.src = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60';
+                            }}
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-semibold text-slate-800 dark:text-slate-200 text-sm truncate">{item.product_name}</h4>
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400">Cant: {item.quantity}</span>
+                        </div>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -774,7 +832,8 @@ export default function CompraDetail() {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
