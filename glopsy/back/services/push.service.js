@@ -45,7 +45,15 @@ export function getVapidPublicKey() {
 }
 
 async function parseSubscription(sub) {
-  if (!sub || !sub.endpoint) return null;
+  if (!sub) return null;
+  if (typeof sub === 'string') {
+    try {
+      sub = JSON.parse(sub);
+    } catch {
+      return null;
+    }
+  }
+  if (!sub.endpoint) return null;
   return {
     endpoint: String(sub.endpoint),
     expirationTime: sub.expirationTime != null ? Number(sub.expirationTime) : null,
@@ -71,11 +79,12 @@ async function sendToSubscription(subscription, payload) {
 }
 
 async function removeInvalidSubscription(subscription) {
-  if (!subscription || !subscription.endpoint) return;
+  if (!subscription) return;
+  const raw = typeof subscription === 'string' ? subscription : JSON.stringify(subscription);
   try {
     await pool.query(
-      `UPDATE users SET push_subscription = NULL WHERE push_subscription->>'endpoint' = $1`,
-      [subscription.endpoint]
+      `UPDATE users SET push_subscription = NULL WHERE push_subscription = $1`,
+      [raw]
     );
   } catch {}
 }
