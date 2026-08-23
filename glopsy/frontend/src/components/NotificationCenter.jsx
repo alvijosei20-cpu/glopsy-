@@ -53,6 +53,10 @@ function mergeIntoBell(notifs) {
       time: n.createdAt ? new Date(n.createdAt).toLocaleString() : (prev ? prev.time : ''),
       read: Boolean(n.read) || Boolean(prev && prev.read),
       type: n.type,
+      url: n.url || (prev ? prev.url : undefined),
+      scheme: n.scheme || (prev ? prev.scheme : undefined),
+      fallbackUrl: n.fallbackUrl || (prev ? prev.fallbackUrl : undefined),
+      external: n.external != null ? n.external : (prev ? prev.external : undefined),
     });
   }
   const merged = [...byId.values()];
