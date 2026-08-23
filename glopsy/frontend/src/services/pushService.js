@@ -15,7 +15,7 @@ export async function getVapidKey() {
 }
 
 export async function savePushSubscription(subscription) {
-  await api.post('/auth/push-subscription', subscription);
+  await api.post('/auth/push-subscription', { subscription });
 }
 
 export async function subscribeToPush() {
