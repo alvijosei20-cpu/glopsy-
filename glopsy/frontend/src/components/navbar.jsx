@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
   Home, 
@@ -108,37 +108,15 @@ export default function Navbar() {
       window.removeEventListener('glopsy_notification', handleCustomNotif);
     };
   }, []);
-  const [pushPermission, setPushPermission] = useState(() => 
+  const [pushPermission] = useState(() => 
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
   );
-  const [pushSubscribed, setPushSubscribed] = useState(false);
-  const [pushError, setPushError] = useState('');
-
-  const checkPushSubscription = useCallback(async () => {
-    try {
-      if ('serviceWorker' in navigator && 'PushManager' in window) {
-        const reg = await navigator.serviceWorker.ready;
-        const sub = await reg.pushManager.getSubscription();
-        setPushSubscribed(Boolean(sub));
-      }
-    } catch {
-      setPushSubscribed(false);
-    }
-  }, []);
 
   useEffect(() => {
     if (pushPermission !== 'granted') return;
-    checkPushSubscription();
-    const t = setTimeout(() => {
-      subscribeToPush()
-        .then((sub) => {
-          setPushSubscribed(Boolean(sub));
-          if (!sub) setPushError('No se pudo crear la suscripción. Revisa la consola (F12).');
-        })
-        .catch((err) => setPushError('Error: ' + (err.message || String(err))));
-    }, 800);
+    const t = setTimeout(() => { subscribeToPush().catch(() => {}); }, 800);
     return () => clearTimeout(t);
-  }, [user, pushPermission, checkPushSubscription]);
+  }, [user, pushPermission]);
   const [biometricStatus, setBiometricStatus] = useState('');
 
   const bufferDecode = (value) => {
@@ -657,70 +635,6 @@ export default function Navbar() {
                   </button>
                 </div>
               </div>
-
-              {(
-                <div 
-                  className="mb-3 p-2.5 rounded-xl border text-xs"
-                  style={{
-                    backgroundColor: isDark ? '#27272a' : '#fdf4ff',
-                    color: isDark ? '#f1f5f9' : '#0f172a',
-                    borderColor: isDark ? '#3f3f46' : '#f5d0fe'
-                  }}
-                >
-                  {!user ? (
-                    <>
-                      <p className="font-semibold mb-1" style={{ color: isDark ? '#ffffff' : '#0f172a' }}>Activa las notificaciones push</p>
-                      <p className="text-[11px] mb-2" style={{ color: isDark ? '#a1a1aa' : '#475569' }}>Inicia sesión para recibir alertas y avisos importantes de Glopsy.</p>
-                      <Link to="/login" className="block w-full bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white py-1.5 rounded-lg font-bold text-xs text-center hover:opacity-90 transition-opacity cursor-pointer shadow-md shadow-fuchsia-600/20">
-                        Iniciar Sesión
-                      </Link>
-                    </>
-                  ) : pushPermission === 'denied' ? (
-                    <>
-                      <p className="font-semibold mb-1" style={{ color: isDark ? '#ffffff' : '#0f172a' }}>Notificaciones bloqueadas</p>
-                      <p className="text-[11px] mb-2" style={{ color: isDark ? '#a1a1aa' : '#475569' }}>Permite las notificaciones en los ajustes del navegador para recibir avisos de Glopsy.</p>
-                    </>
-                  ) : pushPermission === 'granted' && pushSubscribed ? (
-                    <>
-                      <p className="font-semibold mb-1" style={{ color: isDark ? '#ffffff' : '#0f172a' }}>Notificaciones activadas</p>
-                      <p className="text-[11px]" style={{ color: isDark ? '#a1a1aa' : '#475569' }}>Recibirás avisos importantes aunque el navegador esté cerrado.</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="font-semibold mb-1" style={{ color: isDark ? '#ffffff' : '#0f172a' }}>Activa las notificaciones push</p>
-                      <p className="text-[11px] mb-2" style={{ color: isDark ? '#a1a1aa' : '#475569' }}>Recibe alertas y avisos importantes de Glopsy.</p>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          setPushError('');
-                          if (!('Notification' in window)) {
-                            alert('Tu navegador no soporta notificaciones push.');
-                            return;
-                          }
-                          const res = await Notification.requestPermission();
-                          setPushPermission(res);
-                          if (res === 'granted') {
-                            const sub = await subscribeToPush();
-                            setPushSubscribed(Boolean(sub));
-                            if (sub) {
-                              setPushError('');
-                              new Notification('¡Glopsy!', { body: '¡Notificaciones push activadas correctamente!' });
-                            } else {
-                              setPushError('No se pudo crear la suscripción. Revisa la consola (F12).');
-                            }
-                          }
-                        }}
-                        className="w-full bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white py-1.5 rounded-lg font-bold text-xs hover:opacity-90 transition-opacity cursor-pointer shadow-md shadow-fuchsia-600/20"
-                      >
-                        {pushPermission === 'granted' ? 'Reactivar suscripción' : 'Permitir Notificaciones'}
-                      </button>
-                      {pushError && (
-                        <p className="mt-2 text-[10px] font-semibold" style={{ color: '#ef4444' }}>{pushError}</p>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
 
               <div className="space-y-2 max-h-60 overflow-y-auto">
                 {notifications.length === 0 ? (
