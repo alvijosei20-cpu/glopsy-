@@ -25,19 +25,33 @@ function writeToStorage(list) {
   window.dispatchEvent(new Event('glopsy_notifications_changed'));
 }
 
+function readCleared() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem('glopsy_notifications_cleared') || '[]'));
+  } catch {
+    return new Set();
+  }
+}
+
 function mergeIntoBell(notifs) {
+  const cleared = readCleared();
   const bell = readFromStorage();
-  const byId = new Map(bell.map((n) => [String(n.id), n]));
+  const serverIds = new Set(notifs.map((n) => String(n.id)));
+  const byId = new Map();
+  for (const n of bell) {
+    if (cleared.has(String(n.id))) continue;
+    if (serverIds.has(String(n.id))) continue;
+    byId.set(String(n.id), n);
+  }
   for (const n of notifs) {
     const prev = byId.get(String(n.id));
     byId.set(String(n.id), {
       id: n.id,
       title: n.title,
       message: n.message,
-      time: n.createdAt ? new Date(n.createdAt).toLocaleString() : '',
-      read: Boolean(n.read),
+      time: n.createdAt ? new Date(n.createdAt).toLocaleString() : (prev ? prev.time : ''),
+      read: Boolean(n.read) || Boolean(prev && prev.read),
       type: n.type,
-      ...(prev ? { read: Boolean(n.read) || Boolean(prev.read) } : {}),
     });
   }
   const merged = [...byId.values()];
@@ -145,7 +159,7 @@ function Toast({ notif, theme, onDismiss, onAction }) {
             <config.Icon size={20} className="text-fuchsia-600 dark:text-fuchsia-400" />
           </div>
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 cursor-pointer" onClick={() => onAction(notif)}>
           <p className="text-xs font-bold mb-0.5" style={{ color: dark ? '#ffffff' : '#0f172a' }}>
             {notif.title}
           </p>
@@ -157,7 +171,7 @@ function Toast({ notif, theme, onDismiss, onAction }) {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => onAction(notif)}
+              onClick={(e) => { e.stopPropagation(); onAction(notif); }}
               className="bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white px-3 py-1.5 rounded-lg font-bold text-[11px] hover:opacity-90 transition-opacity cursor-pointer shadow-md shadow-fuchsia-600/20"
             >
               {notif.type === 'aviso' ? 'Entendido' : notif.type === 'link' ? 'Abrir' : 'Abrir app'}
@@ -170,7 +184,7 @@ function Toast({ notif, theme, onDismiss, onAction }) {
         <button
           type="button"
           aria-label="Cerrar"
-          onClick={dismiss}
+          onClick={(e) => { e.stopPropagation(); dismiss(); }}
           className="shrink-0 self-start p-1 rounded-md text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
         >
           <X size={14} />
@@ -227,13 +241,19 @@ export default function NotificationCenter() {
       setTheme(isDarkMode() ? 'dark' : 'light');
       if (document.visibilityState === 'visible') poll();
     };
+    const onCleared = () => {
+      shownRef.current.clear();
+      setToasts([]);
+    };
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('focus', onVisibility);
+    window.addEventListener('glopsy_notifications_cleared', onCleared);
     const interval = setInterval(poll, POLL_MS);
     poll();
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('focus', onVisibility);
+      window.removeEventListener('glopsy_notifications_cleared', onCleared);
       clearInterval(interval);
     };
   }, [poll]);

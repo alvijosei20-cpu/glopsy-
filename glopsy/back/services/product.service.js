@@ -5,6 +5,7 @@ import { getShippingOptionsFromEnvia, invalidateRatesCacheForStore } from './env
 import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
 import { obtenerProductoPorId } from './mastershopService.js';
 import { redisClient } from './redis.service.js';
+import { sendPushToUser } from './push.service.js';
 import { decryptSecret } from '../utils/crypto.js';
 import { invalidateEdgeCache } from '../utils/cacheInvalidate.js';
 import {
@@ -1734,7 +1735,7 @@ export const cancelMastershopOrderOrShipments = async (order, shipmentIds, total
   }
 };
 
-export const createNotification = async (userId, guestHash, orderId, title, message, type = 'order', data = {}) => {
+export const createNotification = async (userId, guestHash, orderId, title, message, type = 'order', data = {}, url = null) => {
   try {
     await pool.query(
       `INSERT INTO notifications (user_id, guest_hash, order_id, type, title, message, data, created_at)
@@ -1743,6 +1744,9 @@ export const createNotification = async (userId, guestHash, orderId, title, mess
     );
   } catch (err) {
     console.error('Error creando notificación en DB:', err.message);
+  }
+  if (userId) {
+    sendPushToUser(userId, { title, body: message, url: url || '/consultar-pedido' }).catch(() => {});
   }
 };
 
@@ -1834,7 +1838,7 @@ export const cancelOrderForUser = async (orderHash, userId, guestHash) => {
   // Registrar notificación en la tabla `notifications`
   const notifTitle = totalCancel ? `Pedido #${orderId} cancelado` : `Pedido #${orderId} cancelado parcialmente`;
   const notifMsg = totalCancel ? `Tu pedido ha sido cancelado en su totalidad y el stock ha sido liberado.` : `Se han cancelado ${cancelledCount} envíos de tu pedido.`;
-  await createNotification(order.user_id, order.guest_hash, order.id, notifTitle, notifMsg, 'order_cancelled', { total_cancel: totalCancel, cancelled_shipments: cancelledCount, active_shipments: activeCount });
+  await createNotification(order.user_id, order.guest_hash, order.id, notifTitle, notifMsg, 'order_cancelled', { total_cancel: totalCancel, cancelled_shipments: cancelledCount, active_shipments: activeCount }, `/compras/${order.order_hash}`);
 
   return {
     order_id: orderId,

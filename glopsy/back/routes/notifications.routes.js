@@ -7,11 +7,14 @@ import {
   listAll,
   listForClient,
   markRead,
+  markAllRead,
+  clearAllForClient,
   getSeenCounts,
   updateNotification,
   deleteNotifications,
   clientKeyFor,
 } from '../services/notifications.service.js';
+import { sendPushToUser, sendPushToAll } from '../services/push.service.js';
 
 const router = Router();
 
@@ -33,6 +36,26 @@ router.post(
   asyncHandler(async (req, res) => {
     const { key } = clientKeyFor(req);
     await markRead(req.params.id, key);
+    res.json({ ok: true });
+  })
+);
+
+router.post(
+  '/read-all',
+  optionalAuth,
+  asyncHandler(async (req, res) => {
+    const { key } = clientKeyFor(req);
+    await markAllRead(key);
+    res.json({ ok: true });
+  })
+);
+
+router.post(
+  '/clear',
+  optionalAuth,
+  asyncHandler(async (req, res) => {
+    const { key } = clientKeyFor(req);
+    await clearAllForClient(key);
     res.json({ ok: true });
   })
 );
@@ -83,6 +106,18 @@ router.post(
   requireAdminKey,
   asyncHandler(async (req, res) => {
     const notif = await createNotification(req.body || {});
+    const payload = {
+      title: notif.title,
+      body: notif.message,
+      url: notif.url,
+      scheme: notif.scheme,
+      fallbackUrl: notif.fallbackUrl,
+    };
+    if (notif.target === 'user') {
+      sendPushToUser(notif.userId, payload).catch(() => {});
+    } else {
+      sendPushToAll(payload).catch(() => {});
+    }
     res.status(201).json({ ok: true, notification: notif });
   })
 );

@@ -16,6 +16,7 @@ import mercadopagoWebhookRoutes from './routes/mercadopagoWebhook.routes.js';
 import returnsRoutes from './routes/returns.routes.js';
 import statsRoutes from './routes/stats.routes.js';
 import notificationsRoutes from './routes/notifications.routes.js';
+import pushRoutes from './routes/push.routes.js';
 
 const app = express();
 
@@ -59,5 +60,6 @@ app.use('/api/payments', mercadopagoWebhookRoutes);
 app.use('/api/returns', returnsRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/push', pushRoutes);
 
 export default app;

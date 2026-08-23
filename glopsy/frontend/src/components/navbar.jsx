@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { 
   Home, 
   ShoppingBag, 
@@ -21,9 +21,44 @@ import {
 
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
+import { markNotificationRead, markAllNotificationsRead, clearAllNotifications } from '../services/notificationsService';
+import { subscribeToPush } from '../services/pushService';
 
 export default function Navbar() {
   const { user, logout, tienda, tiendaLoading } = useAuth();
+  const navigate = useNavigate();
+
+  const openNotification = (n) => {
+    const url = n.url || n.fallbackUrl || '';
+    if (n.scheme) {
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const tryFallback = () => {
+        const fb = n.fallbackUrl || n.url;
+        if (fb && (fb.startsWith('http') || fb.startsWith('/'))) {
+          if (fb.startsWith('http')) window.open(fb, '_blank', 'noopener');
+          else navigate(fb);
+        }
+      };
+      if (isIOS) {
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = n.scheme;
+        document.body.appendChild(iframe);
+        setTimeout(() => { iframe.remove(); tryFallback(); }, 1500);
+      } else {
+        window.location.href = n.scheme;
+        setTimeout(tryFallback, 1500);
+      }
+    } else if (url.startsWith('http://') || url.startsWith('https://')) {
+      window.open(url, '_blank', 'noopener');
+    } else if (url.startsWith('/')) {
+      navigate(url);
+    } else if (url) {
+      window.open('https://' + url, '_blank', 'noopener');
+    }
+    setNotifications(prev => prev.map(x => (String(x.id) === String(n.id) ? { ...x, read: true } : x)));
+    markNotificationRead(n.id).catch(() => {});
+  };
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -92,6 +127,12 @@ export default function Navbar() {
   const [pushPermission, setPushPermission] = useState(() => 
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
   );
+
+  useEffect(() => {
+    if (!user || pushPermission !== 'granted') return;
+    const t = setTimeout(() => { subscribeToPush(); }, 800);
+    return () => clearTimeout(t);
+  }, [user, pushPermission]);
   const [biometricStatus, setBiometricStatus] = useState('');
 
   const bufferDecode = (value) => {
@@ -584,14 +625,26 @@ export default function Navbar() {
                 <div className="flex items-center gap-2.5">
                   <button 
                     type="button"
-                    onClick={() => setNotifications(notifications.map(n => ({ ...n, read: true })))}
+                    onClick={() => {
+                      setNotifications(notifications.map(n => ({ ...n, read: true })));
+                      markAllNotificationsRead().catch(() => {});
+                    }}
                     className="text-[11px] text-fuchsia-600 dark:text-fuchsia-400 font-semibold hover:underline cursor-pointer"
                   >
                     Marcar leídas
                   </button>
                   <button 
                     type="button"
-                    onClick={() => setNotifications([])}
+                    onClick={() => {
+                      try {
+                        const cleared = new Set(JSON.parse(localStorage.getItem('glopsy_notifications_cleared') || '[]'));
+                        notifications.forEach(n => cleared.add(String(n.id)));
+                        localStorage.setItem('glopsy_notifications_cleared', JSON.stringify([...cleared]));
+                      } catch {}
+                      setNotifications([]);
+                      window.dispatchEvent(new Event('glopsy_notifications_cleared'));
+                      clearAllNotifications().catch(() => {});
+                    }}
                     className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold hover:underline cursor-pointer"
                   >
                     Limpiar
@@ -618,6 +671,7 @@ export default function Navbar() {
                         setPushPermission(res);
                         if (res === 'granted') {
                           new Notification('¡Glopsy!', { body: '¡Notificaciones push activadas correctamente!' });
+                          if (user) subscribeToPush();
                         }
                       } else {
                         alert('Tu navegador no soporta notificaciones push.');
@@ -642,14 +696,33 @@ export default function Navbar() {
                     return (
                       <div 
                         key={n.id} 
-                        className="p-2.5 rounded-xl text-xs transition-colors border"
+                        onClick={() => {
+                          openNotification(n);
+                          setIsNotifOpen(false);
+                        }}
+                        className="p-2.5 rounded-xl text-xs transition-colors border cursor-pointer hover:opacity-90"
                         style={{
                           backgroundColor: cardBg,
                           borderColor: cardBorder,
                           color: cardColor
                         }}
                       >
-                        <p className="font-semibold">{n.title}</p>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-semibold truncate">{n.title}</p>
+                          <span
+                            className="shrink-0 flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+                            style={{
+                              backgroundColor: n.read ? (isDark ? '#27272a' : '#e2e8f0') : (isDark ? '#3f1128' : '#fce7f3'),
+                              color: n.read ? (isDark ? '#a1a1aa' : '#64748b') : (isDark ? '#f9a8d4' : '#db2777')
+                            }}
+                          >
+                            <span
+                              className="w-1.5 h-1.5 rounded-full"
+                              style={{ backgroundColor: n.read ? (isDark ? '#52525b' : '#94a3b8') : (isDark ? '#f0abfc' : '#ec4899') }}
+                            />
+                            {n.read ? 'Leída' : 'Nueva'}
+                          </span>
+                        </div>
                         <span className="text-[10px] mt-0.5 block" style={{ color: timeColor }}>{n.time}</span>
                       </div>
                     );

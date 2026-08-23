@@ -4,6 +4,7 @@ import { redisClient } from './redis.service.js';
 const INDEX_KEY = 'notify:index';
 const metaKey = (id) => `notify:meta:${id}`;
 const seenKey = (id) => `notify:seen:${id}`;
+const clearedKey = (id) => `notify:cleared:${id}`;
 
 const TYPES = new Set(['aviso', 'link', 'app']);
 
@@ -78,9 +79,16 @@ export async function listForClient({ clientKey, userId }) {
     parsed.push({ id: ids[i], n });
   }
   const pipe = redisClient.multi();
-  for (const { id } of parsed) pipe.sIsMember(seenKey(id), clientKey);
-  const seenFlags = await pipe.exec();
-  const result = parsed.map(({ id, n }, idx) => ({ ...n, read: Boolean(seenFlags[idx]) }));
+  for (const { id } of parsed) {
+    pipe.sIsMember(seenKey(id), clientKey);
+    pipe.sIsMember(clearedKey(id), clientKey);
+  }
+  const flags = await pipe.exec();
+  const result = [];
+  for (let i = 0; i < parsed.length; i++) {
+    if (flags[i * 2 + 1]) continue;
+    result.push({ ...parsed[i].n, read: Boolean(flags[i * 2]) });
+  }
   if (toDelete.length) await deleteNotifications(toDelete);
   return result;
 }
@@ -90,6 +98,24 @@ export async function markRead(id, clientKey) {
   if (!exists) return false;
   await redisClient.sAdd(seenKey(id), clientKey);
   return true;
+}
+
+export async function markAllRead(clientKey) {
+  const ids = await redisClient.zRange(INDEX_KEY, 0, -1, { REV: true });
+  if (!ids.length) return 0;
+  const pipe = redisClient.multi();
+  for (const id of ids) pipe.sAdd(seenKey(id), clientKey);
+  await pipe.exec();
+  return ids.length;
+}
+
+export async function clearAllForClient(clientKey) {
+  const ids = await redisClient.zRange(INDEX_KEY, 0, -1, { REV: true });
+  if (!ids.length) return 0;
+  const pipe = redisClient.multi();
+  for (const id of ids) pipe.sAdd(clearedKey(id), clientKey);
+  await pipe.exec();
+  return ids.length;
 }
 
 export async function getSeenCounts(notifs) {
@@ -122,6 +148,7 @@ export async function deleteNotifications(ids) {
   for (const id of list) {
     multi.del(metaKey(id));
     multi.del(seenKey(id));
+    multi.del(clearedKey(id));
     multi.zRem(INDEX_KEY, id);
   }
   await multi.exec();
