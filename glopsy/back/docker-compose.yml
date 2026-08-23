@@ -53,6 +53,7 @@ services:
         VITE_API_URL: /api
         SITE_URL: https://${DOMAIN}
         SEO_API: /api
+        VITE_GA_MEASUREMENT_ID: ${VITE_GA_MEASUREMENT_ID}
     restart: always
 
   caddy:

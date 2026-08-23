@@ -1,4 +1,4 @@
-const GA_ID = import.meta.env.VITE_GA_MEASUREMENT_ID;
+const GA_ID = import.meta.env.VITE_GA_MEASUREMENT_ID || 'G-RQ2NLXS61G';
 
 export function loadGA() {
   if (!GA_ID || window.gtag) return;
