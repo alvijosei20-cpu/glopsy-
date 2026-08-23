@@ -57,6 +57,7 @@ export async function getActiveUsers() {
   );
   if (!res.ok) throw new Error(`GA realtime error HTTP ${res.status}`);
   const data = await res.json();
-  const value = data?.rows?.[0]?.metricValues?.[0]?.value;
-  return value === undefined ? null : Number(value);
+  const rows = data?.rows;
+  if (!rows || rows.length === 0) return 0;
+  return Number(rows[0]?.metricValues?.[0]?.value ?? 0);
 }
