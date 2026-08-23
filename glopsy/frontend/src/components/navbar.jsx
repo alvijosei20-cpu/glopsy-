@@ -658,7 +658,7 @@ export default function Navbar() {
                 </div>
               </div>
 
-              {(!user || pushPermission !== 'granted' || !pushSubscribed) && (
+              {(
                 <div 
                   className="mb-3 p-2.5 rounded-xl border text-xs"
                   style={{
