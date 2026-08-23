@@ -56,6 +56,8 @@ services:
         sync: false
       - key: MASTERSHOP_API_URL
         sync: false
+      - key: CACHE_INVALIDATE_SECRET
+        sync: false
 
   - type: keyvalue
     name: glopsy-redis

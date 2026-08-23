@@ -12,6 +12,7 @@ import {
   sanitizeArray,
   sanitizeObject,
 } from '../utils/validation.js';
+import { invalidateEdgeCache } from '../utils/cacheInvalidate.js';
 
 const sanitizeCartItems = (items) => sanitizeArray(items, (item) => {
   if (!item || typeof item !== 'object') return null;
@@ -455,6 +456,7 @@ export const recordPurchaseController = async (req, res) => {
       return res.status(400).json({ ok: false, message: 'Datos inválidos para registrar compra' });
     }
     await recordPurchaseForUser(userId, items);
+    await invalidateEdgeCache();
     res.json({ ok: true, message: 'Compra registrada con éxito' });
   } catch (error) {
     console.error('Error al registrar compra:', error.message);

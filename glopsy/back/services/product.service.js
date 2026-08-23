@@ -6,6 +6,7 @@ import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
 import { obtenerProductoPorId } from './mastershopService.js';
 import { redisClient } from './redis.service.js';
 import { decryptSecret } from '../utils/crypto.js';
+import { invalidateEdgeCache } from '../utils/cacheInvalidate.js';
 import {
   cleanString,
   cleanText,
@@ -30,6 +31,7 @@ export const invalidateProductCache = async (productId, publicId) => {
   if (productId !== undefined && productId !== null) keys.push(`product:detail:${productId}`, `product:reviews:${productId}`);
   if (publicId) keys.push(`product:detail:${publicId}`);
   if (keys.length > 0) await redisClient.del(keys).catch(() => {});
+  await invalidateEdgeCache();
 };
 
 export const saveProductForUser = async (userId, productData) => {

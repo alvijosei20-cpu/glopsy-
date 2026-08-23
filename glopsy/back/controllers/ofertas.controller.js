@@ -1,5 +1,6 @@
 import { pool } from '../db.js';
 import { cleanString, cleanText, toNumber, toInt, isAllowedEnum } from '../utils/validation.js';
+import { invalidateEdgeCache } from '../utils/cacheInvalidate.js';
 
 export const getOfertas = async (req, res) => {
   try {
@@ -73,6 +74,7 @@ export const createOferta = async (req, res) => {
       }
       await client.query('COMMIT');
       oferta.product_ids = ids;
+      await invalidateEdgeCache();
       return res.status(201).json({ ok: true, oferta });
     } catch (err) {
       await client.query('ROLLBACK');
@@ -133,6 +135,7 @@ export const updateOfertaProductos = async (req, res) => {
       client.release();
     }
 
+    await invalidateEdgeCache();
     return res.json({ ok: true, oferta_id: id, product_ids });
   } catch (err) {
     console.error('Error al actualizar productos de la oferta:', err.message);
@@ -149,6 +152,7 @@ export const deleteOferta = async (req, res) => {
     const { rowCount } = await pool.query(`DELETE FROM ofertas WHERE id = $1 AND tienda_id = $2`, [id, tiendaId]);
     if (rowCount === 0) return res.status(404).json({ ok: false, message: 'Oferta no encontrada.' });
 
+    await invalidateEdgeCache();
     return res.json({ ok: true, message: 'Oferta eliminada.' });
   } catch (err) {
     console.error('Error al eliminar oferta:', err.message);
