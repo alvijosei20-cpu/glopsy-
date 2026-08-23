@@ -123,6 +123,152 @@
   .error { color: var(--danger); }
   a { color: var(--text-primary); text-decoration: none; }
   a:hover { color: var(--accent); }
+  .card.notif { grid-column: 1 / -1; }
+  .notif { display: flex; flex-direction: column; gap: 16px; }
+  .notif-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .notif-inline { gap: 20px; }
+  .notif-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .input {
+    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px 12px;
+    color: var(--text-primary);
+    font-size: 13px;
+    width: 100%;
+    font-family: sans-serif;
+  }
+  .input:focus { border-color: var(--accent); outline: none; }
+  .input-sm { width: 110px; }
+  .btn-primary {
+    background: var(--accent);
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    padding: 8px 16px;
+    font-weight: 500;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: sans-serif;
+    transition: opacity 150ms ease;
+    white-space: nowrap;
+  }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-primary:disabled { background: var(--border); cursor: not-allowed; }
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    border-radius: 4px;
+    padding: 8px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: sans-serif;
+    white-space: nowrap;
+  }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .icon-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    display: inline-flex;
+    border-radius: 4px;
+  }
+  .icon-btn:hover { color: var(--danger); }
+  .icon-btn svg { width: 16px; height: 16px; }
+  .nicon svg { width: 18px; height: 18px; }
+  .hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+  .notif-type-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .type-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--background);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 4px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: sans-serif;
+    transition: all 150ms ease;
+  }
+  .type-btn:hover { border-color: var(--accent); color: var(--text-primary); }
+  .type-btn.active {
+    background: rgba(219,39,119,0.12);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .type-btn.active .nicon { color: var(--accent); }
+  .target-group { display: flex; gap: 20px; flex-wrap: wrap; }
+  .target-group .switch span { color: var(--text-muted); }
+  .expires { display: flex; align-items: center; gap: 8px; }
+  .form-msg { font-size: 12px; color: var(--text-muted); }
+  .form-msg.ok { color: var(--ok); }
+  .form-msg.err { color: var(--danger); }
+  .user-results { width: 100%; display: none; flex-direction: column; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; background: var(--background); }
+  .user-results.open { display: flex; }
+  .user-result {
+    padding: 10px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .user-result:last-child { border-bottom: none; }
+  .user-result:hover { background: var(--border); color: var(--text-primary); }
+  .user-result .uemail { color: var(--text-muted); font-size: 12px; }
+  .selected-user {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    font-size: 13px;
+    background: rgba(219,39,119,0.08);
+    color: var(--text-primary);
+  }
+  .selected-user .uemail { color: var(--text-muted); font-size: 12px; }
+  .notif-list-head { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+  .notif-list-head h3 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); }
+  .notif-item {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px;
+    margin-bottom: 8px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    background: var(--background);
+  }
+  .notif-item .nicon {
+    width: 36px; height: 36px; flex-shrink: 0;
+    border-radius: 999px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: rgba(219,39,119,0.12);
+    color: var(--accent);
+  }
+  .notif-item .nicon svg { width: 18px; height: 18px; }
+  .notif-item .nbody { flex: 1; min-width: 0; }
+  .notif-item .ntitle { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .notif-item .ntitle.inactive { opacity: 0.45; }
+  .notif-item .nmsg { font-size: 12px; color: var(--text-muted); margin-top: 4px; overflow-wrap: anywhere; }
+  .notif-item .nmeta { font-size: 11px; color: var(--text-muted); margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .notif-item .nactions { display: flex; gap: 6px; flex-shrink: 0; }
+  .badge.type { background: var(--border); color: var(--text-primary); }
+  .badge.target-user { color: var(--accent); }
+  @media (max-width: 640px) {
+    .notif-item { flex-wrap: wrap; }
+    .notif-item .nactions { width: 100%; justify-content: flex-end; }
+  }
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
   }
@@ -165,6 +311,106 @@
         <div class="health-cell"><div class="value" id="h-online">—</div><div class="label">Activos ahora</div></div>
         <div class="health-cell"><div class="value" id="h-last">—</div><div class="label">Último check</div></div>
       </div>
+    </section>
+
+    <section class="card notif">
+      <h2>Notificaciones
+        <span class="meta">
+          <span id="notif-status" class="badge bg-warn"><span class="dot"></span>Sin conectar</span>
+        </span>
+      </h2>
+
+      <div id="notif-admin">
+        <div class="notif-row">
+          <input class="input" type="password" id="notif-key" placeholder="Clave de administrador (NOTIFICATIONS_ADMIN_KEY)" autocomplete="off" />
+          <button class="btn-primary" id="notif-connect">Conectar</button>
+        </div>
+        <p class="hint" id="notif-key-hint">La clave se guarda en este navegador y solo se envía al API.</p>
+      </div>
+
+      <div id="notif-form" style="display:none">
+        <div class="notif-type-row">
+          <span class="notif-label">Tipo</span>
+          <button type="button" class="type-btn active" data-type="aviso" title="Aviso (solo texto)">
+            <span class="nicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg></span>
+            Aviso
+          </button>
+          <button type="button" class="type-btn" data-type="link" title="Enlace (abrir URL interna o externa)">
+            <span class="nicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span>
+            Enlace
+          </button>
+          <button type="button" class="type-btn" data-type="app" title="App (abrir app instalada vía deep link)">
+            <span class="nicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01"/></svg></span>
+            App
+          </button>
+        </div>
+
+        <div class="notif-row">
+          <input class="input" type="text" id="notif-title" maxlength="160" placeholder="Título (ej. ¡Nuevo descuento!)" />
+        </div>
+        <div class="notif-row">
+          <textarea class="input" id="notif-message" rows="3" maxlength="2000" placeholder="Mensaje del aviso…"></textarea>
+        </div>
+
+        <div class="notif-fields" id="notif-fields-link" style="display:none">
+          <div class="notif-row">
+            <input class="input" type="text" id="notif-url" placeholder="URL (ej. /listpr o https://www.example.com)" />
+          </div>
+          <div class="notif-row notif-inline">
+            <label class="switch"><input type="checkbox" id="notif-external" /> <span>Abrir en pestaña nueva (URL externa)</span></label>
+          </div>
+        </div>
+
+        <div class="notif-fields" id="notif-fields-app" style="display:none">
+          <div class="notif-row">
+            <input class="input" type="text" id="notif-scheme" placeholder="Deep link de la app (ej. whatsapp://send?phone=57...)" />
+          </div>
+          <div class="notif-row">
+            <input class="input" type="text" id="notif-fallback" placeholder="URL de respaldo si la app no está instalada (opcional)" />
+          </div>
+        </div>
+
+        <div class="notif-row">
+          <div class="target-group">
+            <label class="switch"><input type="radio" name="notif-target" value="global" checked /> <span>Global (todos)</span></label>
+            <label class="switch"><input type="radio" name="notif-target" value="user" /> <span>Usuario específico</span></label>
+          </div>
+        </div>
+
+        <div id="notif-user-search" style="display:none">
+          <div class="notif-row">
+            <input class="input" type="text" id="notif-user-q" placeholder="Buscar usuario por email, nombre o teléfono…" />
+          </div>
+          <div class="user-results" id="notif-user-results"></div>
+          <div class="selected-user" id="notif-selected-user" style="display:none">
+            <span id="notif-selected-user-label"></span>
+            <button type="button" class="icon-btn" id="notif-user-clear" title="Quitar usuario"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+          </div>
+        </div>
+
+        <div class="notif-row notif-inline">
+          <label class="switch"><input type="checkbox" id="notif-active" checked /> <span>Activa</span></label>
+          <div class="expires">
+            <label class="notif-label" for="notif-expires">Caduca en días</label>
+            <input class="input input-sm" type="number" id="notif-expires" min="0" placeholder="Sin límite" />
+          </div>
+        </div>
+
+        <div class="notif-row">
+          <button class="btn-primary" id="notif-send">Enviar notificación</button>
+          <button class="btn-ghost" id="notif-reset" type="button">Limpiar</button>
+          <span class="form-msg" id="notif-form-msg"></span>
+        </div>
+      </div>
+
+      <div class="notif-list-head">
+        <h3>Notificaciones enviadas</h3>
+        <div class="notif-row" style="gap:8px">
+          <button class="btn-ghost btn-sm" id="notif-disconnect" type="button" style="display:none">Cambiar clave</button>
+          <button class="btn-ghost btn-sm" id="notif-refresh" type="button">Actualizar</button>
+        </div>
+      </div>
+      <div id="notif-list"><div class="empty">Conecta la clave de administrador para ver las notificaciones.</div></div>
     </section>
   </div>
 
@@ -331,10 +577,293 @@
     if (auto && now - lastHealth >= HEALTH_MS) fetchOnline();
   }
 
+  // ---------- Notificaciones (admin) ----------
+  const notifState = {
+    key: '',
+    connected: false,
+    type: 'aviso',
+    target: 'global',
+    selectedUser: null,
+  };
+
+  const $N = (id) => document.getElementById(id);
+
+  function setNotifStatus(state, label) {
+    const el = $N('notif-status');
+    el.className = 'badge ' + state;
+    el.innerHTML = '<span class="dot"></span>' + label;
+  }
+
+  function loadNotifKey() {
+    try { notifState.key = localStorage.getItem('glopsy_monitor_key') || ''; } catch {}
+    if (notifState.key) {
+      $N('notif-key').value = notifState.key;
+      connectNotifications();
+    }
+  }
+
+  async function notifApi(path, options = {}) {
+    const res = await fetch(API_URL + '/api/notifications' + path, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + notifState.key,
+        ...(options.headers || {}),
+      },
+    });
+    if (res.status === 401) {
+      setNotifStatus('bg-down', 'Clave inválida');
+      throw new Error('unauthorized');
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || 'HTTP ' + res.status);
+    return data;
+  }
+
+  function connectNotifications() {
+    const key = $N('notif-key').value.trim();
+    if (!key) return;
+    notifState.key = key;
+    try { localStorage.setItem('glopsy_monitor_key', key); } catch {}
+    notifState.connected = true;
+    $N('notif-admin').style.display = 'none';
+    $N('notif-form').style.display = 'block';
+    $N('notif-disconnect').style.display = 'inline-block';
+    setNotifStatus('bg-ok', 'Conectado');
+    $N('notif-key-hint').textContent = '';
+    loadNotifications();
+  }
+
+  function disconnectNotifications() {
+    notifState.key = '';
+    notifState.connected = false;
+    try { localStorage.removeItem('glopsy_monitor_key'); } catch {}
+    $N('notif-key').value = '';
+    $N('notif-admin').style.display = 'block';
+    $N('notif-form').style.display = 'none';
+    $N('notif-disconnect').style.display = 'none';
+    setNotifStatus('bg-warn', 'Sin conectar');
+    $N('notif-list').innerHTML = '<div class="empty">Conecta la clave de administrador para ver las notificaciones.</div>';
+  }
+
+  function typeIcon(type) {
+    if (type === 'link') return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
+    if (type === 'app') return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01"/></svg>';
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>';
+  }
+
+  function typeLabel(type) { return { aviso: 'Aviso', link: 'Enlace', app: 'App' }[type] || type; }
+
+  async function loadNotifications() {
+    if (!notifState.key) return;
+    try {
+      const data = await notifApi('/admin');
+      renderNotifications(data.notifications || []);
+      setNotifStatus('bg-ok', 'Conectado');
+    } catch (err) {
+      if (err.message !== 'unauthorized') {
+        $N('notif-list').innerHTML = '<div class="error">Error al cargar: ' + esc(err.message) + '</div>';
+      }
+    }
+  }
+
+  function renderNotifications(list) {
+    if (!list.length) {
+      $N('notif-list').innerHTML = '<div class="empty">Aún no hay notificaciones. Crea la primera arriba.</div>';
+      return;
+    }
+    $N('notif-list').innerHTML = list.map((n) => {
+      const target = n.target === 'user'
+        ? '<span class="badge type target-user">Usuario: ' + esc((n.user && (n.user.name || n.user.email)) || n.userId) + '</span>'
+        : '<span class="badge type">Global</span>';
+      const extra = n.type === 'link'
+        ? '<span class="badge type">' + (n.external ? 'Externa' : 'Interna') + '</span>'
+        : n.type === 'app'
+          ? '<span class="badge type">' + esc(n.scheme || '') + '</span>'
+          : '';
+      const seen = '<span class="badge">' + n.seenCount + ' vistas</span>';
+      const exp = n.expiresAt ? '<span class="badge">Caduca: ' + new Date(n.expiresAt).toLocaleString() + '</span>' : '';
+      return (
+        '<div class="notif-item">' +
+        '<span class="nicon">' + typeIcon(n.type) + '</span>' +
+        '<div class="nbody">' +
+        '<div class="ntitle' + (n.active ? '' : ' inactive') + '">' + esc(n.title) +
+          '<span class="badge type">' + typeLabel(n.type) + '</span>' + target + extra + '</div>' +
+        '<div class="nmsg">' + esc(n.message) + '</div>' +
+        '<div class="nmeta"><span>' + new Date(n.createdAt).toLocaleString() + '</span>' + seen + exp + '</div>' +
+        '</div>' +
+        '<div class="nactions">' +
+          '<button class="btn-ghost btn-sm" data-act="toggle" data-id="' + n.id + '">' + (n.active ? 'Pausar' : 'Activar') + '</button>' +
+          '<button class="btn-ghost btn-sm" data-act="del" data-id="' + n.id + '" style="color:var(--danger)">Eliminar</button>' +
+        '</div>' +
+        '</div>'
+      );
+    }).join('');
+
+    $N('notif-list').querySelectorAll('[data-act]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        if (btn.dataset.act === 'del') {
+          if (!confirm('¿Eliminar esta notificación?')) return;
+          try { await notifApi('/' + id, { method: 'DELETE' }); loadNotifications(); }
+          catch (err) { alert('Error: ' + err.message); }
+        } else {
+          try {
+            const item = list.find((x) => String(x.id) === id);
+            await notifApi('/' + id, { method: 'PATCH', body: JSON.stringify({ active: !item.active }) });
+            loadNotifications();
+          } catch (err) { alert('Error: ' + err.message); }
+        }
+      });
+    });
+  }
+
+  function showFormMsg(text, ok) {
+    const el = $N('notif-form-msg');
+    el.className = 'form-msg ' + (ok ? 'ok' : 'err');
+    el.textContent = text;
+  }
+
+  async function sendNotification() {
+    const title = $N('notif-title').value.trim();
+    const message = $N('notif-message').value.trim();
+    if (!title) { showFormMsg('El título es obligatorio.', false); return; }
+    if (!message) { showFormMsg('El mensaje es obligatorio.', false); return; }
+
+    const payload = {
+      type: notifState.type,
+      title,
+      message,
+      target: notifState.target,
+      active: $N('notif-active').checked,
+    };
+
+    if (notifState.type === 'link') {
+      const url = $N('notif-url').value.trim();
+      if (!url) { showFormMsg('La URL es obligatoria para el tipo Enlace.', false); return; }
+      payload.url = url;
+      payload.external = $N('notif-external').checked;
+    } else if (notifState.type === 'app') {
+      const scheme = $N('notif-scheme').value.trim();
+      if (!scheme) { showFormMsg('El deep link de la app es obligatorio.', false); return; }
+      payload.scheme = scheme;
+      payload.fallbackUrl = $N('notif-fallback').value.trim() || null;
+    }
+
+    if (notifState.target === 'user') {
+      if (!notifState.selectedUser) { showFormMsg('Selecciona un usuario.', false); return; }
+      payload.userId = notifState.selectedUser.id;
+    }
+
+    const days = parseInt($N('notif-expires').value, 10);
+    if (days && days > 0) payload.expiresAt = Date.now() + days * 86400000;
+
+    const btn = $N('notif-send');
+    btn.disabled = true;
+    try {
+      await notifApi('/', { method: 'POST', body: JSON.stringify(payload) });
+      showFormMsg('Notificación enviada.', true);
+      resetForm();
+      loadNotifications();
+    } catch (err) {
+      showFormMsg(err.message || 'Error al enviar.', false);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function resetForm() {
+    $N('notif-title').value = '';
+    $N('notif-message').value = '';
+    $N('notif-url').value = '';
+    $N('notif-fallback').value = '';
+    $N('notif-scheme').value = '';
+    $N('notif-expires').value = '';
+    $N('notif-external').checked = false;
+    $N('notif-active').checked = true;
+    notifState.selectedUser = null;
+    $N('notif-selected-user').style.display = 'none';
+    $N('notif-user-q').value = '';
+    $N('notif-user-results').classList.remove('open');
+    updateTargetUI();
+    updateFieldsUI();
+  }
+
+  function updateFieldsUI() {
+    $N('notif-fields-link').style.display = notifState.type === 'link' ? 'block' : 'none';
+    $N('notif-fields-app').style.display = notifState.type === 'app' ? 'block' : 'none';
+    document.querySelectorAll('.type-btn').forEach((b) => {
+      b.classList.toggle('active', b.dataset.type === notifState.type);
+    });
+  }
+
+  function updateTargetUI() {
+    $N('notif-user-search').style.display = notifState.target === 'user' ? 'block' : 'none';
+  }
+
+  async function searchUsers(q) {
+    const resultsEl = $N('notif-user-results');
+    if (!q) { resultsEl.classList.remove('open'); resultsEl.innerHTML = ''; return; }
+    try {
+      const data = await notifApi('/users?q=' + encodeURIComponent(q));
+      const users = data.users || [];
+      if (!users.length) {
+        resultsEl.innerHTML = '<div class="empty" style="padding:10px">Sin resultados</div>';
+      } else {
+        resultsEl.innerHTML = users.map((u) =>
+          '<div class="user-result" data-id="' + u.id + '" data-name="' + esc(u.name || '') + '" data-email="' + esc(u.email) + '">' +
+          '<span>' + esc(u.name || u.email) + '</span>' +
+          '<span class="uemail">' + esc(u.email) + '</span>' +
+          '</div>'
+        ).join('');
+        resultsEl.querySelectorAll('.user-result').forEach((r) => {
+          r.addEventListener('click', () => {
+            notifState.selectedUser = { id: r.dataset.id, name: r.dataset.name, email: r.dataset.email };
+            $N('notif-selected-user-label').textContent = (r.dataset.name || r.dataset.email) + ' (' + r.dataset.email + ')';
+            $N('notif-selected-user').style.display = 'flex';
+            $N('notif-user-q').value = r.dataset.name || r.dataset.email;
+            resultsEl.classList.remove('open');
+            resultsEl.innerHTML = '';
+          });
+        });
+      }
+      resultsEl.classList.add('open');
+    } catch (err) {}
+  }
+
+  function initNotifications() {
+    document.querySelectorAll('.type-btn').forEach((b) => {
+      b.addEventListener('click', () => { notifState.type = b.dataset.type; updateFieldsUI(); });
+    });
+    document.querySelectorAll('input[name="notif-target"]').forEach((r) => {
+      r.addEventListener('change', () => { notifState.target = r.value; updateTargetUI(); });
+    });
+    $N('notif-connect').addEventListener('click', connectNotifications);
+    $N('notif-key').addEventListener('keydown', (e) => { if (e.key === 'Enter') connectNotifications(); });
+    $N('notif-send').addEventListener('click', sendNotification);
+    $N('notif-reset').addEventListener('click', resetForm);
+    $N('notif-refresh').addEventListener('click', loadNotifications);
+    $N('notif-disconnect').addEventListener('click', disconnectNotifications);
+    $N('notif-user-clear').addEventListener('click', () => {
+      notifState.selectedUser = null;
+      $N('notif-selected-user').style.display = 'none';
+      $N('notif-user-q').value = '';
+    });
+    let debounce;
+    $N('notif-user-q').addEventListener('input', (e) => {
+      clearTimeout(debounce);
+      debounce = setTimeout(() => searchUsers(e.target.value.trim()), 300);
+    });
+    updateFieldsUI();
+    updateTargetUI();
+    loadNotifKey();
+  }
+
   // Carga inicial
   fetchGitHub().catch(() => {});
   fetchHealth();
   fetchOnline();
+  initNotifications();
   setInterval(tick, 5000);
 
   // Actualizar el relativo en cada tick sin recargar datos

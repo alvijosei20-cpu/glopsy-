@@ -8,8 +8,30 @@ Estático (un solo HTML), sin build, responsive para móvil, hosteado **fuera de
 - **Repositorio**: últimos commits (mensaje, autor, hash, hace cuánto).
 - **CI / Workflows**: estado de los últimos runs de GitHub Actions (verde/rojo/amarillo).
 - **Servidor**: salud de la API, PostgreSQL, Redis y uptime, vía `GET /api/health`.
+- **Notificaciones**: crear y gestionar notificaciones globales o por usuario (tipo aviso/enlace/app).
 
 GitHub API se consulta cada 5 min (límite 60 req/h sin token). La salud del servidor cada 20 s.
+
+## Notificaciones
+
+El panel puede enviar notificaciones a la web de glopsy (`GET /api/notifications`):
+
+- **Global**: las ve todo visitante o usuario conectado.
+- **Por usuario**: solo la ve ese usuario.
+- **Tipos**:
+  - `aviso` — solo texto con icono de megáfono.
+  - `link` — abre una URL interna (`/ruta`) o externa (pestaña nueva).
+  - `app` — abre una app instalada vía deep link (ej. `whatsapp://…`) con URL de respaldo opcional.
+
+Se guardan en Redis con estado "leído" por usuario/dispositivo. Para crear o eliminar,
+el panel pide una clave de administrador, definida en el back como:
+
+```
+NOTIFICATIONS_ADMIN_KEY=<clave secreta>
+```
+
+La clave se guarda en el navegador y se envía como `Authorization: Bearer <clave>`.
+El origen del panel debe estar en `DASHBOARD_ORIGIN` para permitir CORS.
 
 ## Configuración
 

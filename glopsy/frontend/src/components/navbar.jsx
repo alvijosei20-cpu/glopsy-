@@ -66,15 +66,26 @@ export default function Navbar() {
         if (saved) setNotifications(JSON.parse(saved));
       } catch {}
     };
+    const handleChanged = () => {
+      try {
+        const saved = localStorage.getItem('glopsy_notifications');
+        if (saved) setNotifications(JSON.parse(saved));
+      } catch {}
+    };
     window.addEventListener('storage', handleStorage);
+    window.addEventListener('glopsy_notifications_changed', handleChanged);
     const handleCustomNotif = (e) => {
-      if (e.detail) {
-        setNotifications(prev => [e.detail, ...prev]);
+      if (e.detail && e.detail.id) {
+        setNotifications(prev => {
+          if (prev.some(n => String(n.id) === String(e.detail.id))) return prev;
+          return [e.detail, ...prev];
+        });
       }
     };
     window.addEventListener('glopsy_notification', handleCustomNotif);
     return () => {
       window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('glopsy_notifications_changed', handleChanged);
       window.removeEventListener('glopsy_notification', handleCustomNotif);
     };
   }, []);

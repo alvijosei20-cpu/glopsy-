@@ -8,6 +8,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 // 1. IMPORTAR useAuth JUNTO A AuthProvider
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { loadGA, trackPageView } from './utils/analytics';
+import NotificationCenter from './components/NotificationCenter';
 
 const Home = lazy(() => import('./pages/home/home'));
 const Cart = lazy(() => import('./pages/cart/cart'));
@@ -230,6 +231,7 @@ export default function App() {
   return (
     <AuthProvider>
       <MainApp />
+      <NotificationCenter />
     </AuthProvider>
   );
 }

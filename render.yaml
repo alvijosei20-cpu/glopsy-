@@ -58,6 +58,8 @@ services:
         sync: false
       - key: CACHE_INVALIDATE_SECRET
         sync: false
+      - key: NOTIFICATIONS_ADMIN_KEY
+        sync: false
 
   - type: keyvalue
     name: glopsy-redis
