@@ -19,3 +19,6 @@ dump.rdb
 
 # Proyecto personal (local)
 personal/
+
+# Monitor local (solo uso local, no se sube)
+glopsy/back/monitor/
