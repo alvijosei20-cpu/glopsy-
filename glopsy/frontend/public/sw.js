@@ -42,11 +42,8 @@ self.addEventListener('notificationclick', (event) => {
       }
 
       if (scheme) {
-        try {
-          await self.clients.openWindow(scheme);
-          return;
-        } catch (e) {}
-        return self.clients.openWindow(fallbackUrl);
+        const fb = fallbackUrl || '/';
+        return self.clients.openWindow('/deep-link?scheme=' + encodeURIComponent(scheme) + '&fallback=' + encodeURIComponent(fb));
       }
 
       if (clientsList.length) {

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BellRing, ExternalLink, AppWindow, X } from 'lucide-react';
 import { fetchNotifications, markNotificationRead } from '../services/notificationsService';
+import { openDeepLink } from '../utils/deeplink';
 
 const POLL_MS = 30 * 1000;
 const AVISO_AUTOHIDE_MS = 10 * 1000;
@@ -75,35 +76,8 @@ function openUrl(n, navigate) {
   }
 }
 
-function openDeepLink(n, navigate) {
-  const scheme = n.scheme || '';
-  if (!scheme) return;
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-  if (isIOS) {
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.src = scheme;
-    document.body.appendChild(iframe);
-    setTimeout(() => {
-      iframe.remove();
-      if (n.fallbackUrl) {
-        openUrl({ url: n.fallbackUrl }, navigate);
-      }
-    }, 1500);
-  } else {
-    let opened = false;
-    const onBlur = () => {
-      opened = true;
-    };
-    window.addEventListener('blur', onBlur);
-    setTimeout(() => {
-      window.removeEventListener('blur', onBlur);
-      if (!opened && n.fallbackUrl) {
-        openUrl({ url: n.fallbackUrl }, navigate);
-      }
-    }, 1500);
-    window.location.href = scheme;
-  }
+function openDeepLinkNotification(n, navigate) {
+  openDeepLink(n.scheme, n.fallbackUrl || n.url || '/', navigate);
 }
 
 function Toast({ notif, theme, onDismiss, onAction }) {
@@ -205,7 +179,7 @@ export default function NotificationCenter() {
       setToasts((prev) => prev.filter((t) => t.id !== notif.id));
       markReadLocally(notif.id);
       if (notif.type === 'link') openUrl(notif, navigate);
-      else if (notif.type === 'app') openDeepLink(notif, navigate);
+      else if (notif.type === 'app') openDeepLinkNotification(notif, navigate);
       try {
         await markNotificationRead(notif.id);
       } catch {}

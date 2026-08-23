@@ -23,6 +23,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { markNotificationRead, markAllNotificationsRead, clearAllNotifications } from '../services/notificationsService';
 import { subscribeToPush } from '../services/pushService';
+import { openDeepLink } from '../utils/deeplink';
 
 export default function Navbar() {
   const { user, logout, tienda, tiendaLoading } = useAuth();
@@ -31,24 +32,7 @@ export default function Navbar() {
   const openNotification = (n) => {
     const url = n.url || n.fallbackUrl || '';
     if (n.scheme) {
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-      const tryFallback = () => {
-        const fb = n.fallbackUrl || n.url;
-        if (fb && (fb.startsWith('http') || fb.startsWith('/'))) {
-          if (fb.startsWith('http')) window.open(fb, '_blank', 'noopener');
-          else navigate(fb);
-        }
-      };
-      if (isIOS) {
-        const iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        iframe.src = n.scheme;
-        document.body.appendChild(iframe);
-        setTimeout(() => { iframe.remove(); tryFallback(); }, 1500);
-      } else {
-        window.location.href = n.scheme;
-        setTimeout(tryFallback, 1500);
-      }
+      openDeepLink(n.scheme, n.fallbackUrl || n.url || '/', navigate);
     } else if (url.startsWith('http://') || url.startsWith('https://')) {
       window.open(url, '_blank', 'noopener');
     } else if (url.startsWith('/')) {
