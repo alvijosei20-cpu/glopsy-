@@ -112,6 +112,7 @@ export default function Navbar() {
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
   );
   const [pushSubscribed, setPushSubscribed] = useState(false);
+  const [pushError, setPushError] = useState('');
 
   const checkPushSubscription = useCallback(async () => {
     try {
@@ -128,7 +129,14 @@ export default function Navbar() {
   useEffect(() => {
     if (pushPermission !== 'granted') return;
     checkPushSubscription();
-    const t = setTimeout(() => { subscribeToPush().then((sub) => setPushSubscribed(Boolean(sub))); }, 800);
+    const t = setTimeout(() => {
+      subscribeToPush()
+        .then((sub) => {
+          setPushSubscribed(Boolean(sub));
+          if (!sub) setPushError('No se pudo crear la suscripción. Revisa la consola (F12).');
+        })
+        .catch((err) => setPushError('Error: ' + (err.message || String(err))));
+    }, 800);
     return () => clearTimeout(t);
   }, [user, pushPermission, checkPushSubscription]);
   const [biometricStatus, setBiometricStatus] = useState('');
@@ -684,6 +692,7 @@ export default function Navbar() {
                       <button
                         type="button"
                         onClick={async () => {
+                          setPushError('');
                           if (!('Notification' in window)) {
                             alert('Tu navegador no soporta notificaciones push.');
                             return;
@@ -694,7 +703,10 @@ export default function Navbar() {
                             const sub = await subscribeToPush();
                             setPushSubscribed(Boolean(sub));
                             if (sub) {
+                              setPushError('');
                               new Notification('¡Glopsy!', { body: '¡Notificaciones push activadas correctamente!' });
+                            } else {
+                              setPushError('No se pudo crear la suscripción. Revisa la consola (F12).');
                             }
                           }
                         }}
@@ -702,6 +714,9 @@ export default function Navbar() {
                       >
                         {pushPermission === 'granted' ? 'Reactivar suscripción' : 'Permitir Notificaciones'}
                       </button>
+                      {pushError && (
+                        <p className="mt-2 text-[10px] font-semibold" style={{ color: '#ef4444' }}>{pushError}</p>
+                      )}
                     </>
                   )}
                 </div>
