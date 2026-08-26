@@ -10,8 +10,7 @@
   "kv_namespaces": [
     {
       "binding": "CACHE_VERSIONS",
-      // TODO: pega aquí el ID real del KV namespace (dashboard → Workers → glopsy → Settings → Variables → KV Namespace Bindings). Sin id, `wrangler deploy` falla.
-      "id": "PON_AQUI_TU_KV_NAMESPACE_ID"
+      "id": "a7c4f45652c44bb3a5b6b8c3b016f2dc"
     }
   ]
 }
