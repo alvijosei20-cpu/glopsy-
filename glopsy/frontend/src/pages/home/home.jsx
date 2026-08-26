@@ -259,7 +259,7 @@ const ProductCarousel = ({ items, favorites, onToggleFavorite, onAddToCart, form
       )}
       <div
         ref={scroller}
-        className="flex gap-3 sm:gap-4 overflow-x-auto scroll-smooth snap-x snap-mandatory home-no-scrollbar -mx-4 px-4 pb-2"
+        className="flex gap-3 sm:gap-4 overflow-x-auto overflow-y-hidden overscroll-x-contain snap-x snap-proximity home-no-scrollbar -mx-4 px-4 pb-2"
       >
         {items.map((p, i) => {
           const fx = ['homeFadeUp', 'homeFadeLeft', 'homeFadeRight', 'homePop'][i % 4];
