@@ -5,11 +5,13 @@
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["*"]
   },
   "kv_namespaces": [
     {
-      "binding": "CACHE_VERSIONS"
+      "binding": "CACHE_VERSIONS",
+      // TODO: pega aquí el ID real del KV namespace (dashboard → Workers → glopsy → Settings → Variables → KV Namespace Bindings). Sin id, `wrangler deploy` falla.
+      "id": "PON_AQUI_TU_KV_NAMESPACE_ID"
     }
   ]
 }

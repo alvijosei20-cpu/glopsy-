@@ -1,0 +1,40 @@
+name: Deploy Cloudflare Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'glopsy/frontend/worker.js'
+      - 'glopsy/frontend/wrangler.jsonc'
+      - 'glopsy/frontend/package.json'
+      - 'glopsy/frontend/package-lock.json'
+      - '.github/workflows/deploy-worker.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: glopsy/frontend/package-lock.json
+
+      - name: Build frontend (assets)
+        working-directory: glopsy/frontend
+        run: npm ci && npm run build
+        env:
+          VITE_API_URL: /api
+
+      - name: Deploy Worker + set PANIC_SECRET
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: 'glopsy/frontend'
+          command: deploy
+          secrets: |
+            PANIC_SECRET
+        env:
+          PANIC_SECRET: ${{ secrets.PANIC_SECRET }}
