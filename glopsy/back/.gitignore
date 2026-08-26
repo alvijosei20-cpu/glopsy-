@@ -11,3 +11,6 @@ certs/
 dump.rdb
 
 *.log
+
+# VAPID keys (generadas en runtime)
+config/vapid.json

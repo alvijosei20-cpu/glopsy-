@@ -616,7 +616,8 @@ export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadNam
         SELECT json_build_object(
           'tipo', o.tipo_descuento,
           'valor', o.valor_descuento,
-          'alcance', o.alcance
+          'alcance', o.alcance,
+          'titulo', o.titulo
         )
         FROM ofertas o
         WHERE o.tienda_id = p.tienda_id 
@@ -717,7 +718,8 @@ export const getProductByPublicId = async (identifier, ciudad = null) => {
         SELECT json_build_object(
           'tipo', o.tipo_descuento,
           'valor', o.valor_descuento,
-          'alcance', o.alcance
+          'alcance', o.alcance,
+          'titulo', o.titulo
         )
         FROM ofertas o
         WHERE o.tienda_id = p.tienda_id

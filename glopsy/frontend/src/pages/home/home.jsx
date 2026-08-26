@@ -4,6 +4,7 @@ import { Search, MapPin, Truck, ShieldCheck, Fingerprint, Store, Star, ShoppingC
 import api from '../../services/api';
 import { isLoggedIn } from '../../utils/session';
 import { SkeletonList } from '../../components/SkeletonLoader';
+import Footer from '../../components/footer';
 import { useSEO } from '../../utils/seo';
 import { trackEvent } from '../../utils/analytics';
 import './home.css';
@@ -133,9 +134,9 @@ const ProductCard = ({ p, favorites, onToggleFavorite, onAddToCart, formatPrice,
   return (
     <div
       onClick={handleClick}
-      className="group bg-white dark:bg-[#121212] rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-pointer relative"
+      className="group bg-white dark:bg-[#121212] rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden shadow-sm hover:shadow-xl hover:shadow-fuchsia-500/10 hover:-translate-y-1 hover:border-fuchsia-300 dark:hover:border-fuchsia-900 transition-all duration-300 cursor-pointer relative"
     >
-      <div className="relative aspect-square bg-slate-50 dark:bg-zinc-900 overflow-hidden">
+      <div className="relative aspect-[4/3] bg-slate-50 dark:bg-zinc-900 overflow-hidden">
         <img
           src={getProductImage(p)}
           alt={p.name}
@@ -155,8 +156,8 @@ const ProductCard = ({ p, favorites, onToggleFavorite, onAddToCart, formatPrice,
           <Heart size={15} fill={isFavorite ? 'currentColor' : 'none'} />
         </button>
         {hasDiscount && (
-          <span className="absolute top-2 right-2 bg-gradient-to-r from-pink-600 to-rose-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-md shadow-md shadow-pink-500/30">
-            {discountPct ? `${discountPct}% OFF` : '¡OFERTA!'}
+          <span className="absolute top-3 -right-8 z-10 bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white text-[10px] font-extrabold uppercase tracking-wider px-10 py-1.5 shadow-lg shadow-pink-500/40 rotate-45">
+            {discountPct ? `-${discountPct}%` : '¡OFERTA!'}
           </span>
         )}
         {p.envio_gratis && (
@@ -166,7 +167,12 @@ const ProductCard = ({ p, favorites, onToggleFavorite, onAddToCart, formatPrice,
         )}
       </div>
 
-      <div className="p-3.5">
+      <div className="p-3">
+        {hasDiscount && p.oferta_activa?.titulo && (
+          <p className="text-[10px] font-bold uppercase tracking-wide text-fuchsia-600 dark:text-fuchsia-400 mb-1 truncate">
+            {p.oferta_activa.titulo}
+          </p>
+        )}
         <h3 className="text-xs sm:text-sm font-normal text-slate-800 dark:text-slate-200 line-clamp-2 group-hover:text-fuchsia-600 dark:group-hover:text-fuchsia-400 transition-colors mb-1.5 leading-snug min-h-[2.2rem]">
           {p.name}
         </h3>
@@ -174,7 +180,7 @@ const ProductCard = ({ p, favorites, onToggleFavorite, onAddToCart, formatPrice,
           <div className="mb-1.5 flex items-center gap-1">
             <span className="flex items-center">
               {[1, 2, 3, 4, 5].map(i => (
-                <Star key={i} size={13} className={i <= Math.round(Number(p.avg_rating || 0)) ? 'text-amber-400 fill-amber-400' : 'text-slate-300 fill-slate-200'} />
+                <Star key={i} size={12} className={i <= Math.round(Number(p.avg_rating || 0)) ? 'text-amber-400 fill-amber-400' : 'text-slate-300 fill-slate-200'} />
               ))}
             </span>
             <span className="text-xs font-bold text-slate-600 dark:text-slate-400">{Number(p.avg_rating).toFixed(1)}</span>
@@ -260,7 +266,7 @@ const ProductCarousel = ({ items, favorites, onToggleFavorite, onAddToCart, form
           return (
             <div
               key={p.id}
-              className="w-32 sm:w-40 flex-none snap-start"
+              className="w-36 sm:w-48 flex-none snap-start"
               style={inView ? { animation: `${fx} 400ms ease both`, animationDelay: `${i * 80}ms` } : { opacity: 0 }}
             >
               <ProductCard
@@ -587,24 +593,6 @@ export default function Home() {
   const slide = SLIDES[slideIdx];
   const basePriceOf = (p) => Number(p.base_price || 0);
 
-  const renderGrid = (items) => (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-      {items.map(p => (
-        <ProductCard
-          key={p.id}
-          p={p}
-          favorites={favorites}
-          onToggleFavorite={handleToggleFavorite}
-          onAddToCart={handleAddToCart}
-          formatPrice={formatPrice}
-          getFinalPrice={getFinalPrice}
-          getProductImage={getProductImage}
-          baseP={basePriceOf(p)}
-        />
-      ))}
-    </div>
-  );
-
   return (
     <div className="min-h-screen bg-white dark:bg-black text-slate-800 dark:text-slate-100">
       {/* ===== BUSCADOR + UBICACIÓN ===== */}
@@ -788,7 +776,16 @@ export default function Home() {
               onSeeAll={() => goToSection('/listpr?sort=high_price', 'Ver todas las ofertas')}
               seeAllLabel="Ver todas"
             />
-            {renderGrid(deals)}
+            <ProductCarousel
+              items={deals}
+              favorites={favorites}
+              onToggleFavorite={handleToggleFavorite}
+              onAddToCart={handleAddToCart}
+              formatPrice={formatPrice}
+              getFinalPrice={getFinalPrice}
+              getProductImage={getProductImage}
+              basePriceOf={basePriceOf}
+            />
           </section>
         </>
       )}
@@ -920,6 +917,8 @@ export default function Home() {
           <span>{toastMessage}</span>
         </div>
       )}
+
+      <Footer />
     </div>
   );
 }

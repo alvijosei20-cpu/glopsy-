@@ -29,6 +29,7 @@ const CompraDetail = lazy(() => import('./pages/compras/compraDetail'));
 const ConsultarPedido = lazy(() => import('./pages/compras/consultarPedido'));
 const Profile = lazy(() => import('./pages/profile/profile'));
 const DeepLinkPage = lazy(() => import('./pages/DeepLinkPage'));
+const Terms = lazy(() => import('./pages/terms/terms'));
 
 // Componente para proteger rutas privadas
 function ProtectedRoute({ children }) {
@@ -174,6 +175,7 @@ function MainApp() {
           <Route path="/auth/success" element={<AuthSuccess />} />
 
           <Route path="/listpr" element={<Listpr />} />
+          <Route path="/terminos" element={<Terms />} />
           <Route 
             path="/favorites" 
             element={
