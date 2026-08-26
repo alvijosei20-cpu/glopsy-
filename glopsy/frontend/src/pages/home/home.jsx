@@ -591,7 +591,7 @@ export default function Home() {
   };
 
   const slide = SLIDES[slideIdx];
-  const basePriceOf = (p) => Number(p.base_price || 0);
+  const basePriceOf = (p) => Number(p.suggested_price || p.base_price || 0);
 
   return (
     <div className="min-h-screen bg-white dark:bg-black text-slate-800 dark:text-slate-100">
