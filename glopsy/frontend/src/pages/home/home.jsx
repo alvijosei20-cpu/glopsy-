@@ -134,9 +134,9 @@ const ProductCard = ({ p, favorites, onToggleFavorite, onAddToCart, formatPrice,
   return (
     <div
       onClick={handleClick}
-      className="group bg-white dark:bg-[#121212] rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden shadow-sm hover:shadow-xl hover:shadow-fuchsia-500/10 hover:-translate-y-1 hover:border-fuchsia-300 dark:hover:border-fuchsia-900 transition-all duration-300 cursor-pointer relative"
+      className="group bg-white dark:bg-[#121212] rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden shadow-sm hover:shadow-xl hover:shadow-fuchsia-500/10 hover:-translate-y-1 hover:border-fuchsia-300 dark:hover:border-fuchsia-900 transition-all duration-300 cursor-pointer relative flex flex-col h-60 sm:h-72"
     >
-      <div className="relative aspect-[4/3] bg-slate-50 dark:bg-zinc-900 overflow-hidden">
+      <div className="relative w-full h-28 sm:h-40 flex-none bg-slate-50 dark:bg-zinc-900 overflow-hidden">
         <img
           src={getProductImage(p)}
           alt={p.name}
@@ -167,7 +167,7 @@ const ProductCard = ({ p, favorites, onToggleFavorite, onAddToCart, formatPrice,
         )}
       </div>
 
-      <div className="p-3">
+      <div className="p-3 flex flex-col flex-1 min-h-0">
         <h3 className="text-xs sm:text-sm font-normal text-slate-800 dark:text-slate-200 line-clamp-2 group-hover:text-fuchsia-600 dark:group-hover:text-fuchsia-400 transition-colors mb-1.5 leading-snug min-h-[2.2rem]">
           {p.name}
         </h3>
@@ -182,7 +182,7 @@ const ProductCard = ({ p, favorites, onToggleFavorite, onAddToCart, formatPrice,
             <span className="text-[10px] text-slate-400">({p.review_count})</span>
           </div>
         )}
-        <div className="flex items-end justify-between gap-2">
+        <div className="flex items-end justify-between gap-2 mt-auto pt-1">
           <div>
             {hasDiscount && (
               <span className="text-[11px] text-slate-400 line-through block">{formatPrice(baseP)}</span>
