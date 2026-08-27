@@ -134,9 +134,9 @@ const ProductCard = ({ p, favorites, onToggleFavorite, onAddToCart, formatPrice,
   return (
     <div
       onClick={handleClick}
-      className="group bg-white dark:bg-[#121212] rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden shadow-sm hover:shadow-xl hover:shadow-fuchsia-500/10 hover:-translate-y-1 hover:border-fuchsia-300 dark:hover:border-fuchsia-900 transition-all duration-300 cursor-pointer relative flex flex-col h-60 sm:h-68"
+      className="group bg-white dark:bg-[#121212] rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden shadow-sm hover:shadow-xl hover:shadow-fuchsia-500/10 hover:-translate-y-1 hover:border-fuchsia-300 dark:hover:border-fuchsia-900 transition-all duration-300 cursor-pointer relative flex flex-col h-52 sm:h-60"
     >
-      <div className="relative w-full h-20 sm:h-28 flex-none bg-slate-50 dark:bg-zinc-900 overflow-hidden">
+      <div className="relative w-full h-16 sm:h-20 flex-none bg-slate-50 dark:bg-zinc-900 overflow-hidden">
         <img
           src={getProductImage(p)}
           alt={p.name}
@@ -162,8 +162,8 @@ const ProductCard = ({ p, favorites, onToggleFavorite, onAddToCart, formatPrice,
         )}
       </div>
 
-      <div className="p-3 flex flex-col flex-1 min-h-0">
-        <h3 className="text-xs sm:text-sm font-normal text-slate-800 dark:text-slate-200 line-clamp-2 group-hover:text-fuchsia-600 dark:group-hover:text-fuchsia-400 transition-colors mb-1 leading-snug min-h-[2rem]">
+      <div className="p-2.5 sm:p-3 flex flex-col flex-1 min-h-0">
+        <h3 className="text-xs sm:text-sm font-normal text-slate-800 dark:text-slate-200 line-clamp-2 group-hover:text-fuchsia-600 dark:group-hover:text-fuchsia-400 transition-colors mb-1 leading-snug min-h-[1.5rem]">
           {p.name}
         </h3>
         {Number(p.review_count || 0) > 0 && (
