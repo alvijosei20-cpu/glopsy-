@@ -156,8 +156,8 @@ const ProductCard = ({ p, favorites, onToggleFavorite, onAddToCart, formatPrice,
           <Heart size={15} fill={isFavorite ? 'currentColor' : 'none'} />
         </button>
         {hasDiscount && (
-          <span className="absolute top-3 -right-8 z-10 bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white text-[10px] font-extrabold uppercase tracking-wider px-10 py-1.5 shadow-lg shadow-pink-500/40 rotate-45">
-            {discountPct ? `-${discountPct}%` : '¡OFERTA!'}
+          <span className="absolute top-2 right-2 z-10 bg-gradient-to-r from-pink-600 to-rose-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-md shadow-md shadow-pink-500/30">
+            {discountPct ? `${discountPct}% OFF` : '¡OFERTA!'}
           </span>
         )}
         {p.envio_gratis && (
@@ -168,11 +168,6 @@ const ProductCard = ({ p, favorites, onToggleFavorite, onAddToCart, formatPrice,
       </div>
 
       <div className="p-3">
-        {hasDiscount && p.oferta_activa?.titulo && (
-          <p className="text-[10px] font-bold uppercase tracking-wide text-fuchsia-600 dark:text-fuchsia-400 mb-1 truncate">
-            {p.oferta_activa.titulo}
-          </p>
-        )}
         <h3 className="text-xs sm:text-sm font-normal text-slate-800 dark:text-slate-200 line-clamp-2 group-hover:text-fuchsia-600 dark:group-hover:text-fuchsia-400 transition-colors mb-1.5 leading-snug min-h-[2.2rem]">
           {p.name}
         </h3>
@@ -195,11 +190,6 @@ const ProductCard = ({ p, favorites, onToggleFavorite, onAddToCart, formatPrice,
             <span className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
               {formatPrice(finalPrice)}
             </span>
-            {hasDiscount && (
-              <span className="block text-[11px] font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
-                {Math.round((1 - finalPrice / baseP) * 100)}% de ahorro
-              </span>
-            )}
           </div>
           <button
             type="button"
