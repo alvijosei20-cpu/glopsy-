@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom';
 import { FileText, ShieldCheck, Truck, Mail } from 'lucide-react';
-
 export default function Footer() {
   return (
     <footer className="bg-black text-white w-screen relative left-1/2 -translate-x-1/2 -mb-2 sm:-mb-3">
@@ -22,6 +21,13 @@ export default function Footer() {
             >
               <FileText size={12} />
               Términos y Condiciones
+            </Link>
+            <Link
+              to="/privacidad"
+              className="flex items-center gap-1 hover:text-white transition-colors text-sky-400"
+            >
+              <ShieldCheck size={12} />
+              Política de Privacidad
             </Link>
             <span className="flex items-center gap-1 text-white/50">
               <ShieldCheck size={12} className="text-white/40" />
