@@ -134,9 +134,9 @@ const ProductCard = ({ p, favorites, onToggleFavorite, onAddToCart, formatPrice,
   return (
     <div
       onClick={handleClick}
-      className="group bg-white dark:bg-[#121212] rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden shadow-sm hover:shadow-xl hover:shadow-fuchsia-500/10 hover:-translate-y-1 hover:border-fuchsia-300 dark:hover:border-fuchsia-900 transition-all duration-300 cursor-pointer relative flex flex-col h-52 sm:h-60"
+      className="group bg-white dark:bg-[#121212] rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden shadow-sm hover:shadow-xl hover:shadow-fuchsia-500/10 hover:-translate-y-1 hover:border-fuchsia-300 dark:hover:border-fuchsia-900 transition-all duration-300 cursor-pointer relative flex flex-col h-48 sm:h-56"
     >
-      <div className="relative w-full h-16 sm:h-20 flex-none bg-slate-50 dark:bg-zinc-900 overflow-hidden">
+      <div className="relative w-full h-20 sm:h-28 flex-none bg-slate-50 dark:bg-zinc-900 overflow-hidden">
         <img
           src={getProductImage(p)}
           alt={p.name}
@@ -162,32 +162,32 @@ const ProductCard = ({ p, favorites, onToggleFavorite, onAddToCart, formatPrice,
         )}
       </div>
 
-      <div className="p-2.5 sm:p-3 flex flex-col flex-1 min-h-0">
-        <h3 className="text-xs sm:text-sm font-normal text-slate-800 dark:text-slate-200 line-clamp-2 group-hover:text-fuchsia-600 dark:group-hover:text-fuchsia-400 transition-colors mb-1 leading-snug min-h-[1.5rem]">
+      <div className="p-2 sm:p-2.5 flex flex-col flex-1 min-h-0">
+        <h3 className="text-[11px] sm:text-xs font-normal text-slate-800 dark:text-slate-200 line-clamp-2 group-hover:text-fuchsia-600 dark:group-hover:text-fuchsia-400 transition-colors mb-0.5 leading-snug min-h-[1.25rem]">
           {p.name}
         </h3>
         {Number(p.review_count || 0) > 0 && (
-          <div className="mb-1 flex items-center gap-1">
+          <div className="mb-0.5 flex items-center gap-1">
             <span className="flex items-center">
               {[1, 2, 3, 4, 5].map(i => (
-                <Star key={i} size={12} className={i <= Math.round(Number(p.avg_rating || 0)) ? 'text-amber-400 fill-amber-400' : 'text-slate-300 fill-slate-200'} />
+                <Star key={i} size={11} className={i <= Math.round(Number(p.avg_rating || 0)) ? 'text-amber-400 fill-amber-400' : 'text-slate-300 fill-slate-200'} />
               ))}
             </span>
-            <span className="text-xs font-bold text-slate-600 dark:text-slate-400">{Number(p.avg_rating).toFixed(1)}</span>
+            <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400">{Number(p.avg_rating).toFixed(1)}</span>
             <span className="text-[10px] text-slate-400">({p.review_count})</span>
           </div>
         )}
         {p.envio_gratis && (
-          <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 mb-1">
-            <Truck size={11} /> Envío gratis
+          <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 mb-0.5">
+            <Truck size={10} /> Envío gratis
           </span>
         )}
         <div className="flex items-end justify-between gap-2 mt-auto pt-1">
           <div>
             {hasDiscount && (
-              <span className="text-[11px] text-slate-400 line-through block">{formatPrice(baseP)}</span>
+              <span className="text-[10px] text-slate-400 line-through block">{formatPrice(baseP)}</span>
             )}
-            <span className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+            <span className="text-sm font-bold text-slate-900 dark:text-white">
               {formatPrice(finalPrice)}
             </span>
           </div>
