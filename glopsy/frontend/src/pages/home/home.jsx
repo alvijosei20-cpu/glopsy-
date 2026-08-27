@@ -134,9 +134,9 @@ const ProductCard = ({ p, favorites, onToggleFavorite, onAddToCart, formatPrice,
   return (
     <div
       onClick={handleClick}
-      className="group bg-white dark:bg-[#121212] rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden shadow-sm hover:shadow-xl hover:shadow-fuchsia-500/10 hover:-translate-y-1 hover:border-fuchsia-300 dark:hover:border-fuchsia-900 transition-all duration-300 cursor-pointer relative flex flex-col h-60 sm:h-72"
+      className="group bg-white dark:bg-[#121212] rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden shadow-sm hover:shadow-xl hover:shadow-fuchsia-500/10 hover:-translate-y-1 hover:border-fuchsia-300 dark:hover:border-fuchsia-900 transition-all duration-300 cursor-pointer relative flex flex-col h-56 sm:h-64"
     >
-      <div className="relative w-full h-28 sm:h-40 flex-none bg-slate-50 dark:bg-zinc-900 overflow-hidden">
+      <div className="relative w-full h-24 sm:h-32 flex-none bg-slate-50 dark:bg-zinc-900 overflow-hidden">
         <img
           src={getProductImage(p)}
           alt={p.name}
