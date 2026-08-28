@@ -5,6 +5,8 @@ import App from './App.jsx'
 import './index.css'
 import axios from "axios";
 
+document.addEventListener('contextmenu', (e) => e.preventDefault());
+
 
 
 // 1. Configuración global del interceptor (Antes de renderizar)

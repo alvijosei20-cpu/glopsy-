@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Heart, MapPin, ShoppingCart, Star, Truck, ArrowUpDown, Filter, ChevronDown, X } from 'lucide-react';
+import { Search, Heart, MapPin, ShoppingCart, Star, Truck, Filter, ChevronDown, X, Check } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
 import { isLoggedIn } from '../../utils/session';
@@ -324,13 +324,140 @@ export default function Listpr() {
     return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60';
   };
 
+  const sidebar = (
+    <div className="space-y-4">
+      {/* ===== Categorías ===== */}
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-3 sm:p-4">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-3">Categorías</h3>
+        <div className="flex flex-col gap-1">
+          <button
+            type="button"
+            onClick={() => setSelectedCategory(null)}
+            className={`w-full text-left px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all border flex items-center justify-between ${
+              selectedCategory === null
+                ? 'bg-fuchsia-600 text-white border-fuchsia-600'
+                : 'bg-white text-slate-600 border-transparent hover:bg-slate-50 hover:border-slate-200'
+            }`}
+          >
+            Todas
+            {selectedCategory === null && <Check size={14} className="shrink-0" />}
+          </button>
+          {categories.map(cat => (
+            <button
+              key={cat.id}
+              type="button"
+              onClick={() => setSelectedCategory(cat.id)}
+              className={`w-full text-left px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all border flex items-center justify-between ${
+                selectedCategory === cat.id
+                  ? 'bg-fuchsia-600 text-white border-fuchsia-600'
+                  : 'bg-white text-slate-600 border-transparent hover:bg-slate-50 hover:border-slate-200'
+              }`}
+            >
+              {cat.nombre}
+              {selectedCategory === cat.id && <Check size={14} className="shrink-0" />}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ===== Filtros ===== */}
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-3 sm:p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Filtros</h3>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="flex items-center gap-1 text-xs font-semibold text-fuchsia-600 hover:text-fuchsia-700 transition-all"
+            >
+              <X size={13} />
+              Limpiar
+            </button>
+          )}
+        </div>
+
+        <div className="space-y-4">
+          {/* Precio */}
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block mb-2">Precio</label>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <input
+                type="number"
+                min="0"
+                placeholder="Mín"
+                value={priceMin}
+                onChange={(e) => setPriceMin(e.target.value)}
+                className="w-full min-w-0 h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none placeholder-slate-400 focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-500/15 transition-all"
+              />
+              <span className="text-slate-300 text-sm shrink-0">—</span>
+              <input
+                type="number"
+                min="0"
+                placeholder="Máx"
+                value={priceMax}
+                onChange={(e) => setPriceMax(e.target.value)}
+                className="w-full min-w-0 h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none placeholder-slate-400 focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-500/15 transition-all"
+              />
+            </div>
+          </div>
+
+          {/* Calificación mínima */}
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block mb-2">Calificación</label>
+            <select
+              value={minRating}
+              onChange={(e) => setMinRating(Number(e.target.value))}
+              className="w-full h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-500/15 transition-all"
+            >
+              <option value={0}>Cualquier rating</option>
+              <option value={4}>4+ estrellas</option>
+              <option value={3}>3+ estrellas</option>
+              <option value={2}>2+ estrellas</option>
+            </select>
+          </div>
+
+          {/* Envío gratis */}
+          <button
+            type="button"
+            onClick={() => setFreeShipping(!freeShipping)}
+            className={`w-full flex items-center justify-between gap-2 h-9 px-3 rounded-lg border text-xs font-semibold transition-all ${
+              freeShipping
+                ? 'bg-fuchsia-600 text-white border-fuchsia-600'
+                : 'bg-white text-slate-600 border-slate-200 hover:border-fuchsia-300 hover:text-fuchsia-600'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <Truck size={14} />
+              Envío gratis
+            </span>
+            {freeShipping && <Check size={14} />}
+          </button>
+
+          {/* Ordenar */}
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block mb-2">Ordenar por</label>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="w-full h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-500/15 transition-all"
+            >
+              <option value="relevance">Más relevantes</option>
+              <option value="low_price">Menor precio</option>
+              <option value="high_price">Mayor precio</option>
+              <option value="newest">Más recientes</option>
+              <option value="rating">Mejor calificados</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 pb-16">
-      {/* ===== Barra de búsqueda y filtros ===== */}
+      {/* ===== Barra de búsqueda ===== */}
       <div className="bg-white border-b border-slate-200 shadow-sm sticky top-16 z-45">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-
-          {/* Fila 1: Búsqueda + ubicación */}
           <div className="flex flex-col md:flex-row md:items-center gap-3">
             <form onSubmit={handleSearchSubmit} className="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-fuchsia-500/30 focus-within:border-fuchsia-400 transition-all">
               <Search size={18} className="ml-4 text-slate-400 shrink-0" />
@@ -367,8 +494,8 @@ export default function Listpr() {
             </div>
           </div>
 
-          {/* Fila 2: Categorías */}
-          <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-0.5 scrollbar-none">
+          {/* Categorías (solo móvil) */}
+          <div className="mt-3 md:hidden flex items-center gap-2 overflow-x-auto pb-0.5 scrollbar-none">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 shrink-0 mr-1">Categorías</span>
             <button
               onClick={() => setSelectedCategory(null)}
@@ -395,9 +522,9 @@ export default function Listpr() {
             ))}
           </div>
 
-          {/* Fila 3: Filtros estructurados (colapsables) */}
+          {/* Filtros colapsables (solo móvil) */}
           {filtersOpen && (
-            <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-x-6 gap-y-2.5">
+            <div className="mt-3 pt-3 border-t border-slate-100 md:hidden flex flex-wrap items-center gap-x-6 gap-y-2.5">
             {/* Precio */}
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Precio</span>
@@ -451,7 +578,6 @@ export default function Listpr() {
 
             {/* Ordenar */}
             <div className="flex items-center gap-2 ml-auto">
-              <ArrowUpDown size={13} className="text-slate-400" />
               <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Ordenar</span>
               <select
                 value={sortBy}
@@ -481,66 +607,73 @@ export default function Listpr() {
         </div>
       </div>
 
-      {/* ===== Resultados ===== */}
+      {/* ===== Layout dos columnas: Sidebar (izquierda) + Productos (derecha) ===== */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-lg md:text-xl font-bold text-slate-900">
-              {submittedQuery ? `Resultados para "${submittedQuery}"` : (selectedCategory ? categories.find(c => c.id === selectedCategory)?.nombre || 'Categoría' : 'Catálogo de Productos')}
-            </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {total} {total === 1 ? 'producto' : 'productos'} encontrados
-            </p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {hasActiveFilters && (
-              <span className="hidden sm:inline-flex text-[11px] font-semibold text-fuchsia-600 bg-fuchsia-50 border border-fuchsia-100 px-2.5 py-1 rounded-full">
-                {[selectedCategory !== null, priceMin !== '', priceMax !== '', minRating > 0, freeShipping].filter(Boolean).length} filtros activos
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={() => setFiltersOpen(!filtersOpen)}
-              className={`flex items-center gap-1.5 h-9 px-3.5 rounded-lg border text-xs font-semibold transition-all ${
-                filtersOpen
-                  ? 'bg-slate-900 text-white border-slate-900'
-                  : 'bg-white text-slate-600 border-slate-200 hover:border-fuchsia-300 hover:text-fuchsia-600'
-              }`}
-            >
-              <Filter size={13} />
-              <span className="hidden sm:inline">Filtros</span>
-              <ChevronDown size={14} className={`transition-transform ${filtersOpen ? 'rotate-180' : ''}`} />
-            </button>
-          </div>
-        </div>
+        <div className="md:grid md:grid-cols-[280px_1fr] md:gap-8 md:items-start">
 
-        {/* Loading Initial */}
-        {loading && products.length === 0 && (
-          <SkeletonList count={8} />
-        )}
+          {/* Sidebar (solo tablet/desktop) */}
+          <aside className="hidden md:block md:sticky md:top-36">
+            {sidebar}
+          </aside>
 
-        {/* Empty State */}
-        {!loading && products.length === 0 && (
-          <div className="bg-white rounded-2xl shadow-sm border border-fuchsia-100 p-12 text-center max-w-lg mx-auto my-12">
-            <div className="w-16 h-16 bg-fuchsia-50 text-fuchsia-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
-              <Search size={32} />
+          {/* Columna de productos */}
+          <section className="min-w-0">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h1 className="text-lg md:text-xl font-bold text-slate-900">
+                  {submittedQuery ? `Resultados para "${submittedQuery}"` : (selectedCategory ? categories.find(c => c.id === selectedCategory)?.nombre || 'Categoría' : 'Catálogo de Productos')}
+                </h1>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {total} {total === 1 ? 'producto' : 'productos'} encontrados
+                </p>
+              </div>
+              {hasActiveFilters && (
+                <span className="hidden sm:inline-flex shrink-0 text-[11px] font-semibold text-fuchsia-600 bg-fuchsia-50 border border-fuchsia-100 px-2.5 py-1 rounded-full">
+                  {[selectedCategory !== null, priceMin !== '', priceMax !== '', minRating > 0, freeShipping].filter(Boolean).length} filtros activos
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setFiltersOpen(!filtersOpen)}
+                className={`md:hidden flex items-center gap-1.5 h-9 px-3.5 rounded-lg border text-xs font-semibold transition-all ${
+                  filtersOpen
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-600 border-slate-200 hover:border-fuchsia-300 hover:text-fuchsia-600'
+                }`}
+              >
+                <Filter size={13} />
+                <span className="hidden sm:inline">Filtros</span>
+                <ChevronDown size={14} className={`transition-transform ${filtersOpen ? 'rotate-180' : ''}`} />
+              </button>
             </div>
-            <h3 className="text-lg font-bold text-slate-800 mb-2">No encontramos productos en esta categoría</h3>
-            <p className="text-slate-500 text-sm mb-6">
-              Intenta seleccionar otra categoría o buscar con otros términos.
-            </p>
-            <button
-              onClick={clearFilters}
-              className="bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-semibold px-6 py-2.5 rounded-xl transition-all text-sm shadow-md shadow-fuchsia-600/20"
-            >
-              Ver todos los productos
-            </button>
-          </div>
-        )}
+
+            {/* Loading Initial */}
+            {loading && products.length === 0 && (
+              <SkeletonList count={8} />
+            )}
+
+            {/* Empty State */}
+            {!loading && products.length === 0 && (
+              <div className="bg-white rounded-2xl shadow-sm border border-fuchsia-100 p-12 text-center max-w-lg mx-auto my-12">
+                <div className="w-16 h-16 bg-fuchsia-50 text-fuchsia-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
+                  <Search size={32} />
+                </div>
+                <h3 className="text-lg font-bold text-slate-800 mb-2">No encontramos productos en esta categoría</h3>
+                <p className="text-slate-500 text-sm mb-6">
+                  Intenta seleccionar otra categoría o buscar con otros términos.
+                </p>
+                <button
+                  onClick={clearFilters}
+                  className="bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-semibold px-6 py-2.5 rounded-xl transition-all text-sm shadow-md shadow-fuchsia-600/20"
+                >
+                  Ver todos los productos
+                </button>
+              </div>
+            )}
 
         {/* Products Grid */}
         {sortedProducts.length > 0 && (
-          <div className="grid grid-cols-2 gap-1.5 max-w-6xl mx-auto">
+          <div className="grid grid-cols-2 gap-1.5 md:gap-4">
             {sortedProducts.map((p) => {
               const baseP = Number(p.suggested_price || p.base_price || 0);
               let finalPrice = baseP;
@@ -580,13 +713,15 @@ export default function Listpr() {
                     });
                     navigate(`/product/${p.public_id || p.id}`);
                   }}
-                  className="bg-white rounded-none shadow-sm hover:shadow-xl transition-all duration-300 border border-slate-200 flex flex-col sm:flex-row overflow-hidden group cursor-pointer relative min-h-[14rem] sm:min-h-[13rem]"
+                  className="bg-white rounded-none shadow-sm hover:shadow-xl transition-shadow duration-300 border border-slate-200 flex flex-col sm:flex-row overflow-hidden group cursor-pointer relative min-h-[14rem] sm:min-h-[13rem] [content-visibility:auto] [contain-intrinsic-size:auto_300px]"
                 >
                   {/* Image Container */}
                   <div className="relative w-full sm:w-2/5 h-44 sm:h-full bg-slate-50 overflow-hidden flex items-center justify-center border-b sm:border-b-0 sm:border-r border-slate-200 shrink-0">
                     <img
                       src={getProductImage(p)}
                       alt={p.name}
+                      loading="lazy"
+                      decoding="async"
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                     
@@ -697,6 +832,8 @@ export default function Listpr() {
           </div>
         )}
 
+          </section>
+        </div>
       </div>
 
       {/* Floating Cart Button */}

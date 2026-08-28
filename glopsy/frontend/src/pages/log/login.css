@@ -2,7 +2,7 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: calc(100vh - 8rem);
+  min-height: calc(100dvh - 8rem);
   padding: 2rem 1rem;
   color: #334155;
   font-family: system-ui, -apple-system, sans-serif;
@@ -17,6 +17,15 @@
   text-align: center;
   background: #ffffff;
   transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (min-width: 768px) {
+  .login-card {
+    max-width: 920px;
+    padding: 0;
+    overflow: hidden;
+    text-align: left;
+  }
 }
 
 html.dark .login-card {
@@ -58,14 +67,14 @@ html.dark .btn-google:hover {
   }
 }
 
-.login-card h2 {
+.auth-form-wrapper h2 {
   margin-bottom: 0.5rem;
   font-size: 1.75rem;
   color: #3C3A39;
   font-weight:400px; 
 }
 
-.login-card p {
+.auth-form-wrapper p {
   color: #64748b;
   margin-bottom: 2rem;
   font-size: 0.9rem;
@@ -122,11 +131,25 @@ html.dark .btn-google:hover {
 
 @media (max-width: 640px) {
   .login-container {
-    min-height: calc(100vh - 7rem);
+    min-height: calc(100dvh - 7rem);
     padding: 1rem 0;
   }
 
   .login-card {
     padding: 2rem 1.5rem;
   }
+}
+
+@keyframes iconFloat {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.icon-float {
+  animation: iconFloat 3.2s ease-in-out infinite;
+  will-change: transform;
 }

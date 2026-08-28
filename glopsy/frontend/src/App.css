@@ -1,5 +1,5 @@
 .app-shell {
-  min-height: 100vh;
+  min-height: 100dvh;
   color: #334155;
   background: white;
 }
@@ -11,7 +11,7 @@ html.dark .app-shell {
 
 .app-content {
   width: min(100% - 2rem, 80rem);
-  min-height: calc(100vh - 4rem);
+  min-height: calc(100dvh - 4rem);
   margin: 0 auto;
   padding: 0.75rem 0;
 }

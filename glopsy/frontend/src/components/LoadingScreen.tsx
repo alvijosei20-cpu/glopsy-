@@ -180,7 +180,7 @@ const styles = {
     top: 0,
     left: 0,
     width: '100vw',
-    height: '100vh',
+    height: '100dvh',
     backgroundColor: 'rgba(221, 7, 100, 1.0)',
     background: 'linear-gradient(0deg, rgba(221, 7, 100, 1.0), rgba(1, 1, 1, 1.0))', 
     backdropFilter: 'blur(4px)',

@@ -432,7 +432,7 @@ export default function Checkout() {
   if (checkoutSuccess) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="bg-white rounded-3xl shadow-sm border border-fuchsia-100 p-10 text-center max-w-md w-full animate-in fade-in zoom-in duration-300">
+        <div className="bg-white rounded-3xl shadow-sm border border-fuchsia-100 p-6 sm:p-10 text-center max-w-md w-full animate-in fade-in zoom-in duration-300">
           <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
             <Check size={40} />
           </div>
@@ -475,7 +475,7 @@ export default function Checkout() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 pb-20">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-8">
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 flex items-center gap-3">
             <ShieldCheck size={32} className="text-blue-600" />
             Glopsy pagos
@@ -581,7 +581,7 @@ export default function Checkout() {
               <div className="border-t border-slate-100 pt-6 space-y-2">
                 <label className="block text-xs font-bold text-slate-700">Selecciona el método de envío (ENVIA):</label>
                 {shippingOptions.map((opt, idx) => (
-                  <label key={idx} className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer text-sm transition-all ${selectedOptionIndex === idx ? 'border-blue-500 bg-blue-50/50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
+                  <label key={idx} className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl border cursor-pointer text-sm transition-all ${selectedOptionIndex === idx ? 'border-blue-500 bg-blue-50/50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
                     <div className="flex items-center gap-3">
                       <input
                         type="radio"
@@ -598,7 +598,7 @@ export default function Checkout() {
                         <p className="text-xs text-slate-500">Entrega: {opt.delivery_estimate}</p>
                       </div>
                     </div>
-                    <span className="font-extrabold text-blue-600">{formatPrice(opt.price)}</span>
+                    <span className="font-extrabold text-blue-600 sm:shrink-0 sm:ml-auto">{formatPrice(opt.price)}</span>
                   </label>
                 ))}
               </div>
@@ -749,7 +749,7 @@ export default function Checkout() {
                 </div>
                 <div className="space-y-2">
                   {savedCards.map(card => (
-                    <div key={card.id} className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer text-sm transition-all bg-white shadow-sm ${selectedCardId === card.id ? 'border-fuchsia-600 ring-2 ring-fuchsia-600/20' : 'border-slate-200 hover:border-slate-300'}`} onClick={() => setSelectedCardId(card.id)}>
+                    <div key={card.id} className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border cursor-pointer text-sm transition-all bg-white shadow-sm ${selectedCardId === card.id ? 'border-fuchsia-600 ring-2 ring-fuchsia-600/20' : 'border-slate-200 hover:border-slate-300'}`} onClick={() => setSelectedCardId(card.id)}>
                       <div className="flex items-center gap-3">
                         <input
                           type="radio"

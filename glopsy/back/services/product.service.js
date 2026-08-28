@@ -432,13 +432,18 @@ export const assignProductsToFullment = async (userId, fullmentId, productIds, p
       `UPDATE produc SET fullm_id = NULL, perfil_envio_id = NULL WHERE tienda_id = $1 AND fullm_id = $2 AND id NOT IN (SELECT unnest($3::int[]))`,
       [userId, fullmentId, ids]
     );
-    for (const pid of ids) {
-      const perfilId = productProfiles[pid] ? Number(productProfiles[pid]) : null;
-      await pool.query(
-        `UPDATE produc SET fullm_id = $2, perfil_envio_id = $3 WHERE tienda_id = $1 AND id = $4`,
-        [userId, fullmentId, perfilId, pid]
-      );
-    }
+    const pidArr = ids.map(Number);
+    const perfilArr = ids.map(pid => {
+      const v = productProfiles[pid];
+      return v !== undefined && v !== null && v !== '' ? Number(v) : null;
+    });
+    await pool.query(
+      `UPDATE produc AS p
+       SET fullm_id = $2, perfil_envio_id = v.perfil_id
+       FROM unnest($3::int[], $4::int[]) AS v(id, perfil_id)
+       WHERE p.tienda_id = $1 AND p.id = v.id`,
+      [userId, fullmentId, pidArr, perfilArr]
+    );
   } else {
     await pool.query(
       `UPDATE produc SET fullm_id = NULL, perfil_envio_id = NULL WHERE tienda_id = $1 AND fullm_id = $2`,
@@ -479,6 +484,7 @@ export const autoCategorizeUncategorizedProducts = async () => {
     `SELECT id, name, description FROM produc WHERE categoria_id IS NULL`
   );
 
+  const assignments = [];
   for (const p of products) {
     const text = `${p.name || ''} ${p.description || ''}`.toLowerCase();
     let assignedId = defaultCatId;
@@ -496,8 +502,18 @@ export const autoCategorizeUncategorizedProducts = async () => {
     }
 
     if (assignedId) {
-      await pool.query(`UPDATE produc SET categoria_id = $1 WHERE id = $2`, [assignedId, p.id]);
+      assignments.push({ id: p.id, cat: assignedId });
     }
+  }
+
+  if (assignments.length > 0) {
+    await pool.query(
+      `UPDATE produc AS p
+       SET categoria_id = v.categoria_id
+       FROM unnest($1::int[], $2::int[]) AS v(id, categoria_id)
+       WHERE p.id = v.id`,
+      [assignments.map(a => a.id), assignments.map(a => a.cat)]
+    );
   }
 };
 
@@ -1607,29 +1623,42 @@ export const getUserPurchasesDetails = async (userId, guestHash) => {
     [userId || null, guestHash || null]
   );
 
-  const ordersWithDetails = [];
-  for (const order of orderRows) {
-    const { rows: itemRows } = await pool.query(
+  if (orderRows.length === 0) return [];
+
+  const orderIds = orderRows.map(o => o.id);
+
+  const [itemRes, shipmentRes] = await Promise.all([
+    pool.query(
       `SELECT oi.*, p.images, p.public_id, p.description, p.base_price, p.suggested_price
        FROM order_items oi
        LEFT JOIN produc p ON oi.product_id = p.id
-       WHERE oi.order_id = $1`,
-      [order.id]
-    );
+       WHERE oi.order_id = ANY($1)`,
+      [orderIds]
+    ),
+    pool.query(
+      `SELECT * FROM order_shipments WHERE order_id = ANY($1)`,
+      [orderIds]
+    )
+  ]);
 
-    const { rows: shipmentRows } = await pool.query(
-      `SELECT * FROM order_shipments WHERE order_id = $1`,
-      [order.id]
-    );
-
-    ordersWithDetails.push({
-      ...order,
-      items: itemRows,
-      shipments: shipmentRows
-    });
+  const itemsByOrder = new Map();
+  for (const it of itemRes.rows) {
+    const list = itemsByOrder.get(it.order_id) || [];
+    list.push(it);
+    itemsByOrder.set(it.order_id, list);
+  }
+  const shipmentsByOrder = new Map();
+  for (const s of shipmentRes.rows) {
+    const list = shipmentsByOrder.get(s.order_id) || [];
+    list.push(s);
+    shipmentsByOrder.set(s.order_id, list);
   }
 
-  return ordersWithDetails;
+  return orderRows.map(order => ({
+    ...order,
+    items: itemsByOrder.get(order.id) || [],
+    shipments: shipmentsByOrder.get(order.id) || []
+  }));
 };
 
 export const searchOrdersByNumberOrDoc = async (queryParam, userId = null, guestHash = null) => {
@@ -1644,8 +1673,26 @@ export const searchOrdersByNumberOrDoc = async (queryParam, userId = null, guest
     [cleanQuery]
   );
 
-  const ordersWithDetails = [];
-  for (const order of orderRows) {
+  if (orderRows.length === 0) return [];
+
+  const orderIds = orderRows.map(o => o.id);
+
+  const { rows: itemRows } = await pool.query(
+    `SELECT oi.order_id, oi.product_id, oi.product_name, oi.quantity, oi.unit_price, oi.line_total, p.images, p.public_id
+     FROM order_items oi
+     LEFT JOIN produc p ON oi.product_id = p.id
+     WHERE oi.order_id = ANY($1)`,
+    [orderIds]
+  );
+
+  const itemsByOrder = new Map();
+  for (const it of itemRows) {
+    const list = itemsByOrder.get(it.order_id) || [];
+    list.push(it);
+    itemsByOrder.set(it.order_id, list);
+  }
+
+  return orderRows.map(order => {
     const isOwner = (userId && Number(order.user_id) === Number(userId)) || (guestHash && order.guest_hash === guestHash);
     const safeOrder = {
       id: order.id,
@@ -1656,21 +1703,11 @@ export const searchOrdersByNumberOrDoc = async (queryParam, userId = null, guest
     };
     if (isOwner) safeOrder.order_hash = order.order_hash;
 
-    const { rows: itemRows } = await pool.query(
-      `SELECT oi.product_id, oi.product_name, oi.quantity, oi.unit_price, oi.line_total, p.images, p.public_id
-       FROM order_items oi
-       LEFT JOIN produc p ON oi.product_id = p.id
-       WHERE oi.order_id = $1`,
-      [order.id]
-    );
-
-    ordersWithDetails.push({
+    return {
       ...safeOrder,
-      items: itemRows,
-    });
-  }
-
-  return ordersWithDetails;
+      items: itemsByOrder.get(order.id) || [],
+    };
+  });
 };
 
 export const getOrderByHash = async (orderHash, userId = null, guestHash = null) => {

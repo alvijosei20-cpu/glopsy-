@@ -82,7 +82,7 @@ export default function Cart() {
   if (cartItems.length === 0) {
     return (
       <div className="min-h-screen bg-slate-50 py-16 px-4">
-        <div className="max-w-2xl mx-auto bg-white rounded-3xl shadow-sm border border-fuchsia-100 p-12 text-center">
+        <div className="max-w-2xl mx-auto bg-white rounded-3xl shadow-sm border border-fuchsia-100 p-8 sm:p-12 text-center">
           <div className="w-20 h-20 bg-fuchsia-50 text-fuchsia-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
             <ShoppingCart size={40} />
           </div>
@@ -109,9 +109,9 @@ export default function Cart() {
           Carrito de Compras
         </h1>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
           {/* Cart Items List */}
-          <div className="lg:col-span-8 flex flex-col gap-4">
+          <div className="md:col-span-8 flex flex-col gap-4">
             {cartItems.map((item, index) => {
               const itemTotal = Number(item.price || 0) * Number(item.quantity || 1);
               return (
@@ -179,8 +179,8 @@ export default function Cart() {
           </div>
 
           {/* Cart Summary Sidebar */}
-          <div className="lg:col-span-4">
-            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-fuchsia-100 shadow-sm sticky top-24">
+          <div className="md:col-span-4">
+            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-fuchsia-100 shadow-sm md:sticky md:top-24">
               <h3 className="text-lg font-bold text-slate-900 mb-6">Resumen de la orden</h3>
               
               <div className="space-y-3 mb-6 text-sm">

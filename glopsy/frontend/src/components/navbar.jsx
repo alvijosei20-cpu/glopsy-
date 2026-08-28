@@ -593,7 +593,7 @@ export default function Navbar() {
               onClick={() => setIsNotifOpen(false)}
             />
             <div 
-              className="fixed top-20 left-1/2 -translate-x-1/2 w-80 max-w-[95vw] shadow-2xl rounded-2xl py-3 px-4 z-[9999] animate-in fade-in slide-in-from-top-2 duration-200 border"
+              className="fixed top-20 left-1/2 -translate-x-1/2 w-80 max-w-[95vw] md:w-[26rem] md:max-w-[30rem] lg:w-[30rem] lg:max-w-[34rem] xl:w-[32rem] shadow-2xl rounded-2xl py-3 px-4 md:py-4 md:px-5 z-[9999] animate-in fade-in slide-in-from-top-2 duration-200 border"
               style={{
                 backgroundColor: isDark ? '#18181b' : '#ffffff',
                 color: isDark ? '#f1f5f9' : '#0f172a',
@@ -636,7 +636,7 @@ export default function Navbar() {
                 </div>
               </div>
 
-              <div className="space-y-2 max-h-60 overflow-y-auto">
+              <div className="space-y-2 max-h-60 md:max-h-[26rem] overflow-y-auto">
                 {notifications.length === 0 ? (
                   <p className="text-xs text-center py-4" style={{ color: isDark ? '#a1a1aa' : '#64748b' }}>No hay notificaciones</p>
                 ) : (
@@ -652,7 +652,7 @@ export default function Navbar() {
                           openNotification(n);
                           setIsNotifOpen(false);
                         }}
-                        className="p-2.5 rounded-xl text-xs transition-colors border cursor-pointer hover:opacity-90"
+                        className="p-2.5 md:p-3.5 rounded-xl text-xs md:text-sm transition-colors border cursor-pointer hover:opacity-90"
                         style={{
                           backgroundColor: cardBg,
                           borderColor: cardBorder,
