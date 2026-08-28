@@ -33,6 +33,28 @@ export const invalidateProductCache = async (productId, publicId) => {
   if (publicId) keys.push(`product:detail:${publicId}`);
   if (keys.length > 0) await redisClient.del(keys).catch(() => {});
   await invalidateEdgeCache();
+  await invalidateCatalogCache();
+};
+
+export const invalidateCatalogCache = async () => {
+  try {
+    let cursor = '0';
+    do {
+      const { nextCursor, keys } = await scanCatalogKeys(cursor);
+      cursor = nextCursor;
+      if (keys.length > 0) {
+        await redisClient.del(keys).catch(() => {});
+      }
+    } while (cursor !== '0');
+  } catch {}
+};
+
+const scanCatalogKeys = async (cursor) => {
+  if (typeof redisClient.scan === 'function') {
+    const res = await redisClient.scan(cursor, { MATCH: 'catalog:*', COUNT: 200 });
+    return { nextCursor: String(res.cursor), keys: res.keys || [] };
+  }
+  return { nextCursor: '0', keys: [] };
 };
 
 export const saveProductForUser = async (userId, productData) => {
@@ -338,6 +360,27 @@ export const setProductStatusForUser = async (userId, productId, status) => {
      WHERE id = $2 AND tienda_id = $1
      RETURNING id, public_id, name, status`,
     [userId, productId, status]
+  );
+
+  if (rows.length === 0) {
+    throw new Error('Producto no encontrado o no pertenece a tu tienda.');
+  }
+
+  await invalidateProductCache(rows[0].id, rows[0].public_id).catch(() => {});
+  return rows[0];
+};
+
+export const updateProductNameForUser = async (userId, productId, name) => {
+  const cleanName = cleanString(name, { maxLength: 255 });
+  if (!cleanName) {
+    throw new Error('El nombre del producto es obligatorio.');
+  }
+
+  const { rows } = await pool.query(
+    `UPDATE produc SET name = $3, updated_at = NOW()
+     WHERE id = $2 AND tienda_id = $1 AND status != 'deleted'
+     RETURNING id, public_id, name, status`,
+    [userId, productId, cleanName]
   );
 
   if (rows.length === 0) {
@@ -680,6 +723,31 @@ export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadNam
     limit: lim,
     offset: off
   };
+};
+
+export const searchQueryProductsCached = async (params) => {
+  const cacheKey = `catalog:${crypto
+    .createHash('md5')
+    .update(JSON.stringify({
+      q: params.q ?? null,
+      limit: params.limit ?? 12,
+      offset: params.offset ?? 0,
+      ciudadName: params.ciudadName ?? null,
+      categoriaId: params.categoriaId ?? null,
+      sortBy: params.sortBy ?? 'relevance',
+      priceMin: params.priceMin ?? null,
+      priceMax: params.priceMax ?? null,
+      envioGratis: params.envioGratis ?? false,
+      minRating: params.minRating ?? null,
+    }))
+    .digest('hex')}`;
+
+  const cached = await redisClient.get(cacheKey).catch(() => null);
+  if (cached) return JSON.parse(cached);
+
+  const result = await searchQueryProducts(params);
+  await redisClient.set(cacheKey, JSON.stringify(result), { EX: 30 }).catch(() => {});
+  return result;
 };
 
 export const getUserFavorites = async (userId) => {

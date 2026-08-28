@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getProductById, saveProduct, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, createPreferenceController, processMpPaymentController, processSavedCardPaymentController, getTiposEmpaqueController, getUserComprasController, searchOrdersController, getOrderByHashController, getOrderReviewsStatusController, recordPurchaseController, cancelOrderController, updateOrderAddressController, getProductReviewsController, getUserReviewController, addReviewController, updateReviewController, deleteReviewController, getMyProductsManagement, pauseProduct, activateProduct, deleteProduct, addProductImages } from '../controllers/product.controller.js';
+import { getProductById, saveProduct, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, createPreferenceController, processMpPaymentController, processSavedCardPaymentController, getTiposEmpaqueController, getUserComprasController, searchOrdersController, getOrderByHashController, getOrderReviewsStatusController, recordPurchaseController, cancelOrderController, updateOrderAddressController, getProductReviewsController, getUserReviewController, addReviewController, updateReviewController, deleteReviewController, getMyProductsManagement, pauseProduct, activateProduct, deleteProduct, addProductImages, updateProductName } from '../controllers/product.controller.js';
 import { requireAuth, optionalAuth } from '../middlewares/auth.js';
 import { tiendaLimiter, heavyLimiter } from '../middlewares/limiters.js';
 
@@ -39,6 +39,7 @@ router.get('/', searchProducts);
 router.get('/manage', requireAuth, getMyProductsManagement);
 router.patch('/:id/pause', requireAuth, pauseProduct);
 router.patch('/:id/activate', requireAuth, activateProduct);
+router.patch('/:id/name', requireAuth, updateProductName);
 router.delete('/:id', requireAuth, deleteProduct);
 router.post('/:id/images', requireAuth, addProductImages);
 

@@ -1,5 +1,5 @@
 import { obtenerProductoPorId } from '../services/mastershopService.js';
-import { saveProductForUser, getProductsForUser, getProductsForUserManagement, setProductStatusForUser, deleteProductForUser, addProductImagesForUser, searchQueryProducts, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, cancelOrderForUser, updateOrderAddressForUser, getProductReviews, getUserReviewStatus, getOrderReviewsStatus, addProductReview, updateProductReview, deleteProductReview } from '../services/product.service.js';
+import { saveProductForUser, getProductsForUser, getProductsForUserManagement, setProductStatusForUser, deleteProductForUser, addProductImagesForUser, updateProductNameForUser, searchQueryProductsCached, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, cancelOrderForUser, updateOrderAddressForUser, getProductReviews, getUserReviewStatus, getOrderReviewsStatus, addProductReview, updateProductReview, deleteProductReview } from '../services/product.service.js';
 import { validatePaymentBiometricNonce } from '../services/auth.service.js';
 import { pool } from '../db.js';
 import {
@@ -128,6 +128,18 @@ export const deleteProduct = async (req, res) => {
   }
 };
 
+export const updateProductName = async (req, res) => {
+  try {
+    const userId = req.auth.userId;
+    const { name } = req.body;
+    const product = await updateProductNameForUser(userId, toInt(req.params.id), name);
+    res.json({ ok: true, message: 'Nombre del producto actualizado.', product });
+  } catch (error) {
+    console.error('Error al actualizar el nombre del producto:', error.message);
+    res.status(400).json({ ok: false, message: error.message || 'No se pudo actualizar el nombre del producto.' });
+  }
+};
+
 export const addProductImages = async (req, res) => {
   try {
     const userId = req.auth.userId;
@@ -164,7 +176,7 @@ export const searchProducts = async (req, res) => {
     const envio_gratis = cleanBoolean(req.query.envio_gratis, undefined);
     const min_rating = toNumber(req.query.min_rating, { min: 1, max: 5 });
     await autoCategorizeUncategorizedProducts().catch(() => {});
-    const data = await searchQueryProducts({ q, limit, offset, ciudadName: ciudad, categoriaId: categoria_id, sortBy: sort, priceMin: price_min, priceMax: price_max, envioGratis: envio_gratis, minRating: min_rating });
+    const data = await searchQueryProductsCached({ q, limit, offset, ciudadName: ciudad, categoriaId: categoria_id, sortBy: sort, priceMin: price_min, priceMax: price_max, envioGratis: envio_gratis, minRating: min_rating });
     res.json({
       ok: true,
       ...data,

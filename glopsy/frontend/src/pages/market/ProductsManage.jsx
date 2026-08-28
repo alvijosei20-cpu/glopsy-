@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, ImagePlus, Pause, Play, Search, Trash2, Package, Plus, Sparkles, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, ImagePlus, Pause, Play, Search, Trash2, Package, Plus, Sparkles, AlertTriangle, Pencil } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import { SkeletonList } from '../../components/SkeletonLoader';
@@ -12,6 +12,8 @@ export default function ProductsManage() {
   const [newImages, setNewImages] = useState('');
   const [busyId, setBusyId] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [editName, setEditName] = useState(null);
+  const [nameValue, setNameValue] = useState('');
   const [toastMessage, setToastMessage] = useState('');
 
   const fetchProducts = async () => {
@@ -84,6 +86,29 @@ export default function ProductsManage() {
       }
     } catch (err) {
       alert(err.response?.data?.message || 'No se pudieron agregar las imágenes.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const openEditName = (product) => {
+    setEditName(product);
+    setNameValue(product.name || '');
+  };
+
+  const handleUpdateName = async () => {
+    const cleanName = nameValue.trim();
+    if (!cleanName || !editName) return;
+    setBusyId(editName.id);
+    try {
+      const { data } = await api.patch(`/product/${editName.id}/name`, { name: cleanName });
+      if (data.ok) {
+        setProducts((prev) => prev.map((p) => (p.id === editName.id ? { ...p, name: data.product.name } : p)));
+        setEditName(null);
+        showToast(data.message || 'Nombre actualizado.');
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || 'No se pudo actualizar el nombre.');
     } finally {
       setBusyId(null);
     }
@@ -241,7 +266,13 @@ export default function ProductsManage() {
                     )}
                   </div>
 
-                  <div className="flex gap-2 pt-2.5 mt-2.5 border-t border-slate-100 dark:border-zinc-800">
+                  <div className="flex gap-2 pt-2.5 mt-2.5 border-t border-slate-100 dark:border-zinc-800 flex-wrap">
+                    <button
+                      onClick={() => openEditName(product)}
+                      className="flex-1 min-w-[6.5rem] flex items-center justify-center gap-1.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-slate-300 hover:text-fuchsia-600 dark:hover:text-fuchsia-400 hover:border-fuchsia-300 dark:hover:border-fuchsia-800 px-2.5 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                    >
+                      <Pencil size={14} /> Nombre
+                    </button>
                     <button
                       onClick={() => setImageModal(product)}
                       className="flex-1 flex items-center justify-center gap-1.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-slate-300 hover:text-fuchsia-600 dark:hover:text-fuchsia-400 hover:border-fuchsia-300 dark:hover:border-fuchsia-800 px-2.5 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
@@ -325,6 +356,56 @@ export default function ProductsManage() {
               >
                 <ImagePlus size={15} />
                 {busyId === imageModal.id ? 'Agregando...' : 'Agregar imágenes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal editar nombre */}
+      {editName && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setEditName(null)}>
+          <div
+            className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-2xl border border-slate-200 dark:border-zinc-700 shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-zinc-800">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Pencil size={16} className="text-fuchsia-600 dark:text-fuchsia-400" /> Editar nombre del producto
+              </h3>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">Nombre</label>
+                <input
+                  type="text"
+                  value={nameValue}
+                  onChange={(e) => setNameValue(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleUpdateName(); }}
+                  maxLength={255}
+                  autoFocus
+                  placeholder="Nuevo nombre del producto"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-800 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
+                />
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1.5">
+                  Este cambio se verá reflejado en el catálogo y en tu tienda.
+                </p>
+              </div>
+            </div>
+            <div className="px-5 py-4 border-t border-slate-200 dark:border-zinc-800 flex gap-3">
+              <button
+                onClick={() => setEditName(null)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 text-sm font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleUpdateName}
+                disabled={busyId === editName.id || !nameValue.trim()}
+                className="flex-1 py-2.5 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-sm font-semibold transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <Pencil size={15} />
+                {busyId === editName.id ? 'Guardando...' : 'Guardar nombre'}
               </button>
             </div>
           </div>
