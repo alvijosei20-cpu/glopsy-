@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Package, ArrowLeft, MapPin, Clock, CheckCircle, Truck, Phone, XCircle, Sparkles, ChevronDown, Star, RotateCcw, X } from 'lucide-react';
+import { Package, ArrowLeft, MapPin, Clock, CheckCircle, Truck, Phone, XCircle, Sparkles, ChevronDown, Star, RotateCcw, X, Info } from 'lucide-react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -21,6 +21,7 @@ export default function CompraDetail() {
   const [submittingReview, setSubmittingReview] = useState(false);
   const [returnModal, setReturnModal] = useState(null);
   const [returnReason, setReturnReason] = useState('');
+  const [returnOtherReason, setReturnOtherReason] = useState('');
   const [returnNotes, setReturnNotes] = useState('');
   const [selectedReturns, setSelectedReturns] = useState([]);
   const [submittingReturn, setSubmittingReturn] = useState(false);
@@ -227,6 +228,7 @@ export default function CompraDetail() {
     setReturnModal(shipment);
     setSelectedReturns(items.map((i) => i.product_id || i.id));
     setReturnReason('');
+    setReturnOtherReason('');
     setReturnNotes('');
   };
 
@@ -244,7 +246,11 @@ export default function CompraDetail() {
     }
     if (!returnModal) return;
     if (!returnReason) {
-      alert('Selecciona el motivo de la devolución (garantía o cambio).');
+      alert('Selecciona el motivo de la devolución.');
+      return;
+    }
+    if (returnReason === 'otros' && !returnOtherReason.trim()) {
+      alert('Explica el motivo de tu devolución.');
       return;
     }
     const allItems = returnModal._items || [];
@@ -264,12 +270,16 @@ export default function CompraDetail() {
       }));
       const res = await api.post('/returns/request', {
         orderId,
-        reason: returnReason,
+        reason: returnReason === 'garantia' ? 'garantia' : returnOtherReason.trim().slice(0, 500),
         customerNotes: returnNotes,
         products,
       });
       if (res.data.ok) {
-        setToastMessage('¡Devolución solicitada con éxito! Te contactaremos para coordinar la recogida.');
+        setToastMessage(
+          returnReason === 'garantia'
+            ? '¡Devolución solicitada con éxito! Te contactaremos para coordinar la recogida.'
+            : '¡Solicitud enviada! Recuerda que el costo de la devolución correrá por tu cuenta.'
+        );
         setTimeout(() => setToastMessage(''), 4000);
         setReturnModal(null);
       }
@@ -811,7 +821,7 @@ export default function CompraDetail() {
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">¿Por qué motivo lo devuelves?</label>
                 <div className="grid grid-cols-2 gap-3">
                   <button
-                    onClick={() => setReturnReason('garantia')}
+                    onClick={() => { setReturnReason('garantia'); setReturnOtherReason(''); }}
                     className={`flex flex-col items-center gap-1.5 px-4 py-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
                       returnReason === 'garantia'
                         ? 'bg-fuchsia-50 dark:bg-fuchsia-950/40 border-fuchsia-400 dark:border-fuchsia-700 text-fuchsia-700 dark:text-fuchsia-300'
@@ -822,18 +832,43 @@ export default function CompraDetail() {
                     Garantía
                   </button>
                   <button
-                    onClick={() => setReturnReason('cambio')}
+                    onClick={() => setReturnReason('otros')}
                     className={`flex flex-col items-center gap-1.5 px-4 py-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
-                      returnReason === 'cambio'
+                      returnReason === 'otros'
                         ? 'bg-fuchsia-50 dark:bg-fuchsia-950/40 border-fuchsia-400 dark:border-fuchsia-700 text-fuchsia-700 dark:text-fuchsia-300'
                         : 'bg-white dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-slate-400 hover:border-fuchsia-300 dark:hover:border-fuchsia-800'
                     }`}
                   >
                     <Truck size={18} />
-                    Cambio
+                    Otros motivos
                   </button>
                 </div>
               </div>
+
+              {returnReason === 'otros' && (
+                <div className="rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3">
+                  <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                    <Info size={14} /> Ten en cuenta
+                  </p>
+                  <p className="text-[11px] text-amber-600 dark:text-amber-500 mt-1">
+                    Esta devolución no corresponde a una garantía, por lo que el costo del envío de la devolución correrá por tu cuenta.
+                  </p>
+                </div>
+              )}
+
+              {returnReason === 'otros' && (
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">Explica el motivo <span className="text-rose-500">*</span></label>
+                  <textarea
+                    value={returnOtherReason}
+                    onChange={(e) => setReturnOtherReason(e.target.value)}
+                    placeholder="Cuéntanos por qué devuelves el producto..."
+                    rows={3}
+                    maxLength={500}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-800 dark:text-white text-sm resize-none focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">Notas adicionales (opcional)</label>

@@ -101,7 +101,6 @@ export default function ProductDetail() {
   const [relatedProducts, setRelatedProducts] = useState([]);
   
   // Fold/Unfold states for long texts
-  const [warrantyExpanded, setWarrantyExpanded] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
   const [fullscreenOpen, setFullscreenOpen] = useState(false);
 
@@ -431,7 +430,7 @@ export default function ProductDetail() {
   });
 
   const handleAddToCart = () => {
-    if (!product) return;
+    if (!product || product.tienda_activa === false) return;
     const imgs = getImages(product);
     const safeImgs = imgs.length > 0 ? imgs : ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60'];
     const idx = selectedImage < safeImgs.length ? selectedImage : 0;
@@ -550,15 +549,15 @@ export default function ProductDetail() {
 
       {/* Main Container */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
-        <div className="bg-white rounded-3xl shadow-sm border border-fuchsia-100 overflow-hidden grid grid-cols-1 lg:grid-cols-12 gap-8 p-6 sm:p-10">
+        <div className="bg-white rounded-3xl shadow-sm border border-fuchsia-100 overflow-hidden grid grid-cols-1 md:grid-cols-12 gap-8 p-6 sm:p-10">
           
           {/* Column 1: Horizontally Scrollable Image Banner (5 cols) */}
-          <div className="lg:col-span-5 flex flex-col gap-4">
+          <div className="md:col-span-5 flex flex-col gap-4">
             <div className="w-full flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-thin">
               {safeImages.map((img, idx) => (
                 <div 
                   key={idx} 
-                  className="w-full shrink-0 snap-center h-80 sm:h-96 bg-slate-50 rounded-2xl border border-fuchsia-100 overflow-hidden flex items-center justify-center relative shadow-inner cursor-pointer group"
+                  className="w-full shrink-0 snap-center h-80 sm:h-96 md:h-[420px] lg:h-[480px] bg-slate-50 rounded-2xl border border-fuchsia-100 overflow-hidden flex items-center justify-center relative shadow-inner cursor-pointer group"
                   onClick={() => {
                     setSelectedImage(idx);
                     setFullscreenOpen(true);
@@ -596,10 +595,186 @@ export default function ProductDetail() {
                 ))}
               </div>
             )}
+
+            {/* Reseñas del producto */}
+            <div className="border-t border-fuchsia-100 pt-5 mt-2 flex flex-col min-h-0 md:max-h-[560px] lg:max-h-[600px]">
+              <div className="flex items-center gap-2.5 mb-4">
+                <div className="p-2 bg-amber-100 text-amber-600 rounded-lg">
+                  <Star size={18} />
+                </div>
+                <h2 className="text-lg font-extrabold text-slate-950">Reseñas</h2>
+                {reviewsData.summary?.review_count > 0 && (
+                  <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
+                    {reviewsData.summary.review_count} {reviewsData.summary.review_count === 1 ? 'opinión' : 'opiniones'}
+                  </span>
+                )}
+              </div>
+
+              {reviewsData.summary && reviewsData.summary.review_count > 0 ? (
+                <div className="space-y-5 flex flex-col min-h-0">
+                  {/* Resumen compacto */}
+                  <div className="bg-slate-50 rounded-2xl border border-fuchsia-100 p-5 shrink-0">
+                    <div className="flex items-center gap-4 mb-3">
+                      <p className="text-4xl font-extrabold text-slate-900">
+                        {Number(reviewsData.summary.avg_rating).toFixed(1)}
+                      </p>
+                      <div>
+                        <div className="flex items-center gap-0.5">
+                          {[1, 2, 3, 4, 5].map(i => (
+                            <Star
+                              key={i}
+                              size={16}
+                              className={i <= Math.round(Number(reviewsData.summary.avg_rating)) ? 'text-amber-400 fill-amber-400' : 'text-slate-300 fill-slate-200'}
+                            />
+                          ))}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1 font-medium">
+                          {reviewsData.summary.review_count} {reviewsData.summary.review_count === 1 ? 'compra verificada' : 'compras verificadas'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      {[5, 4, 3, 2, 1].map(star => {
+                        const count = reviewsData.summary.distribution?.[star] || 0;
+                        const pct = reviewsData.summary.review_count > 0 ? Math.round((count / reviewsData.summary.review_count) * 100) : 0;
+                        return (
+                          <div key={star} className="flex items-center gap-2 text-xs">
+                            <span className="w-8 font-bold text-slate-600">{star} ★</span>
+                            <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
+                              <div className="h-full bg-amber-400 rounded-full" style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className="w-6 text-right text-slate-400">{count}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Lista de reseñas */}
+                  <div className="space-y-4 flex-1 min-h-0 overflow-y-auto overscroll-contain pr-1">
+                    {reviewsData.reviews.map(r => (
+                      <div key={r.id} className="border border-fuchsia-100 rounded-2xl p-4 bg-white shadow-sm">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-fuchsia-600 to-pink-500 text-white flex items-center justify-center font-bold text-sm shadow-md shadow-fuchsia-600/30 shrink-0">
+                              {(r.user_name || 'U').slice(0, 1).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-slate-800">{r.user_name || 'Comprador'}</p>
+                              <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-0.5">
+                                  {[1, 2, 3, 4, 5].map(i => (
+                                    <Star key={i} size={13} className={i <= r.rating ? 'text-amber-400 fill-amber-400' : 'text-slate-300 fill-slate-200'} />
+                                  ))}
+                                </div>
+                                <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full">
+                                  ✓ Compra verificada
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <span className="text-[11px] text-slate-400">
+                            {new Date(r.created_at).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' })}
+                          </span>
+                        </div>
+                        {r.comment && <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{r.comment}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500 bg-slate-50 border border-fuchsia-100 rounded-2xl p-5 text-center shrink-0">
+                  Este producto aún no tiene reseñas. Sé el primero en opinar si ya lo compraste.
+                </p>
+              )}
+
+              {/* Formulario de reseña para compradores verificados */}
+              {isLoggedIn() ? (
+                (userReviewStatus.canReview || userReviewStatus.review) && (
+                  <form onSubmit={handleSubmitReview} className="border-t border-fuchsia-100 pt-5 mt-5 shrink-0">
+                    <h3 className="text-sm font-bold text-slate-800 mb-1">
+                      {userReviewStatus.review ? 'Editar tu reseña' : 'Escribe tu reseña'}
+                    </h3>
+                    <p className="text-xs text-slate-500 mb-4">
+                      {userReviewStatus.review
+                        ? 'Puedes modificar tu calificación y comentario cuando quieras.'
+                        : 'Solo puedes calificar productos que hayas comprado y con pedido completado. Una reseña por compra.'}
+                    </p>
+
+                    <div className="flex items-center gap-1.5 mb-4">
+                      {[1, 2, 3, 4, 5].map(i => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => setReviewRating(i)}
+                          className="transition-transform hover:scale-110"
+                          title={`${i} estrella${i > 1 ? 's' : ''}`}
+                        >
+                          <Star
+                            size={30}
+                            className={i <= reviewRating ? 'text-amber-400 fill-amber-400' : 'text-slate-300 fill-slate-200'}
+                          />
+                        </button>
+                      ))}
+                    </div>
+
+                    <textarea
+                      value={reviewComment}
+                      onChange={(e) => setReviewComment(e.target.value)}
+                      placeholder="¿Cómo fue tu experiencia con este producto? (opcional)"
+                      rows={3}
+                      maxLength={2000}
+                      className="w-full bg-slate-50 border border-fuchsia-200 rounded-xl px-4 py-3 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-fuchsia-500 transition-all resize-none"
+                    />
+
+                    {reviewError && (
+                      <p className="mt-3 text-xs font-bold text-pink-600 bg-pink-50 border border-pink-200 rounded-xl px-4 py-2.5">
+                        {reviewError}
+                      </p>
+                    )}
+                    {reviewSuccess && (
+                      <p className="mt-3 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5">
+                        {reviewSuccess}
+                      </p>
+                    )}
+
+                    <div className="flex items-center gap-3 mt-4">
+                      <button
+                        type="submit"
+                        disabled={reviewSubmitting}
+                        className="flex-1 sm:flex-none bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-lg shadow-fuchsia-600/30 text-sm disabled:opacity-50"
+                      >
+                        {reviewSubmitting ? 'Guardando...' : (userReviewStatus.review ? 'Actualizar reseña' : 'Publicar reseña')}
+                      </button>
+                      {userReviewStatus.review && (
+                        <button
+                          type="button"
+                          onClick={handleDeleteReview}
+                          disabled={reviewSubmitting}
+                          className="text-sm font-bold text-pink-600 bg-pink-50 border border-pink-200 hover:bg-pink-100 py-3 px-5 rounded-xl transition-all disabled:opacity-50"
+                        >
+                          Eliminar
+                        </button>
+                      )}
+                    </div>
+                  </form>
+                )
+              ) : (
+                <div className="border-t border-fuchsia-100 pt-5 mt-5 shrink-0">
+                  <p className="text-sm text-slate-600 flex items-center gap-2">
+                    <ShieldCheck size={18} className="text-emerald-600" />
+                    <span>
+                      <button onClick={() => navigate('/login')} className="text-fuchsia-600 font-bold hover:underline">Inicia sesión</button>{' '}
+                      para calificar este producto (solo compradores verificados).
+                    </span>
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Column 2: Product Info & Purchase Options (7 cols) */}
-          <div className="lg:col-span-7 flex flex-col justify-between">
+          <div className="md:col-span-7 flex flex-col justify-between">
             <div>
               {/* Category & Brand */}
               <div className="flex items-center gap-2 mb-3">
@@ -735,11 +910,18 @@ export default function ProductDetail() {
             </div>
 
             {/* Action Buttons: Comprar y Agregar al Carrito */}
+            {product.tienda_activa === false && (
+              <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-800 text-sm font-semibold rounded-2xl px-4 py-3 flex items-center gap-2">
+                <Shield size={18} className="shrink-0" />
+                <span>La tienda de este producto está pausada. No es posible agregarlo al carrito ni comprarlo.</span>
+              </div>
+            )}
             <div className="pt-6 border-t border-fuchsia-100 flex flex-col sm:flex-row gap-4">
               <button
                 type="button"
                 onClick={handleAddToCart}
-                className="flex-1 flex items-center justify-center gap-2 bg-white border-2 border-fuchsia-600 text-fuchsia-600 hover:bg-fuchsia-50 font-bold py-3.5 px-6 rounded-2xl transition-all shadow-sm text-sm"
+                disabled={product.tienda_activa === false}
+                className="flex-1 flex items-center justify-center gap-2 bg-white border-2 border-fuchsia-600 text-fuchsia-600 hover:bg-fuchsia-50 font-bold py-3.5 px-6 rounded-2xl transition-all shadow-sm text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
               >
                 <ShoppingCart size={18} />
                 <span>Agregar al carrito</span>
@@ -747,7 +929,8 @@ export default function ProductDetail() {
               <button
                 type="button"
                 onClick={handleBuyNow}
-                className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-bold py-3.5 px-6 rounded-2xl transition-all shadow-lg shadow-fuchsia-600/30 text-sm"
+                disabled={product.tienda_activa === false}
+                className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-bold py-3.5 px-6 rounded-2xl transition-all shadow-lg shadow-fuchsia-600/30 text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:from-slate-400 disabled:to-slate-400 disabled:shadow-none"
               >
                 <Zap size={18} />
                 <span>Comprar ahora</span>
@@ -788,22 +971,12 @@ export default function ProductDetail() {
                 <h3 className="text-lg font-extrabold text-slate-900 mb-2">
                   {warranties.period ? `${warranties.period} Días de Garantía` : 'Garantía Directa'}
                 </h3>
-                <div className="relative">
-                  <p className={`text-xs sm:text-sm text-slate-600 leading-relaxed whitespace-pre-line transition-all duration-300 ${!warrantyExpanded ? 'max-h-20 overflow-hidden' : ''}`}>
+                <div className="relative max-h-24 overflow-y-auto overscroll-contain pr-1">
+                  <p className="text-xs sm:text-sm text-slate-600 leading-relaxed whitespace-pre-line">
                     {warranties.conditions || 'Este producto cuenta con respaldo y garantía por defectos de fábrica.'}
                   </p>
-                  {!warrantyExpanded && (
-                    <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-fuchsia-50/90 dark:from-[#1e1b2e]/90 to-transparent pointer-events-none"></div>
-                  )}
+                  <div className="sticky bottom-0 -mx-1 h-8 bg-gradient-to-t from-fuchsia-50/95 dark:from-[#1e1b2e]/95 to-transparent pointer-events-none"></div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setWarrantyExpanded(!warrantyExpanded)}
-                  className="mt-2 flex items-center gap-1 text-xs font-bold text-fuchsia-600 hover:text-fuchsia-700 transition-colors"
-                >
-                  <span>{warrantyExpanded ? 'Ver menos' : 'Ver más detalles'}</span>
-                  {warrantyExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                </button>
               </div>
             </div>
           )}
@@ -882,179 +1055,6 @@ export default function ProductDetail() {
 
       </div>
 
-      {/* Sección de Reseñas */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 pb-8">
-        <div className="bg-white rounded-3xl border border-fuchsia-100 p-6 sm:p-8 shadow-sm">
-          <div className="flex items-center gap-2.5 mb-6">
-            <div className="p-2.5 bg-amber-100 text-amber-600 rounded-xl">
-              <Star size={22} />
-            </div>
-            <h2 className="text-xl font-extrabold text-slate-950">Reseñas del producto</h2>
-            {reviewsData.summary?.review_count > 0 && (
-              <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
-                {reviewsData.summary.review_count} {reviewsData.summary.review_count === 1 ? 'opinión' : 'opiniones'}
-              </span>
-            )}
-          </div>
-
-          {reviewsData.summary && reviewsData.summary.review_count > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-8 mb-8">
-              {/* Resumen */}
-              <div className="md:col-span-4 bg-slate-50 rounded-2xl border border-fuchsia-100 p-6 text-center">
-                <p className="text-5xl font-extrabold text-slate-900">
-                  {Number(reviewsData.summary.avg_rating).toFixed(1)}
-                </p>
-                <div className="flex items-center justify-center gap-0.5 mt-2">
-                  {[1, 2, 3, 4, 5].map(i => (
-                    <Star
-                      key={i}
-                      size={20}
-                      className={i <= Math.round(Number(reviewsData.summary.avg_rating)) ? 'text-amber-400 fill-amber-400' : 'text-slate-300 fill-slate-200'}
-                    />
-                  ))}
-                </div>
-                <p className="text-xs text-slate-500 mt-2 font-medium">
-                  Basado en {reviewsData.summary.review_count} {reviewsData.summary.review_count === 1 ? 'compra verificada' : 'compras verificadas'}
-                </p>
-                <div className="mt-4 space-y-1.5 text-left">
-                  {[5, 4, 3, 2, 1].map(star => {
-                    const count = reviewsData.summary.distribution?.[star] || 0;
-                    const pct = reviewsData.summary.review_count > 0 ? Math.round((count / reviewsData.summary.review_count) * 100) : 0;
-                    return (
-                      <div key={star} className="flex items-center gap-2 text-xs">
-                        <span className="w-8 font-bold text-slate-600">{star} ★</span>
-                        <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
-                          <div className="h-full bg-amber-400 rounded-full" style={{ width: `${pct}%` }} />
-                        </div>
-                        <span className="w-6 text-right text-slate-400">{count}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Lista de reseñas */}
-              <div className="md:col-span-8 space-y-5 max-h-[480px] overflow-y-auto pr-1">
-                {reviewsData.reviews.map(r => (
-                  <div key={r.id} className="border border-fuchsia-100 rounded-2xl p-4 bg-white shadow-sm">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-fuchsia-600 to-pink-500 text-white flex items-center justify-center font-bold text-sm shadow-md shadow-fuchsia-600/30 shrink-0">
-                          {(r.user_name || 'U').slice(0, 1).toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-slate-800">{r.user_name || 'Comprador'}</p>
-                          <div className="flex items-center gap-2">
-                            <div className="flex items-center gap-0.5">
-                              {[1, 2, 3, 4, 5].map(i => (
-                                <Star key={i} size={13} className={i <= r.rating ? 'text-amber-400 fill-amber-400' : 'text-slate-300 fill-slate-200'} />
-                              ))}
-                            </div>
-                            <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full">
-                              ✓ Compra verificada
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <span className="text-[11px] text-slate-400">
-                        {new Date(r.created_at).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' })}
-                      </span>
-                    </div>
-                    {r.comment && <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{r.comment}</p>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-slate-500 mb-8 bg-slate-50 border border-fuchsia-100 rounded-2xl p-6 text-center">
-              Este producto aún no tiene reseñas. Sé el primero en opinar si ya lo compraste.
-            </p>
-          )}
-
-          {/* Formulario de reseña para compradores verificados */}
-          {isLoggedIn() ? (
-            (userReviewStatus.canReview || userReviewStatus.review) && (
-              <form onSubmit={handleSubmitReview} className="border-t border-fuchsia-100 pt-6">
-                <h3 className="text-sm font-bold text-slate-800 mb-1">
-                  {userReviewStatus.review ? 'Editar tu reseña' : 'Escribe tu reseña'}
-                </h3>
-                <p className="text-xs text-slate-500 mb-4">
-                  {userReviewStatus.review
-                    ? 'Puedes modificar tu calificación y comentario cuando quieras.'
-                    : 'Solo puedes calificar productos que hayas comprado y con pedido completado. Una reseña por compra.'}
-                </p>
-
-                <div className="flex items-center gap-1.5 mb-4">
-                  {[1, 2, 3, 4, 5].map(i => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => setReviewRating(i)}
-                      className="transition-transform hover:scale-110"
-                      title={`${i} estrella${i > 1 ? 's' : ''}`}
-                    >
-                      <Star
-                        size={30}
-                        className={i <= reviewRating ? 'text-amber-400 fill-amber-400' : 'text-slate-300 fill-slate-200'}
-                      />
-                    </button>
-                  ))}
-                </div>
-
-                <textarea
-                  value={reviewComment}
-                  onChange={(e) => setReviewComment(e.target.value)}
-                  placeholder="¿Cómo fue tu experiencia con este producto? (opcional)"
-                  rows={3}
-                  maxLength={2000}
-                  className="w-full bg-slate-50 border border-fuchsia-200 rounded-xl px-4 py-3 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-fuchsia-500 transition-all resize-none"
-                />
-
-                {reviewError && (
-                  <p className="mt-3 text-xs font-bold text-pink-600 bg-pink-50 border border-pink-200 rounded-xl px-4 py-2.5">
-                    {reviewError}
-                  </p>
-                )}
-                {reviewSuccess && (
-                  <p className="mt-3 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5">
-                    {reviewSuccess}
-                  </p>
-                )}
-
-                <div className="flex items-center gap-3 mt-4">
-                  <button
-                    type="submit"
-                    disabled={reviewSubmitting}
-                    className="flex-1 sm:flex-none bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-lg shadow-fuchsia-600/30 text-sm disabled:opacity-50"
-                  >
-                    {reviewSubmitting ? 'Guardando...' : (userReviewStatus.review ? 'Actualizar reseña' : 'Publicar reseña')}
-                  </button>
-                  {userReviewStatus.review && (
-                    <button
-                      type="button"
-                      onClick={handleDeleteReview}
-                      disabled={reviewSubmitting}
-                      className="text-sm font-bold text-pink-600 bg-pink-50 border border-pink-200 hover:bg-pink-100 py-3 px-5 rounded-xl transition-all disabled:opacity-50"
-                    >
-                      Eliminar
-                    </button>
-                  )}
-                </div>
-              </form>
-            )
-          ) : (
-            <div className="border-t border-fuchsia-100 pt-6">
-              <p className="text-sm text-slate-600 flex items-center gap-2">
-                <ShieldCheck size={18} className="text-emerald-600" />
-                <span>
-                  <button onClick={() => navigate('/login')} className="text-fuchsia-600 font-bold hover:underline">Inicia sesión</button>{' '}
-                  para calificar este producto (solo compradores verificados).
-                </span>
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
 
       {/* Fullscreen Image Modal */}
       {fullscreenOpen && (

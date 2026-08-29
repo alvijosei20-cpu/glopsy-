@@ -57,6 +57,28 @@ const scanCatalogKeys = async (cursor) => {
   return { nextCursor: '0', keys: [] };
 };
 
+export const invalidateProductDetailCachesForStore = async (tiendaId) => {
+  try {
+    let cursor = '0';
+    do {
+      const res = await redisClient.scan(cursor, { MATCH: 'product:detail:*', COUNT: 200 });
+      cursor = String(res.cursor);
+      const keys = res.keys || [];
+      const toDelete = [];
+      for (const key of keys) {
+        try {
+          const raw = await redisClient.get(key);
+          if (raw) {
+            const data = JSON.parse(raw);
+            if (Number(data.tienda_id) === Number(tiendaId)) toDelete.push(key);
+          }
+        } catch {}
+      }
+      if (toDelete.length > 0) await redisClient.del(toDelete).catch(() => {});
+    } while (cursor !== '0');
+  } catch {}
+};
+
 export const saveProductForUser = async (userId, productData) => {
   const {
     idProduct,
@@ -603,6 +625,9 @@ const buildSearchWhere = (idx) => {
   )`;
   const where = `
     COALESCE(p.status, 'active') = 'active'
+    AND EXISTS (
+      SELECT 1 FROM tiendas t WHERE t.usrid = p.tienda_id AND COALESCE(t.activa, true) = true
+    )
     AND ($${search}::text IS NULL OR $${search} = '' OR p.name ILIKE '%' || $${search} || '%' OR p.description ILIKE '%' || $${search} || '%')
     AND ($${cat}::int IS NULL OR p.categoria_id = $${cat})
     AND ($${pMin}::numeric IS NULL OR COALESCE(p.suggested_price, p.base_price) >= $${pMin})
@@ -791,6 +816,7 @@ export const getProductByPublicId = async (identifier, ciudad = null) => {
 
   let queryText = `
     SELECT p.*, c.nombre AS ciudad_nombre, cat.nombre AS categoria_nombre,
+      COALESCE(t.activa, true) AS tienda_activa,
       (COALESCE(p.suggested_price, p.base_price) + ${freeShippingCostoExpr('$2')}) AS suggested_price_efectivo,
       (
         SELECT COUNT(*) FROM reviews rv WHERE rv.product_id = p.id
@@ -824,6 +850,7 @@ export const getProductByPublicId = async (identifier, ciudad = null) => {
     LEFT JOIN fullments f ON p.fullm_id = f.id
     LEFT JOIN ciudades c ON f.ciudad_id = c.id
     LEFT JOIN categorias cat ON p.categoria_id = cat.id
+    LEFT JOIN tiendas t ON t.usrid = p.tienda_id
   `;
   let values = [];
   if (/^\d+$/.test(identifier)) {
@@ -879,6 +906,17 @@ export const reserveStockForSession = async (items, identifier) => {
     for (const item of items) {
       const pId = Number(item.id);
       const qty = Number(item.quantity) || 1;
+
+      const { rows: tiendaRows } = await client.query(
+        `SELECT COALESCE(t.activa, true) AS activa
+         FROM produc p
+         LEFT JOIN tiendas t ON t.usrid = p.tienda_id
+         WHERE p.id = $1 LIMIT 1`,
+        [pId]
+      );
+      if (!tiendaRows[0] || tiendaRows[0].activa !== true) {
+        throw new Error('Uno o más productos pertenecen a una tienda pausada. No es posible completar la compra.');
+      }
 
       const result = await client.query(
         `UPDATE produc SET stock_total = stock_total - $1 WHERE id = $2 AND stock_total >= $1`,
@@ -1364,7 +1402,9 @@ export const getFavoriteProductsDetails = async (userId, ciudad = null) => {
        (COALESCE(p.suggested_price, p.base_price) + ${freeShippingCostoExpr('$2')}) AS suggested_price_efectivo
      FROM favoritos f
      JOIN produc p ON f.product_id = p.id
+     JOIN tiendas t ON t.usrid = p.tienda_id
      WHERE f.user_id = $1
+       AND COALESCE(t.activa, true) = true
      ORDER BY f.created_at DESC`,
     [userId, ciudad]
   );

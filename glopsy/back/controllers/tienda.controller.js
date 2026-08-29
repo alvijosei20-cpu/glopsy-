@@ -12,6 +12,7 @@ import { pool } from '../db.js';
 import { getShippingOptionsFromEnvia } from '../services/envia.service.js';
 import { cleanString, isAllowedEnum } from '../utils/validation.js';
 import { invalidateEdgeCache } from '../utils/cacheInvalidate.js';
+import { invalidateCatalogCache, invalidateProductDetailCachesForStore } from '../services/product.service.js';
 
 export const createTiendaController = ({
   getShippingCosts = async (req, res) => {
@@ -90,6 +91,8 @@ export const createTiendaController = ({
         return res.status(404).json({ ok: false, message: 'No tienes una tienda registrada.' });
       }
       await invalidateEdgeCache();
+      await invalidateCatalogCache();
+      await invalidateProductDetailCachesForStore(req.auth.userId);
       return res.json({ ok: true, tienda });
     } catch (error) {
       console.error('Error al actualizar estado de tienda:', error.message);
