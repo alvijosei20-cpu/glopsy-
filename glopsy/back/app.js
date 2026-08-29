@@ -38,7 +38,7 @@ const dashboardOrigins = (process.env.DASHBOARD_ORIGIN || '')
   .filter(Boolean);
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || origin === allowedOrigin || dashboardOrigins.includes(origin) || origin.startsWith('http://localhost:') || origin.startsWith('https://localhost:') || origin.startsWith('http://127.0.0.1:') || origin.startsWith('https://127.0.0.1:')) {
+    if (!origin || origin === 'null' || origin === allowedOrigin || dashboardOrigins.includes(origin) || origin.startsWith('http://localhost:') || origin.startsWith('https://localhost:') || origin.startsWith('http://127.0.0.1:') || origin.startsWith('https://127.0.0.1:')) {
       callback(null, true);
     } else {
       callback(new Error('Bloqueado por política CORS'));

@@ -163,13 +163,13 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // Preflight CORS para los endpoints del worker (pánico / invalidar caché)
+    // Preflight CORS para los endpoints del worker (pánico / invalidar caché / banners)
     if (request.method === 'OPTIONS') {
       return new Response(null, {
         status: 204,
         headers: {
           'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
           'Access-Control-Allow-Headers': 'Content-Type, x-panic-secret, x-invalidate-secret, Authorization',
           'Access-Control-Max-Age': '86400',
         },
