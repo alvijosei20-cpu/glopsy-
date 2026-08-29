@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, MapPin, Truck, ShieldCheck, Fingerprint, Store, Star, ShoppingCart, Heart, ArrowRight, Sparkles, BadgeCheck, Package, ChevronLeft, ChevronRight, TrendingUp, Timer, Users, Flame } from 'lucide-react';
+import { Search, MapPin, Truck, ShieldCheck, Fingerprint, Store, Star, ShoppingCart, Heart, ArrowRight, Sparkles, BadgeCheck, Package, ChevronLeft, ChevronRight, TrendingUp, Timer, Users, Flame, Zap, Tag, Gift, Lock } from 'lucide-react';
 import api from '../../services/api';
 import { isLoggedIn } from '../../utils/session';
 import { SkeletonList } from '../../components/SkeletonLoader';
