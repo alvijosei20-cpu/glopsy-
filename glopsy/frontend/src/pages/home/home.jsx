@@ -20,50 +20,76 @@ const CATEGORY_STYLE = [
   'from-fuchsia-600 to-pink-500',
 ];
 
-const SLIDES = [
+const BANNER_ICONS = { ShieldCheck, Truck, Flame, Store, Sparkles, Package, Star, Heart, Zap, Tag, Gift, Lock };
+
+const DEFAULT_BANNERS = [
   {
-    icon: ShieldCheck,
+    id: 1,
+    icon: 'ShieldCheck',
     badge: 'Compra protegida',
     title: 'Tu dinero está seguro con Glopsy',
     highlight: 'de principio a fin',
     desc: 'Paga con Mercado Pago, confirma con tu huella y recibe tu pedido protegido. Si algo sale mal, te devolvemos tu plata.',
     cta: 'Explorar con confianza',
     to: '/listpr',
-    gradient: 'from-fuchsia-600 via-pink-600 to-purple-800',
+    bgFrom: '#c026d3',
+    bgVia: '#db2777',
+    bgTo: '#7c3aed',
     glow: 'rgba(236,72,153,0.55)',
+    btnBg: '#db2777',
+    btnText: '#ffffff',
+    active: true,
   },
   {
-    icon: Truck,
-    badge: `Envío gratis en ${'%CITY%'}`,
+    id: 2,
+    icon: 'Truck',
+    badge: 'Envío gratis en %CITY%',
     title: 'Recibe tu pedido',
     highlight: 'gratis en tu ciudad',
     desc: 'Miles de vendedores cerca de ti envían sin costo. Compra hoy, recibe rápido y sin pagar más por el transporte.',
     cta: 'Ver envíos gratis',
     to: '/listpr?envio_gratis=true',
-    gradient: 'from-purple-700 via-fuchsia-600 to-pink-600',
+    bgFrom: '#7c3aed',
+    bgVia: '#c026d3',
+    bgTo: '#db2777',
     glow: 'rgba(168,85,247,0.55)',
+    btnBg: '#db2777',
+    btnText: '#ffffff',
+    active: true,
   },
   {
-    icon: Flame,
+    id: 3,
+    icon: 'Flame',
     badge: 'Ofertas por tiempo limitado',
     title: 'Los descuentos vuelan',
     highlight: 'no te quedes sin el tuyo',
     desc: 'Las ofertas más buscadas desaparecen en horas. Entra ahora y asegura tu precio antes de que se agote.',
     cta: 'Ver ofertas hoy',
     to: '/listpr',
-    gradient: 'from-pink-600 via-rose-600 to-purple-800',
+    bgFrom: '#db2777',
+    bgVia: '#e11d48',
+    bgTo: '#7c3aed',
     glow: 'rgba(244,63,94,0.55)',
+    btnBg: '#db2777',
+    btnText: '#ffffff',
+    active: true,
   },
   {
-    icon: Store,
+    id: 4,
+    icon: 'Store',
     badge: 'Vende sin pagar nada',
     title: 'Convierte lo que tienes',
     highlight: 'en dinero en tu bolsillo',
     desc: 'Crea tu tienda gratis en minutos y llega a miles de compradores en Colombia. Sin costos de apertura.',
     cta: 'Crear mi tienda gratis',
     to: '/login',
-    gradient: 'from-purple-800 via-fuchsia-700 to-pink-600',
+    bgFrom: '#7c3aed',
+    bgVia: '#a21caf',
+    bgTo: '#db2777',
     glow: 'rgba(147,51,234,0.55)',
+    btnBg: '#db2777',
+    btnText: '#ffffff',
+    active: true,
   },
 ];
 
@@ -342,6 +368,7 @@ export default function Home() {
   const [toastMessage, setToastMessage] = useState('');
   const [slideIdx, setSlideIdx] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [banners, setBanners] = useState(DEFAULT_BANNERS);
   const touchX = useRef(null);
 
   const getUserCity = () => {
@@ -367,6 +394,14 @@ export default function Home() {
         })
         .catch(err => console.error('Error al cargar favoritos:', err));
     }
+
+    api.get('/home/banners')
+      .then(res => {
+        if (res.data.ok && Array.isArray(res.data.banners)) {
+          setBanners(res.data.banners.map(b => ({ ...DEFAULT_BANNERS[0], ...b })));
+        }
+      })
+      .catch(err => console.error('Error al cargar banners:', err));
   }, []);
 
   useEffect(() => {
@@ -465,9 +500,9 @@ export default function Home() {
   // Autoplay del carrusel
   useEffect(() => {
     if (paused) return;
-    const t = setInterval(() => setSlideIdx(prev => (prev + 1) % SLIDES.length), 5500);
+    const t = setInterval(() => setSlideIdx(prev => (prev + 1) % banners.length), 5500);
     return () => clearInterval(t);
-  }, [paused]);
+  }, [paused, banners.length]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -571,8 +606,8 @@ export default function Home() {
   };
 
   const goToSlide = (i) => {
-    setSlideIdx((i + SLIDES.length) % SLIDES.length);
-    trackEvent('select_content', { content_type: 'banner', content_id: String(i + 1), content_name: SLIDES[i].badge });
+    setSlideIdx(((i % banners.length) + banners.length) % banners.length);
+    trackEvent('select_content', { content_type: 'banner', content_id: String(i + 1), content_name: banners[((i % banners.length) + banners.length) % banners.length]?.badge });
   };
 
   const goToSection = (to, name) => {
@@ -580,7 +615,7 @@ export default function Home() {
     navigate(to);
   };
 
-  const slide = SLIDES[slideIdx];
+  const slide = banners[slideIdx];
   const basePriceOf = (p) => Number(p.suggested_price || p.base_price || 0);
 
   return (
@@ -629,26 +664,33 @@ export default function Home() {
         <div className="relative h-64 sm:h-80 rounded-none sm:rounded-3xl p-px bg-gradient-to-br from-fuchsia-400/60 via-transparent to-purple-400/60 dark:from-fuchsia-500/40 dark:via-transparent dark:to-purple-500/40">
         <div className="relative h-full w-full overflow-hidden rounded-none sm:rounded-[calc(1.5rem-1px)] bg-gradient-to-br from-fuchsia-200 via-white to-purple-200 dark:from-fuchsia-950 dark:via-zinc-950 dark:to-purple-950">
           {/* Fondos por slide con desvanecimiento cruzado */}
-          {SLIDES.map((s, i) => (
+          {banners.map((s, i) => (
             <div
-              key={s.badge}
+              key={s.id ?? s.badge ?? i}
               className={`absolute inset-0 transition-opacity duration-1000 ${i === slideIdx ? 'opacity-100' : 'opacity-0'}`}
               aria-hidden="true"
             >
-              <div className={`absolute inset-0 bg-gradient-to-br ${s.gradient} home-bg-animated opacity-40 dark:opacity-70`} />
-              <div
-                className="absolute inset-0 home-blob"
-                style={{ background: `radial-gradient(ellipse_at_top_right, ${s.glow}, transparent 55%), radial-gradient(ellipse_at_bottom_left, rgba(124,58,237,0.5), transparent 55%)` }}
-              />
-              <div className="absolute -right-24 -top-24 w-96 h-96 rounded-full blur-3xl home-blob-slow" style={{ background: s.glow }} />
-              <div className="absolute -bottom-24 -left-24 w-96 h-96 rounded-full blur-3xl home-blob-slow" style={{ background: 'rgba(124,58,237,0.45)' }} />
+                <div
+                  className="absolute inset-0 home-bg-animated opacity-40 dark:opacity-70"
+                  style={{ background: `linear-gradient(135deg, ${s.bgFrom}, ${s.bgVia}, ${s.bgTo})` }}
+                />
+                <div
+                  className="absolute inset-0 home-blob"
+                  style={{ background: `radial-gradient(ellipse_at_top_right, ${s.glow}, transparent 55%), radial-gradient(ellipse_at_bottom_left, rgba(124,58,237,0.5), transparent 55%)` }}
+                />
+                <div className="absolute -right-24 -top-24 w-96 h-96 rounded-full blur-3xl home-blob-slow" style={{ background: s.glow }} />
+                <div className="absolute -bottom-24 -left-24 w-96 h-96 rounded-full blur-3xl home-blob-slow" style={{ background: 'rgba(124,58,237,0.45)' }} />
             </div>
           ))}
 
           <div className="relative h-full flex items-center px-6 sm:px-12">
             <div key={slideIdx} className="home-fade-in max-w-3xl w-full">
+              {slide && (() => {
+                const SlideIcon = BANNER_ICONS[slide.icon] || ShieldCheck;
+                return (
+                <>
               <span className="home-stagger-1 inline-flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs text-fuchsia-700 dark:text-fuchsia-400 bg-fuchsia-100/80 dark:bg-fuchsia-950/50 border border-fuchsia-200/70 dark:border-fuchsia-900/50 rounded-full px-3 sm:px-4 py-1 sm:py-1.5 font-semibold mb-2 sm:mb-4">
-                <slide.icon size={13} />
+                <SlideIcon size={13} />
                 {slide.badge.replace('%CITY%', userCity)}
               </span>
 
@@ -665,10 +707,14 @@ export default function Home() {
 
               <button
                 onClick={() => goToSection(slide.to, slide.cta)}
-                className="home-stagger-4 inline-flex items-center gap-1.5 sm:gap-2 bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-bold px-4 sm:px-6 py-2 sm:py-3 rounded-xl text-xs sm:text-sm shadow-md shadow-fuchsia-600/25 transition-all hover:scale-[1.03] active:scale-95 cursor-pointer"
+                className="home-stagger-4 inline-flex items-center gap-1.5 sm:gap-2 text-white font-bold px-4 sm:px-6 py-2 sm:py-3 rounded-xl text-xs sm:text-sm shadow-md transition-all hover:scale-[1.03] active:scale-95 cursor-pointer"
+                style={{ background: slide.btnBg, color: slide.btnText, boxShadow: `0 4px 14px ${slide.btnBg}40` }}
               >
                 {slide.cta} <ArrowRight size={15} />
               </button>
+                </>
+                );
+              })()}
             </div>
           </div>
 
@@ -692,9 +738,9 @@ export default function Home() {
 
           {/* Dots */}
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 z-10">
-            {SLIDES.map((s, i) => (
+            {banners.map((s, i) => (
               <button
-                key={s.badge}
+                key={s.id ?? s.badge ?? i}
                 type="button"
                 aria-label={`Slide ${i + 1}`}
                 onClick={() => goToSlide(i)}
