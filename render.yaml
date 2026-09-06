@@ -60,6 +60,14 @@ services:
         sync: false
       - key: NOTIFICATIONS_ADMIN_KEY
         sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DEEPSEEK_MODEL
+        value: deepseek-chat
+      - key: MARKETING_WORKER
+        value: "on"
+      - key: MARKETING_INTERVAL_HOURS
+        value: "6"
 
   - type: keyvalue
     name: glopsy-redis

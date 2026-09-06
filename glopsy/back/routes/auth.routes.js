@@ -4,6 +4,8 @@ import {
   googleCallback,
   discordLogin,
   discordCallback,
+  tiktokLogin,
+  tiktokCallback,
   getCurrentUser,
   updateCurrentUser,
   getAddresses,
@@ -38,6 +40,10 @@ router.get('/google/callback', authLimiter, googleCallback);
 // Rutas de Discord OAuth
 router.get('/discord', authLimiter, discordLogin);
 router.get('/discord/callback', authLimiter, discordCallback);
+
+// Rutas de TikTok OAuth
+router.get('/tiktok', authLimiter, tiktokLogin);
+router.get('/tiktok/callback', authLimiter, tiktokCallback);
 
 // Rutas de Email / Contraseña
 router.post('/register', authLimiter, registerEmail);

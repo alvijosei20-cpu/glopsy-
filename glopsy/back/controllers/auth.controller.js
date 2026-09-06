@@ -167,6 +167,79 @@ export const discordCallback = async (req, res) => {
   }
 };
 
+// ==========================================
+// TIKTOK OAUTH (Login Kit)
+// Nota: TikTok NO devuelve email. Se guarda un email sintético
+// "<open_id>@tiktok.local" para encajar con users.email (NOT NULL).
+// ==========================================
+export const tiktokLogin = (req, res) => {
+  const clientKey = process.env.TIKTOK_CLIENT_KEY;
+  const redirectUri = process.env.TIKTOK_REDIRECT_URI;
+  if (!clientKey || !redirectUri) {
+    return res.redirect(`${process.env.FRONTEND_URL}/login?error=provider_not_configured`);
+  }
+
+  const rootUrl = 'https://www.tiktok.com/v2/auth/authorize/';
+  const options = new URLSearchParams({
+    client_key: clientKey,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: 'user.info.basic,user.info.profile',
+  });
+
+  res.redirect(`${rootUrl}?${options.toString()}`);
+};
+
+export const tiktokCallback = async (req, res) => {
+  const code = cleanString(req.query.code, { maxLength: 2000 });
+
+  if (req.query.error) {
+    return res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
+  }
+
+  if (!code) {
+    return res.status(400).json({ message: 'Código de autorización no provisto' });
+  }
+
+  try {
+    const tokenResponse = await axios.post(
+      'https://open.tiktokapis.com/v2/oauth/token/',
+      new URLSearchParams({
+        client_key: process.env.TIKTOK_CLIENT_KEY,
+        client_secret: process.env.TIKTOK_CLIENT_SECRET,
+        code,
+        grant_type: 'authorization_code',
+        redirect_uri: process.env.TIKTOK_REDIRECT_URI,
+      }).toString(),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+
+    const { access_token, open_id } = tokenResponse.data;
+
+    const userResponse = await axios.get('https://open.tiktokapis.com/v2/user/info/', {
+      params: { fields: 'open_id,union_id,avatar_url,display_name' },
+      headers: { Authorization: `Bearer ${access_token}` },
+    });
+
+    const tiktokUser = userResponse.data?.data?.user || {};
+    const tiktokId = tiktokUser.open_id || open_id;
+
+    const { token } = await processOAuthUser({
+      email: tiktokId ? `${tiktokId}@tiktok.local` : null,
+      name: tiktokUser.display_name,
+      avatar_url: tiktokUser.avatar_url,
+      provider: 'tiktok',
+      provider_id: tiktokId,
+    });
+
+    setAuthCookie(res, token);
+    res.redirect(`${process.env.FRONTEND_URL}/auth/success`);
+  } catch (error) {
+    console.error('Error en callback de TikTok:', error.response?.data || error.message);
+    res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
+  }
+};
+
 export const getCurrentUser = async (req, res) => {
   try {
     const { rows } = await pool.query(

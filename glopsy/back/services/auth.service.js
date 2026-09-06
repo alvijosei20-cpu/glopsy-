@@ -89,7 +89,7 @@ export const loginWithEmail = async ({ email, password }) => {
 };
 
 /**
- * Procesa un usuario proveniente de OAuth (Google/Discord)
+ * Procesa un usuario proveniente de OAuth (Google/Discord/TikTok)
  * 1. Upsert en BD (Crea o actualiza usuario)
  * 2. Genera JWT
  * 3. Guarda la sesión activa en Redis
@@ -98,6 +98,7 @@ export const processOAuthUser = async ({ email, name, avatar_url, provider, prov
   const providerColumns = {
     google: 'google_id',
     discord: 'discord_id',
+    tiktok: 'tiktok_id',
   };
   const providerColumn = providerColumns[provider];
 

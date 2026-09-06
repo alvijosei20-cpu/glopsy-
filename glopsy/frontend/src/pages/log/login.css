@@ -52,6 +52,16 @@ html.dark .btn-google:hover {
   background-color: #27272a !important;
 }
 
+html.dark .btn-tiktok {
+  background-color: #1a1a1a !important;
+  color: #f1f5f9 !important;
+  border: 1px solid #27272a;
+}
+
+html.dark .btn-tiktok:hover {
+  background-color: #27272a !important;
+}
+
 .auth-form-wrapper {
   animation: authFadeSlide 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
@@ -127,6 +137,15 @@ html.dark .btn-google:hover {
 
 .btn-discord:hover {
   background: linear-gradient(90deg, #a21caf, #db2777);
+}
+
+.btn-tiktok {
+  background-color: #010101;
+  color: #ffffff;
+}
+
+.btn-tiktok:hover {
+  background-color: #1f2937;
 }
 
 @media (max-width: 640px) {

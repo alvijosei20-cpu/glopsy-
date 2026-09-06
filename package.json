@@ -1,7 +1,13 @@
 {
-  "name": "glopsy-repo",
+  "name": "proyectos-root",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "cd glopsy/frontend && npm ci && npm run build"
+    "back": "npm run dev --prefix glopsy/back",
+    "front": "npm run front --prefix glopsy/frontend",
+    "dev": "concurrently -k -n \"BACK,FRONT\" -c \"cyan,magenta\" \"npm run back\" \"npm run front\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
   }
 }

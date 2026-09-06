@@ -23,4 +23,7 @@ if (process.env.ENABLE_HTTPS && fs.existsSync(SSL_KEY) && fs.existsSync(SSL_CERT
 server.listen(PORT, () => {
   console.log(`🚀 Servidor backend escuchando en el puerto ${PORT}`);
   console.log(`🌐 Frontend autorizado (CORS): ${process.env.FRONTEND_URL || 'No definido'}`);
+  if (process.env.MARKETING_WORKER !== 'off') {
+    import('./services/marketing/worker.js').then(({ scheduleMarketingWorker }) => scheduleMarketingWorker());
+  }
 });

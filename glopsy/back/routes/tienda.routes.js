@@ -13,6 +13,15 @@ import { requireAuth } from '../middlewares/auth.js';
 import { tiendaLimiter } from '../middlewares/limiters.js';
 import { getPerfilesForUser, createPerfilForUser, deletePerfilForUser } from '../controllers/perfiles.controller.js';
 import { getOfertas, createOferta, updateOfertaProductos, deleteOferta } from '../controllers/ofertas.controller.js';
+import {
+  getMarketingOverview,
+  getSuggestions,
+  runMarketingManual,
+  applySuggestion,
+  dismissSuggestion,
+  updateCampaignUrl,
+  sendPushCampaign,
+} from '../controllers/marketing.controller.js';
 
 const router = Router();
 
@@ -35,5 +44,14 @@ router.put('/ofertas/:id/productos', updateOfertaProductos);
 router.delete('/ofertas/:id', deleteOferta);
 // Estadísticas / analytics del vendedor
 router.get('/analytics', getAnalytics);
+
+// Marketing: motor de sugerencias (SEO, promos, social, email/push)
+router.get('/marketing', getMarketingOverview);
+router.get('/marketing/sugerencias', getSuggestions);
+router.post('/marketing/run', runMarketingManual);
+router.post('/marketing/sugerencias/:id/aplicar', applySuggestion);
+router.post('/marketing/sugerencias/:id/descartar', dismissSuggestion);
+router.post('/marketing/sugerencias/:id/url', updateCampaignUrl);
+router.post('/marketing/sugerencias/:id/enviar', sendPushCampaign);
 
 export default router;
