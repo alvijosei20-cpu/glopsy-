@@ -10,6 +10,9 @@ const QUICK_PROMPTS = [
   '¿Está en stock?',
 ];
 
+const MAX_CHARS = 300;
+const BUDGET_DEFAULT = { limit: 3, used: 0, remaining: 3 };
+
 export default function ProductAssistant({ product }) {
   const ciudad = useUserCity();
   const [open, setOpen] = useState(false);
@@ -17,6 +20,7 @@ export default function ProductAssistant({ product }) {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [budget, setBudget] = useState(BUDGET_DEFAULT);
   const bottomRef = useRef(null);
 
   const pid = String(product?.public_id || product?.id || '');
@@ -26,8 +30,8 @@ export default function ProductAssistant({ product }) {
   }, [messages, busy, open]);
 
   const send = async (text) => {
-    const clean = String(text || '').trim().slice(0, 400);
-    if (!clean || busy || !pid) return;
+    const clean = String(text || '').trim().slice(0, MAX_CHARS);
+    if (!clean || busy || !pid || budget.remaining <= 0) return;
     setError('');
     setInput('');
     const history = [...messages, { role: 'user', content: clean }];
@@ -43,6 +47,7 @@ export default function ProductAssistant({ product }) {
       } else {
         setError(data?.message || 'No obtuve respuesta. Intenta de nuevo.');
       }
+      if (data?.budget) setBudget((prev) => ({ ...prev, ...data.budget }));
     } catch (err) {
       setError(err.response?.data?.message || 'No fue posible conectar con el asistente.');
     } finally {
@@ -107,7 +112,7 @@ export default function ProductAssistant({ product }) {
               </div>
             </div>
 
-            {messages.length === 0 && !busy && (
+            {messages.length === 0 && !busy && budget.remaining > 0 && (
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {QUICK_PROMPTS.map((q) => (
                   <button
@@ -166,32 +171,44 @@ export default function ProductAssistant({ product }) {
 
           {/* Input */}
           <div className="border-t border-fuchsia-100 p-2.5 bg-white shrink-0">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                send(input);
-              }}
-              className="flex items-center gap-2"
-            >
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Escribe tu pregunta…"
-                maxLength={400}
-                className="flex-1 min-w-0 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-800 outline-none focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-100 placeholder:text-slate-400"
-              />
-              <button
-                type="submit"
-                disabled={busy || !input.trim()}
-                className="w-10 h-10 shrink-0 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                aria-label="Enviar"
+            {budget.remaining <= 0 ? (
+              <p className="text-center text-[11px] font-bold text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-3 py-3">
+                💬 Has agotado las {budget.limit} consultas con IA para este producto. Para más dudas escríbenos a soporte@glopsy.com
+              </p>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  send(input);
+                }}
+                className="flex items-center gap-2"
               >
-                <Send size={15} />
-              </button>
-            </form>
-            <p className="text-[9px] text-slate-400 text-center mt-1.5">
-              Respuestas generadas por IA. Pueden tener errores: verifica precios y stock antes de comprar.
-            </p>
+                <input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Escribe tu pregunta…"
+                  maxLength={MAX_CHARS}
+                  className="flex-1 min-w-0 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-800 outline-none focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-100 placeholder:text-slate-400"
+                />
+                <button
+                  type="submit"
+                  disabled={busy || !input.trim()}
+                  className="w-10 h-10 shrink-0 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  aria-label="Enviar"
+                >
+                  <Send size={15} />
+                </button>
+              </form>
+            )}
+            {budget.remaining <= 0 ? (
+              <p className="text-[9px] text-slate-400 text-center mt-1.5">
+                Respuestas generadas por IA. Pueden tener errores.
+              </p>
+            ) : (
+              <p className="text-[9px] text-slate-400 text-center mt-1.5 flex items-center justify-center gap-1">
+                <span>{input.length}/{MAX_CHARS}</span> · <span>Consultas IA restantes: {budget.remaining}</span>
+              </p>
+            )}
           </div>
         </div>
       )}

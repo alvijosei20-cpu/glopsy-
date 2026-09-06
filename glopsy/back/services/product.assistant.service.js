@@ -6,6 +6,35 @@ const BASE_URL = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').r
 const MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
 const TIMEOUT_MS = Number(process.env.ASSISTANT_TIMEOUT_MS) || 20000;
 
+// Límites: 3 consultas con IA por producto (por IP/día) y 300 caracteres por pregunta.
+export const ASSISTANT_BUDGET_LIMIT = 3;
+export const ASSISTANT_MAX_MSG_CHARS = 300;
+
+const BUDGETS = new Map(); // key "producto:ip" -> { date, count } (por día)
+
+const today = () => new Date().toISOString().slice(0, 10);
+
+const budgetState = (key) => {
+  const cur = BUDGETS.get(key);
+  if (!cur || cur.date !== today()) return { date: today(), count: 0 };
+  return cur;
+};
+
+const budgetUse = (key) => {
+  const s = budgetState(key);
+  s.count += 1;
+  BUDGETS.set(key, s);
+  return s;
+};
+
+const budgetInfo = (state) => ({
+  limit: ASSISTANT_BUDGET_LIMIT,
+  used: state.count,
+  remaining: Math.max(0, ASSISTANT_BUDGET_LIMIT - state.count),
+});
+
+const LIMIT_MSG = `Has agotado tus ${ASSISTANT_BUDGET_LIMIT} consultas con IA para este producto. Para más dudas escríbenos a soporte@glopsy.com 📩`;
+
 // ------------------------------------------------------------------ Herramientas
 // El asistente consulta el catálogo real por SQL: sugerencias, comparativas y stock.
 
@@ -158,11 +187,12 @@ Puedes consultar TODO el catálogo real usando las herramientas buscar_catalogo 
 - sugerir qué comprar según el presupuesto/interés del cliente.
 
 Reglas:
-1. Responde en español, amable, conciso (máx ~3 párrafos) y sin inventar NUNCA precios, stock, descuentos ni envíos: usa las herramientas o la información anterior.
-2. Si el producto está agotado, ofrece alternativas consultando el catálogo.
-3. No des consejos médicos, financieros ni prometas resultados.
-4. Si te preguntan cómo comprar: indica que use "Comprar ahora" o "Agregar al carrito" y complete el pago; el envío se calcula según la ciudad en el checkout.
-5. Si no hay stock o el precio no está claro, dilo y sugiere preguntar al vendedor.`;
+1. Responde en español con respuestas CORTAS y PRECISAS (máx 3 frases; usa 1 viñeta si toca listar). Ve directo al dato que piden: sin rodeos ni repeticiones.
+2. NUNCA inventes precios, stock, descuentos ni envíos: usa las herramientas o la información anterior.
+3. Si el producto está agotado, ofrece alternativas consultando el catálogo.
+4. No des consejos médicos, financieros ni prometas resultados.
+5. Si te preguntan cómo comprar: indica que use "Comprar ahora" o "Agregar al carrito" y complete el pago; el envío se calcula según la ciudad en el checkout.
+6. Si no hay stock o el precio no está claro, dilo y sugiere preguntar al vendedor.`;
 };
 
 // ------------------------------------------------------------------ Chat con tools
@@ -244,8 +274,8 @@ const callModel = async (messages) => {
     {
       model: MODEL,
       messages,
-      temperature: 0.6,
-      max_tokens: 900,
+      temperature: 0.5,
+      max_tokens: 350,
       tools: TOOLS,
       tool_choice: 'auto',
     },
@@ -257,10 +287,11 @@ const callModel = async (messages) => {
   return data?.choices?.[0]?.message || null;
 };
 
-export const productAssistantChat = async ({ product, ciudad = '', messages = [] }) => {
+// budgetKey: "public_id:ip". Solo se descuenta cuando la IA se llama de verdad.
+export const productAssistantChat = async ({ product, ciudad = '', messages = [], budgetKey = '' }) => {
   const clean = (m) => ({
     role: m?.role === 'assistant' ? 'assistant' : 'user',
-    content: String(m?.content || '').replace(/\s+/g, ' ').trim().slice(0, 800),
+    content: String(m?.content || '').replace(/\s+/g, ' ').trim().slice(0, ASSISTANT_MAX_MSG_CHARS),
   });
 
   const history = (Array.isArray(messages) ? messages : [])
@@ -272,13 +303,22 @@ export const productAssistantChat = async ({ product, ciudad = '', messages = []
     throw new Error('Mensaje inválido.');
   }
 
-  // Sin API key o con IA caída → fallback con datos reales (FAQ local).
+  const budget = budgetKey ? budgetState(budgetKey) : { date: today(), count: 0 };
+
+  // Sin API key → FAQ local gratis (no descuenta IA).
   if (!API_KEY) {
     const reply = await fallbackAnswer({ product, ciudad, lastMessage: history[history.length - 1].content });
-    return { ok: true, reply, fallback: true };
+    return { ok: true, reply, fallback: true, budget: budgetInfo(budget) };
+  }
+
+  // Límite alcanzado → no se llama a la IA.
+  if (budgetKey && budget.count >= ASSISTANT_BUDGET_LIMIT) {
+    return { ok: true, reply: LIMIT_MSG, budget: budgetInfo(budget) };
   }
 
   const msgs = [{ role: 'system', content: buildSystem(product, ciudad) }, ...history];
+  const used = budgetKey ? budgetUse(budgetKey) : { ...budget, count: budget.count + 1 };
+  const info = budgetInfo(used);
 
   try {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -289,7 +329,7 @@ export const productAssistantChat = async ({ product, ciudad = '', messages = []
       msgs.push({ role: 'assistant', content: msg.content || '', tool_calls: toolCalls.length ? toolCalls : undefined });
 
       if (!toolCalls.length) {
-        return { ok: true, reply: (msg.content || '').trim() };
+        return { ok: true, reply: (msg.content || '').trim(), budget: info };
       }
 
       for (const tc of toolCalls) {
@@ -302,8 +342,8 @@ export const productAssistantChat = async ({ product, ciudad = '', messages = []
   } catch (err) {
     console.warn('[product-assistant] IA no disponible, respondiendo con fallback:', err.message);
     const reply = await fallbackAnswer({ product, ciudad, lastMessage: history[history.length - 1].content });
-    return { ok: true, reply, fallback: true };
+    return { ok: true, reply, fallback: true, budget: info };
   }
 
-  return { ok: true, reply: 'Ups, tardé demasiado en organizar la respuesta. Vuelve a preguntarme 🙂' };
+  return { ok: true, reply: 'Ups, tardé demasiado en organizar la respuesta. Vuelve a preguntarme 🙂', budget: info };
 };
