@@ -14,35 +14,52 @@ const QUICK_PROMPTS = [
 const MAX_CHARS = 300;
 const BUDGET_DEFAULT = { limit: 3, used: 0, remaining: 3 };
 
-// Convierte [nombre](/product/x) y rutas /product/... o /listpr en enlaces que
-// navegan dentro de la app (onLink recibe la ruta destino y cierra el modal).
-const ROUTE_RE = /\[([^\]]+)\]\((\/product\/[A-Za-z0-9_-]{1,80}|\/listpr[^)\s]*)\)|(\/product\/[A-Za-z0-9_-]{1,80}|\/listpr)\b/g;
+// Extrae rutas /product/<id> o /listpr incluso dentro de URLs absolutas o markdown.
+const TOKEN_RE = /\[([^\]]+)\]\(([^)\s]+)\)|\/product\/[A-Za-z0-9_-]{1,80}|\/listpr[^\s),.;:]*/g;
+
+const pathFrom = (token) => {
+  const mm = String(token || '').match(/(\/product\/[A-Za-z0-9_-]{1,80}|\/listpr[^\s),.;:]*)/);
+  return mm ? mm[0] : null;
+};
 
 function inlineLine(line, keyBase, onLink) {
   const out = [];
   let last = 0;
   let m;
   let k = 0;
-  ROUTE_RE.lastIndex = 0;
-  while ((m = ROUTE_RE.exec(line))) {
+  TOKEN_RE.lastIndex = 0;
+  while ((m = TOKEN_RE.exec(line))) {
     if (m.index > last) out.push(line.slice(last, m.index));
-    const path = '/' + (m[2] || m[3]);
-    const label = m[1] || m[2] || m[3];
-    out.push(
-      <button
-        key={`${keyBase}-l${k++}`}
-        type="button"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onLink(path);
-        }}
-        className="inline text-fuchsia-700 font-bold underline decoration-fuchsia-300 underline-offset-2 hover:text-fuchsia-900 transition-colors cursor-pointer"
-        title={path}
-      >
-        {label}
-      </button>
-    );
+    const mdLabel = m[1];
+    const mdUrl = m[2];
+    let path;
+    let label;
+    if (mdLabel && mdUrl) {
+      path = pathFrom(mdUrl);
+      label = mdLabel;
+    } else {
+      path = pathFrom(m[0]);
+      label = path && path.startsWith('/listpr') ? 'Catálogo' : path ? path.replace('/product/', '') : m[0];
+    }
+    if (path) {
+      out.push(
+        <button
+          key={`${keyBase}-l${k++}`}
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onLink(path);
+          }}
+          className="inline text-fuchsia-700 font-bold underline decoration-fuchsia-300 underline-offset-2 hover:text-fuchsia-900 transition-colors cursor-pointer"
+          title={path}
+        >
+          {label}
+        </button>
+      );
+    } else {
+      out.push(m[0]);
+    }
     last = m.index + m[0].length;
   }
   if (last < line.length) out.push(line.slice(last));
