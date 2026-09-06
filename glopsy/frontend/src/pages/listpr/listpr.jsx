@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Heart, MapPin, ShoppingCart, Star, Truck, Filter, ChevronDown, X, Check, Share2 } from 'lucide-react';
+import { Search, Heart, ShoppingCart, Star, Truck, Filter, ChevronDown, X, Check, Share2 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
 import { isLoggedIn } from '../../utils/session';
@@ -7,6 +7,8 @@ import { SkeletonList } from '../../components/SkeletonLoader';
 import { useSEO } from '../../utils/seo';
 import { trackEvent } from '../../utils/analytics';
 import { productShareUrl, shareProduct } from '../../utils/share';
+import { useUserCity } from '../../utils/location';
+import LocationPicker from '../../components/LocationPicker';
 import './listpr.css';
 
 export default function Listpr() {
@@ -125,14 +127,7 @@ export default function Listpr() {
     }
   };
 
-  const getUserCity = () => {
-    try {
-      const data = JSON.parse(sessionStorage.getItem('location_data') || localStorage.getItem('location_data') || '{}');
-      if (data.city) return data.city;
-    } catch {}
-    return sessionStorage.getItem('location_city') || localStorage.getItem('location_city') || 'Bogotá D.C.';
-  };
-  const userCity = getUserCity();
+  const userCity = useUserCity();
 
   // Cargar categorías y favoritos al montar
   useEffect(() => {
@@ -503,10 +498,7 @@ export default function Listpr() {
             </form>
 
             {/* Ubicación del Usuario */}
-            <div className="flex items-center gap-2 text-slate-600 text-xs md:text-sm font-medium bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200 shrink-0">
-              <MapPin size={16} className="text-fuchsia-600 shrink-0" />
-              <span>Enviar a <b className="text-slate-900">{userCity}</b></span>
-            </div>
+            <LocationPicker className="bg-slate-50 text-slate-600 border border-slate-200 px-3.5 py-2.5 rounded-xl shrink-0" />
           </div>
 
           {/* Categorías (solo móvil) */}

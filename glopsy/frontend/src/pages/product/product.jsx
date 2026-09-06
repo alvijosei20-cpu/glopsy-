@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ShoppingCart, Zap, Heart, ArrowLeft, Truck, ShieldCheck, Check, Star, MapPin, Store, Shield, Sparkles, ChevronDown, ChevronUp, Maximize2, X, ChevronLeft, ChevronRight, RotateCw, Share2 } from 'lucide-react';
+import { ShoppingCart, Zap, ArrowLeft, ShieldCheck, Check, Star, Store, Shield, Sparkles, ChevronDown, ChevronUp, Maximize2, X, ChevronLeft, ChevronRight, RotateCw, Share2 } from 'lucide-react';
 import api from '../../services/api';
 import { isLoggedIn } from '../../utils/session';
 import { useSEO } from '../../utils/seo';
 import { trackEvent } from '../../utils/analytics';
 import { productShareUrl, shareProduct } from '../../utils/share';
+import { useUserCity } from '../../utils/location';
+import LocationPicker from '../../components/LocationPicker';
 import './product.css';
 import '@google/model-viewer';
 
@@ -155,7 +157,7 @@ export default function ProductDetail() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [fullscreenOpen, safeImages.length]);
 
-  const userCity = sessionStorage.getItem('location_city') || 'Bogotá D.C.';
+  const userCity = useUserCity();
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -175,7 +177,7 @@ export default function ProductDetail() {
         setError('Producto no encontrado o error en el servidor.');
       })
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, userCity]);
 
   useEffect(() => {
     if (!product) return;
@@ -215,7 +217,7 @@ export default function ProductDetail() {
         }
       })
       .catch(err => console.error('Error al cargar relacionados:', err));
-  }, [product]);
+  }, [product, userCity]);
 
   // Cargar reseñas del producto
   useEffect(() => {
@@ -557,10 +559,7 @@ export default function ProductDetail() {
             <ArrowLeft size={18} />
             <span>Volver</span>
           </button>
-          <div className="flex items-center gap-2 text-fuchsia-800 text-xs sm:text-sm font-medium bg-fuchsia-50 px-3 py-1.5 rounded-xl border border-fuchsia-100">
-            <MapPin size={16} className="text-fuchsia-600 shrink-0" />
-            <span>Envío a <b>{userCity}</b></span>
-          </div>
+          <LocationPicker className="text-fuchsia-800 font-medium bg-fuchsia-50 px-3 py-1.5 rounded-xl border border-fuchsia-100" />
         </div>
       </div>
 

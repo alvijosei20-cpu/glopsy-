@@ -4,9 +4,11 @@ import { useNavigate, Link } from 'react-router-dom';
 import api from '../../services/api';
 import { SkeletonList } from '../../components/SkeletonLoader';
 import { trackEvent } from '../../utils/analytics';
+import { useUserCity } from '../../utils/location';
 
 export default function Favorites() {
   const navigate = useNavigate();
+  const userCity = useUserCity();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState('');
@@ -14,7 +16,6 @@ export default function Favorites() {
   useEffect(() => {
     const fetchFavorites = async () => {
       try {
-        const userCity = sessionStorage.getItem('location_city') || 'Bogotá D.C.';
         const res = await api.get('/product/favorite-products', { params: { ciudad: userCity } });
         if (res.data.ok) {
           const favs = res.data.products || [];
@@ -43,7 +44,7 @@ export default function Favorites() {
     };
 
     fetchFavorites();
-  }, []);
+  }, [userCity]);
 
   const getProductImage = (p) => {
     try {

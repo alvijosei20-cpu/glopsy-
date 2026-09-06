@@ -106,6 +106,89 @@ export const getCiudades = async (req, res) => {
   }
 };
 
+// Normaliza nombres (minúsculas, sin acentos ni puntuación) para comparar.
+const norm = (s) =>
+  String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '')
+    .replace(/^d\s?c$/, '')
+    .trim();
+
+// Convierte coordenadas (lat/lon) a la ciudad con cobertura de envío más cercana.
+// Usa el reverse geocoding público de Nominatim (OpenStreetMap); sin API key.
+export const reverseGeocode = async (req, res) => {
+  const lat = Number(cleanString(req.query.lat, { maxLength: 20 }));
+  const lon = Number(cleanString(req.query.lon, { maxLength: 20 }));
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+    return res.status(400).json({ ok: false, message: 'lat y lon son obligatorias y deben ser válidas.' });
+  }
+
+  const cacheKey = `geo:reverse:${lat.toFixed(3)},${lon.toFixed(3)}`;
+  const cached = await redisClient.get(cacheKey).catch(() => null);
+  if (cached) return res.json(JSON.parse(cached));
+
+  try {
+    const [supportedRows, geoRes] = await Promise.all([
+      query(`
+        SELECT DISTINCT c.id AS ciudad_id, c.nombre AS ciudad_nombre,
+                        d.id AS departamento_id, d.nombre AS departamento_nombre
+        FROM fullments f
+        JOIN ciudades c ON f.ciudad_id = c.id
+        JOIN departamentos d ON c.departamento_id = d.id
+        WHERE f.estado = 'activo'
+      `),
+      fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept-language=es`,
+        { headers: { 'User-Agent': 'glopsy-app/1.0 (contacto: app@glopsy.shop)' }, signal: AbortSignal.timeout(8000) }
+      ),
+    ]);
+
+    let body;
+    try {
+      body = await geoRes.json();
+    } catch {
+      body = {};
+    }
+
+    const supported = supportedRows.rows;
+    const address = geoRes.status === 200 ? body?.address || {} : {};
+    const raw = cleanString(
+      address.county || address.municipality || address.town || address.city || address.state_district,
+      { maxLength: 140 }
+    );
+    // Nominatim (Colombia) suele devolver "Perímetro Urbano X" o "X ciudad".
+    const reversedCity = raw
+      .replace(/\bper[íi]metro\s*urbano\b/gi, ' ')
+      .replace(/\bciudad\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const departamento = cleanString(address.state || address.state_district, { maxLength: 140 });
+
+    const target = norm(reversedCity);
+    const match =
+      (target && supported.find((r) => norm(r.ciudad_nombre) === target)) ||
+      (target && supported.find((r) => norm(r.ciudad_nombre) && norm(r.ciudad_nombre).includes(target))) ||
+      (target && supported.find((r) => target.includes(norm(r.ciudad_nombre)))) ||
+      (departamento ? supported.find((r) => norm(r.departamento_nombre) === norm(departamento)) : null);
+
+    const result = {
+      ok: true,
+      ubicacion: {
+        reversedCity,
+        departamento,
+        match: match || null,
+      },
+    };
+    await redisClient.set(cacheKey, JSON.stringify(result), { EX: 86400 }).catch(() => {});
+    return res.json(result);
+  } catch (error) {
+    console.error('Error en reverse geocoding:', error.message);
+    return res.status(502).json({ ok: false, message: 'No fue posible determinar tu ciudad por ubicación.' });
+  }
+};
+
 export const createFullment = async (req, res) => {
   try {
     const userId = req.auth?.userId;

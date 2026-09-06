@@ -8,7 +8,8 @@ import {
   deleteFullment, 
   getFullmentProducts, 
   updateFullmentProducts,
-  updateFullmentPerfil 
+  updateFullmentPerfil,
+  reverseGeocode
 } from '../controllers/geo.controller.js';
 import { requireAuth } from '../middlewares/auth.js';
 
@@ -18,6 +19,7 @@ router.get('/fullments', getFullments);
 router.get('/fullments/mine', requireAuth, getMyFullments);
 router.get('/ciudades', getCiudades);
 router.get('/departamentos', getDepartamentos);
+router.get('/reverse', reverseGeocode);
 router.post('/fullments', requireAuth, createFullment);
 router.delete('/fullments/:id', requireAuth, deleteFullment);
 router.put('/fullments/:id/perfil', requireAuth, updateFullmentPerfil);

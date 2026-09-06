@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, MapPin, Truck, ShieldCheck, Fingerprint, Store, Star, ShoppingCart, Heart, ArrowRight, Sparkles, BadgeCheck, Package, ChevronLeft, ChevronRight, TrendingUp, Timer, Users, Flame, Zap, Tag, Gift, Lock } from 'lucide-react';
+import { Search, Truck, ShieldCheck, Fingerprint, Store, Star, ShoppingCart, Heart, ArrowRight, Sparkles, BadgeCheck, Package, ChevronLeft, ChevronRight, TrendingUp, Timer, Users, Flame, Zap, Tag, Gift, Lock } from 'lucide-react';
 import api from '../../services/api';
 import { isLoggedIn } from '../../utils/session';
 import { SkeletonList } from '../../components/SkeletonLoader';
 import Footer from '../../components/footer';
 import { useSEO } from '../../utils/seo';
 import { trackEvent } from '../../utils/analytics';
+import { useUserCity } from '../../utils/location';
+import LocationPicker from '../../components/LocationPicker';
 import './home.css';
 
 const CATEGORY_STYLE = [
@@ -371,14 +373,7 @@ export default function Home() {
   const [banners, setBanners] = useState(DEFAULT_BANNERS);
   const touchX = useRef(null);
 
-  const getUserCity = () => {
-    try {
-      const data = JSON.parse(sessionStorage.getItem('location_data') || localStorage.getItem('location_data') || '{}');
-      if (data.city) return data.city;
-    } catch {}
-    return sessionStorage.getItem('location_city') || localStorage.getItem('location_city') || 'Bogotá D.C.';
-  };
-  const userCity = getUserCity();
+  const userCity = useUserCity();
 
   useEffect(() => {
     api.get('/product/categories')
@@ -641,10 +636,7 @@ export default function Home() {
         </form>
 
         <div className="flex items-center justify-center gap-2 text-slate-500 dark:text-slate-400 text-xs sm:text-sm font-medium mt-4">
-          <MapPin size={15} className="text-fuchsia-600 shrink-0" />
-          <span>
-            Enviando a <b className="text-slate-900 dark:text-white">{userCity}</b> — envíos gratis desde tiendas cercanas
-          </span>
+          <LocationPicker className="dark:text-slate-400" />
         </div>
       </section>
 
