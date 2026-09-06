@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Heart, MapPin, ShoppingCart, Star, Truck, Filter, ChevronDown, X, Check } from 'lucide-react';
+import { Search, Heart, MapPin, ShoppingCart, Star, Truck, Filter, ChevronDown, X, Check, Share2 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
 import { isLoggedIn } from '../../utils/session';
 import { SkeletonList } from '../../components/SkeletonLoader';
 import { useSEO } from '../../utils/seo';
 import { trackEvent } from '../../utils/analytics';
+import { productShareUrl, shareProduct } from '../../utils/share';
 import './listpr.css';
 
 export default function Listpr() {
@@ -39,6 +40,7 @@ export default function Listpr() {
   const [favorites, setFavorites] = useState(new Set());
   const [cartItemCount, setCartItemCount] = useState(0);
   const [toastMessage, setToastMessage] = useState('');
+  const [sharedPid, setSharedPid] = useState(null);
 
   useEffect(() => {
     const updateCount = () => {
@@ -58,6 +60,19 @@ export default function Listpr() {
       clearInterval(interval);
     };
   }, []);
+
+  const handleShareProduct = async (p, e) => {
+    e.stopPropagation();
+    const res = await shareProduct({
+      title: p.name,
+      url: productShareUrl(p.public_id || p.id),
+      itemId: String(p.public_id || p.id),
+      category: p.categoria_nombre || '',
+    });
+    if (!res) return;
+    setSharedPid(p.id);
+    setTimeout(() => setSharedPid(null), 2000);
+  };
 
   const handleAddToCart = (p, e) => {
     e.stopPropagation();
@@ -737,6 +752,21 @@ export default function Listpr() {
                       title={isFavorite ? 'Quitar de favoritos' : 'Añadir a favoritos'}
                     >
                       <Heart size={16} fill={isFavorite ? 'currentColor' : 'none'} />
+                    </button>
+
+                    {/* Botón Compartir */}
+                    <button
+                      type="button"
+                      onClick={(e) => handleShareProduct(p, e)}
+                      className={`absolute top-2 left-12 z-20 p-1.5 rounded-full shadow-md transition-all duration-300 ${
+                        sharedPid === p.id
+                          ? 'bg-emerald-600 text-white shadow-emerald-500/40'
+                          : 'bg-white/90 backdrop-blur-sm text-slate-400 hover:text-fuchsia-600 hover:bg-white border border-fuchsia-100'
+                      }`}
+                      title="Compartir producto"
+                      aria-label="Compartir producto"
+                    >
+                      {sharedPid === p.id ? <Check size={16} /> : <Share2 size={16} />}
                     </button>
 
                     {/* Badge de Descuento */}

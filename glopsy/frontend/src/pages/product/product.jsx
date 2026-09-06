@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ShoppingCart, Zap, Heart, ArrowLeft, Truck, ShieldCheck, Check, Star, MapPin, Store, Shield, Sparkles, ChevronDown, ChevronUp, Maximize2, X, ChevronLeft, ChevronRight, RotateCw } from 'lucide-react';
+import { ShoppingCart, Zap, Heart, ArrowLeft, Truck, ShieldCheck, Check, Star, MapPin, Store, Shield, Sparkles, ChevronDown, ChevronUp, Maximize2, X, ChevronLeft, ChevronRight, RotateCw, Share2 } from 'lucide-react';
 import api from '../../services/api';
 import { isLoggedIn } from '../../utils/session';
 import { useSEO } from '../../utils/seo';
 import { trackEvent } from '../../utils/analytics';
+import { productShareUrl, shareProduct } from '../../utils/share';
 import './product.css';
 import '@google/model-viewer';
 
@@ -103,6 +104,9 @@ export default function ProductDetail() {
   // Fold/Unfold states for long texts
   const [descExpanded, setDescExpanded] = useState(false);
   const [fullscreenOpen, setFullscreenOpen] = useState(false);
+
+  // Compartir producto
+  const [shareState, setShareState] = useState('idle'); // 'idle' | 'done'
 
   // Reseñas (solo compradores verificados)
   const [reviewsData, setReviewsData] = useState({ reviews: [], summary: null });
@@ -488,6 +492,19 @@ export default function ProductDetail() {
     navigate('/cart');
   };
 
+  const handleShare = async () => {
+    if (!product) return;
+    const res = await shareProduct({
+      title: product.name,
+      url: productShareUrl(product.public_id || product.id),
+      itemId: String(product.public_id || product.id),
+      category: product.categoria_nombre || product.category || '',
+    });
+    if (!res) return;
+    setShareState('done');
+    setTimeout(() => setShareState('idle'), 2500);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -794,7 +811,21 @@ export default function ProductDetail() {
               </h1>
 
               {/* Price (Suggested Price) */}
-              <div className="mb-6 bg-slate-50 p-4 rounded-2xl border border-fuchsia-100">
+              <div className="mb-6 bg-slate-50 p-4 rounded-2xl border border-fuchsia-100 relative">
+                <button
+                  type="button"
+                  onClick={handleShare}
+                  disabled={!product || product.tienda_activa === false}
+                  className={`absolute top-3 right-3 z-10 inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1.5 rounded-lg border transition-all shadow-sm disabled:opacity-50 ${
+                    shareState === 'done'
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-fuchsia-300 hover:text-fuchsia-600'
+                  }`}
+                  title="Compartir producto"
+                >
+                  {shareState === 'done' ? <Check size={13} /> : <Share2 size={13} />}
+                  <span className="hidden sm:inline">{shareState === 'done' ? '¡Compartido!' : 'Compartir'}</span>
+                </button>
                 {mainHasDiscount && (
                   <span className="text-sm text-slate-400 line-through block">
                     {formatPrice(mainBase)}
