@@ -6,17 +6,6 @@ const BASE_URL = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').r
 const MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
 const TIMEOUT_MS = Number(process.env.ASSISTANT_TIMEOUT_MS) || 20000;
 
-export const assistantConfigured = () => Boolean(API_KEY);
-
-const cleanText = (text, max = 500) =>
-  String(text || '')
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, max);
-
-const firstSrc = (x) => (typeof x === 'string' ? x : x?.src || '');
-
 // ------------------------------------------------------------------ Herramientas
 // El asistente consulta el catálogo real por SQL: sugerencias, comparativas y stock.
 
@@ -53,7 +42,6 @@ const searchCatalog = async ({ q = '', categoria = '', max = 6 } = {}) => {
     values
   );
   return rows.map((r) => ({
-    id: r.id,
     public_id: r.public_id,
     name: r.name,
     categoria: r.categoria_nombre || '',
@@ -76,11 +64,9 @@ const getProductFull = async (publicIdOrId) => {
   const r = rows[0];
   if (!r) return null;
   return {
-    id: r.id,
     public_id: r.public_id,
     name: r.name,
     categoria: r.categoria_nombre || '',
-    descripcion: cleanText(r.description, 400),
     precio: Number(r.suggested_price ?? r.base_price ?? 0),
     stock: Number(r.stock_total || 0),
     calificacion: Number(r.avg_rating || 0).toFixed(1),
@@ -138,7 +124,9 @@ const runTool = async (name, rawArgs) => {
     }
     return JSON.stringify({ error: 'Herramienta desconocida.' });
   } catch (err) {
-    return JSON.stringify({ error: `Error ejecutando ${name}: ${err.message}` });
+    // Nunca devolver detalles internos al modelo externo: solo un mensaje genérico.
+    console.error('[product-assistant] error en herramienta:', name, err.message);
+    return JSON.stringify({ error: 'No fue posible consultar el catálogo en este momento.' });
   }
 };
 
@@ -233,7 +221,7 @@ const fallbackAnswer = async ({ product, ciudad, lastMessage }) => {
     const key = msg.replace(/recomiendame|algo|similar|parecido|alternativa|de|menor|precio|mas|barato|otra|opcion|opciones|sugiere|un|una|del/g, ' ').replace(/\s+/g, ' ').trim() || product?.name;
     try {
       const results = await searchCatalog({ q: key, max: 4 });
-      const others = results.filter((r) => r.public_id !== (product?.public_id || product?.id));
+      const others = results.filter((r) => String(r.name || '').toLowerCase() !== String(product?.name || '').toLowerCase());
       if (!others.length) {
         return `No encontré productos muy parecidos a "${product?.name}" en este momento. Puedes explorar la categoría "${product?.categoria_nombre || product?.category || 'General'}" desde el catálogo.`;
       }
