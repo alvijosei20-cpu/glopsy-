@@ -33,14 +33,13 @@ const budgetInfo = (state) => ({
   remaining: Math.max(0, ASSISTANT_BUDGET_LIMIT - state.count),
 });
 
-const LIMIT_MSG = `Has agotado tus ${ASSISTANT_BUDGET_LIMIT} consultas con IA para este producto. Para más dudas escríbenos a soporte@glopsy.com 📩`;
-
 // ------------------------------------------------------------------ Herramientas
 // El asistente consulta el catálogo real por SQL: sugerencias, comparativas y stock.
 
 const CATALOG_SELECT = `
   SELECT p.id, p.public_id, p.name, p.base_price, p.suggested_price, p.stock_total,
          cat.nombre AS categoria_nombre,
+         t.nombres AS proveedor,
          COALESCE(p.status,'active') = 'active' AS activo,
          COALESCE(t.activa, true) AS tienda_activa,
          (SELECT COUNT(*)::int FROM reviews rv WHERE rv.product_id = p.id) AS review_count,
@@ -49,11 +48,12 @@ const CATALOG_SELECT = `
   LEFT JOIN categorias cat ON cat.id = p.categoria_id
   LEFT JOIN tiendas t ON t.usrid = p.tienda_id`;
 
-const searchCatalog = async ({ q = '', categoria = '', max = 6 } = {}) => {
+const searchCatalog = async ({ q = '', categoria = '', proveedor = '', max = 6 } = {}) => {
   const where = ["p.status = 'active'", "COALESCE(t.activa, true) = true"];
   const values = [];
   const cleanQ = String(q || '').trim().slice(0, 120);
   const cleanCat = String(categoria || '').trim().slice(0, 80);
+  const cleanProv = String(proveedor || '').trim().slice(0, 80);
   if (cleanQ) {
     values.push(`%${cleanQ}%`);
     where.push(`(p.name ILIKE $${values.length} OR p.description ILIKE $${values.length})`);
@@ -61,6 +61,10 @@ const searchCatalog = async ({ q = '', categoria = '', max = 6 } = {}) => {
   if (cleanCat) {
     values.push(cleanCat);
     where.push(`cat.nombre ILIKE $${values.length}`);
+  }
+  if (cleanProv) {
+    values.push(cleanProv);
+    where.push(`t.nombres ILIKE $${values.length}`);
   }
   const limit = Math.max(1, Math.min(8, Number(max) || 6));
   values.push(limit);
@@ -74,6 +78,7 @@ const searchCatalog = async ({ q = '', categoria = '', max = 6 } = {}) => {
     public_id: r.public_id,
     name: r.name,
     categoria: r.categoria_nombre || '',
+    proveedor: r.proveedor || '',
     precio: Number(r.suggested_price ?? r.base_price ?? 0),
     stock: Number(r.stock_total || 0),
     calificacion: Number(r.avg_rating || 0).toFixed(1),
@@ -96,6 +101,7 @@ const getProductFull = async (publicIdOrId) => {
     public_id: r.public_id,
     name: r.name,
     categoria: r.categoria_nombre || '',
+    proveedor: r.proveedor || '',
     precio: Number(r.suggested_price ?? r.base_price ?? 0),
     stock: Number(r.stock_total || 0),
     calificacion: Number(r.avg_rating || 0).toFixed(1),
@@ -111,12 +117,13 @@ const TOOLS = [
     function: {
       name: 'buscar_catalogo',
       description:
-        'Busca productos reales del catálogo de la tienda por nombre o categoría. Úsalo para sugerir alternativas, comparar precios, recomendar productos parecidos o confirmar disponibilidad.',
+        'Busca productos reales del catálogo de la tienda por nombre, categoría o proveedor/vendedor. Úsalo para sugerir alternativas iguales o parecidas, productos del mismo proveedor, comparar precios o confirmar disponibilidad.',
       parameters: {
         type: 'object',
         properties: {
           q: { type: 'string', description: 'Términos de búsqueda, p. ej. "zapatillas adidas", "sneakers negros"' },
           categoria: { type: 'string', description: 'Categoría exacta a filtrar (opcional), p. ej. "Ropa y Calzado"' },
+          proveedor: { type: 'string', description: 'Nombre del proveedor/vendedor a filtrar (opcional). P. ej. para recomendar otros productos del mismo vendedor' },
           max: { type: 'number', description: 'Cantidad máxima de resultados (1-8). Por defecto 6' },
         },
         required: ['q'],
@@ -178,21 +185,23 @@ Producto que está viendo el cliente:
 - Precio final: $${Math.round(precio).toLocaleString('es-CO')} COP${of ? ` (con ${of.tipo === 'porcentaje' ? `${of.valor}% de descuento` : `descuento de $${of.valor}`} aplicado)` : ''}
 - Stock: ${stock} ${stock === 1 ? 'unidad' : 'unidades'}${stock <= 0 ? ' — AGOTADO, sugiere alternativas' : ''}
 - Ciudad de envío del cliente: ${ciudad || 'no especificada'}
-- Tienda del producto: ${product?.tienda_nombre || 'Glopsy'}
+- Tienda del producto: ${product?.tienda_nombre || product?.proveedor || 'Glopsy'}
 - Calificación: ${Number(product?.avg_rating || 0).toFixed(1)}/5 (${Number(product?.review_count || 0)} reseñas)
 
 Puedes consultar TODO el catálogo real usando las herramientas buscar_catalogo y ver_producto para:
 - recomendar productos parecidos o en oferta,
+- recomendar OTROS productos del MISMO proveedor/vendedor (usa buscar_catalogo con proveedor = nombre de la tienda),
 - comparar precios y stock entre productos,
 - sugerir qué comprar según el presupuesto/interés del cliente.
 
 Reglas:
 1. Responde en español con respuestas CORTAS y PRECISAS (máx 3 frases; usa 1 viñeta si toca listar). Ve directo al dato que piden: sin rodeos ni repeticiones.
 2. NUNCA inventes precios, stock, descuentos ni envíos: usa las herramientas o la información anterior.
-3. Si el producto está agotado, ofrece alternativas consultando el catálogo.
-4. No des consejos médicos, financieros ni prometas resultados.
-5. Si te preguntan cómo comprar: indica que use "Comprar ahora" o "Agregar al carrito" y complete el pago; el envío se calcula según la ciudad en el checkout.
-6. Si no hay stock o el precio no está claro, dilo y sugiere preguntar al vendedor.`;
+3. Cuando sugieras productos del catálogo, escríbelos enlaces clicables así: [Nombre del producto](/product/public_id). Para abrir el catálogo usa [Catálogo](/listpr).
+4. Si el producto está agotado, ofrece alternativas consultando el catálogo.
+5. No des consejos médicos, financieros ni prometas resultados.
+6. Si te preguntan cómo comprar: indica que use "Comprar ahora" o "Agregar al carrito" y complete el pago; el envío se calcula según la ciudad en el checkout.
+7. Si no hay stock o el precio no está claro, dilo y sugiere preguntar al vendedor.`;
 };
 
 // ------------------------------------------------------------------ Chat con tools
@@ -247,18 +256,27 @@ const fallbackAnswer = async ({ product, ciudad, lastMessage }) => {
     if (rc > 0) return `"${product?.name}" tiene ${Number(product?.avg_rating || 0).toFixed(1)}/5 estrellas basado en ${rc} ${rc === 1 ? 'reseña' : 'reseñas'}. Puedes leerlas más abajo en la página.`;
     return `Este producto aún no tiene reseñas. Si lo compras, podrás ser el primero en opinar tras recibirlo.`;
   }
-  if (mentions('recomiendame algo similar', 'alternativa', 'parecido', 'similar', 'opciones', 'otro', 'recomiendame', 'sugiere')) {
+  if (mentions('recomiendame algo similar', 'alternativa', 'parecido', 'similar', 'opciones', 'otro', 'recomiendame', 'sugiere', 'mismo proveedor', 'misma tienda', 'mismo vendedor', 'de la misma tienda', 'del mismo vendedor', 'del mismo proveedor')) {
     const key = msg.replace(/recomiendame|algo|similar|parecido|alternativa|de|menor|precio|mas|barato|otra|opcion|opciones|sugiere|un|una|del/g, ' ').replace(/\s+/g, ' ').trim() || product?.name;
+    const wantSameProvider = mentions('mismo proveedor', 'misma tienda', 'mismo vendedor', 'de la misma tienda', 'del mismo vendedor', 'del mismo proveedor');
     try {
-      const results = await searchCatalog({ q: key, max: 4 });
+      const prov = product?.proveedor || product?.tienda_nombre || '';
+      // Del mismo proveedor siempre que se pida, sino parecidos por nombre.
+      const results = wantSameProvider && prov
+        ? await searchCatalog({ proveedor: prov, max: 4 })
+        : await searchCatalog({ q: key, max: 4 });
       const others = results.filter((r) => String(r.name || '').toLowerCase() !== String(product?.name || '').toLowerCase());
+      const head = wantSameProvider && prov ? `Otros productos del proveedor **${prov}**:` : 'Alternativas parecidas:';
       if (!others.length) {
-        return `No encontré productos muy parecidos a "${product?.name}" en este momento. Puedes explorar la categoría "${product?.categoria_nombre || product?.category || 'General'}" desde el catálogo.`;
+        return `No encontré ${wantSameProvider ? 'otros productos del mismo proveedor' : 'productos muy parecidos'} a "${product?.name}" en este momento. Explora más en [Catálogo](/listpr).`;
       }
-      const lines = others.map((r) => `• ${r.name} — ${fmtCOP(r.precio)}${r.stock > 0 ? ` (${r.stock} uds)` : ' (agotado)'}${r.calificacion && Number(r.calificacion) > 0 ? ` ⭐${r.calificacion}` : ''}`).join('\n');
-      return `Alternativas en el catálogo:\n${lines}\n\nToca el producto para verlo en detalle.`;
+      const lines = others
+        .slice(0, 4)
+        .map((r) => `• ${fmtCOP(r.precio)} · [${r.name}](${r.url})${r.stock > 0 ? '' : ' · agotado'}${r.calificacion && Number(r.calificacion) > 0 ? ` · ⭐${r.calificacion}` : ''}`)
+        .join('\n');
+      return `${head}\n${lines}\n\n¿Quieres ver todo? [Catálogo](/listpr)`;
     } catch {
-      return `No pude consultar las alternativas ahora. Explora la categoría "${product?.categoria_nombre || product?.category || 'General'}" desde el catálogo.`;
+      return `No pude consultar las alternativas ahora. Explora la categoría "${product?.categoria_nombre || product?.category || 'General'}" desde [Catálogo](/listpr).`;
     }
   }
   if (mentions('hola', 'buenas', 'hey', 'que tal', 'buenos dias', 'buenas tardes', 'buenas noches')) {
@@ -311,9 +329,10 @@ export const productAssistantChat = async ({ product, ciudad = '', messages = []
     return { ok: true, reply, fallback: true, budget: budgetInfo(budget) };
   }
 
-  // Límite alcanzado → no se llama a la IA.
+  // Límite de consultas IA alcanzado → se sigue ayudando con FAQ local (gratis, sin LLM).
   if (budgetKey && budget.count >= ASSISTANT_BUDGET_LIMIT) {
-    return { ok: true, reply: LIMIT_MSG, budget: budgetInfo(budget) };
+    const reply = await fallbackAnswer({ product, ciudad, lastMessage: history[history.length - 1].content });
+    return { ok: true, reply, fallback: true, budget: budgetInfo(budget) };
   }
 
   const msgs = [{ role: 'system', content: buildSystem(product, ciudad) }, ...history];

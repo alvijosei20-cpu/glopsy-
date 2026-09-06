@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Bot, X, Send, Sparkles, Loader2 } from 'lucide-react';
 import api from '../services/api';
 import { useUserCity } from '../utils/location';
@@ -7,11 +8,52 @@ const QUICK_PROMPTS = [
   '¿Vale la pena comprarlo?',
   '¿Cuánto cuesta el envío?',
   'Recomiéndame algo similar',
-  '¿Está en stock?',
+  'Otros productos del mismo proveedor',
 ];
 
 const MAX_CHARS = 300;
 const BUDGET_DEFAULT = { limit: 3, used: 0, remaining: 3 };
+
+// Convierte [nombre](/product/x) y rutas /product/... o /listpr en enlaces SPA.
+const ROUTE_RE = /\[([^\]]+)\]\((\/product\/[A-Za-z0-9_-]{1,80}|\/listpr[^)\s]*)\)|(\/product\/[A-Za-z0-9_-]{1,80}|\/listpr)\b/g;
+
+function inlineLine(line, keyBase) {
+  const out = [];
+  let last = 0;
+  let m;
+  let k = 0;
+  ROUTE_RE.lastIndex = 0;
+  while ((m = ROUTE_RE.exec(line))) {
+    if (m.index > last) out.push(line.slice(last, m.index));
+    const path = '/' + (m[2] || m[3]);
+    const label = m[1] || m[2] || m[3];
+    out.push(
+      <Link
+        key={`${keyBase}-l${k++}`}
+        to={path}
+        className="text-fuchsia-700 font-bold underline decoration-fuchsia-300 underline-offset-2 hover:text-fuchsia-900 transition-colors"
+        title={path}
+      >
+        {label}
+      </Link>
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < line.length) out.push(line.slice(last));
+  return out;
+}
+
+function RichText({ text }) {
+  return (
+    <span>
+      {String(text || '').split('\n').map((line, i) => (
+        <span key={i} className="block">
+          {inlineLine(line, i)}
+        </span>
+      ))}
+    </span>
+  );
+}
 
 export default function ProductAssistant({ product }) {
   const ciudad = useUserCity();
@@ -31,7 +73,7 @@ export default function ProductAssistant({ product }) {
 
   const send = async (text) => {
     const clean = String(text || '').trim().slice(0, MAX_CHARS);
-    if (!clean || busy || !pid || budget.remaining <= 0) return;
+    if (!clean || busy || !pid) return;
     setError('');
     setInput('');
     const history = [...messages, { role: 'user', content: clean }];
@@ -43,7 +85,7 @@ export default function ProductAssistant({ product }) {
         ciudad,
       });
       if (data?.ok && data.reply) {
-        setMessages((prev) => [...prev, { role: 'bot', content: data.reply }]);
+        setMessages((prev) => [...prev, { role: 'bot', content: data.reply, local: !!data.fallback }]);
       } else {
         setError(data?.message || 'No obtuve respuesta. Intenta de nuevo.');
       }
@@ -72,110 +114,122 @@ export default function ProductAssistant({ product }) {
         </button>
       )}
 
-      {/* Panel */}
+      {/* Modal con capa oscura translúcida */}
       {open && (
-        <div className="fixed bottom-0 right-0 sm:bottom-5 sm:right-5 z-50 w-full sm:w-96 flex flex-col bg-white border border-fuchsia-100 shadow-2xl sm:rounded-2xl overflow-hidden h-[75dvh] sm:h-[560px] max-h-[85dvh]">
-          {/* Header */}
-          <div className="bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white px-4 py-3 flex items-center gap-3 shrink-0">
-            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-              <Bot size={18} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-extrabold leading-tight flex items-center gap-1.5">
-                GlopsyBot
-                <span className="inline-flex items-center gap-1 text-[9px] font-bold bg-white/20 px-1.5 py-0.5 rounded-full uppercase tracking-wide">
-                  <Sparkles size={9} /> IA
-                </span>
-              </p>
-              <p className="text-[11px] text-white/80 truncate">
-                Te ayudo con {product?.name || 'este producto'} y todo el catálogo
-              </p>
-            </div>
-            <button
-              onClick={() => setOpen(false)}
-              className="p-1.5 rounded-lg hover:bg-white/15 transition-colors shrink-0"
-              aria-label="Cerrar chat"
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          {/* Mensajes */}
-          <div className="flex-1 overflow-y-auto px-3.5 py-4 space-y-3 bg-slate-50">
-            <div className="flex items-start gap-2">
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-fuchsia-600 to-pink-600 text-white flex items-center justify-center shrink-0 mt-0.5">
-                <Bot size={14} />
+        <div
+          className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => setOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Asistente GlopsyBot"
+        >
+          <div
+            className="bg-white w-full sm:w-[400px] max-w-full sm:rounded-2xl rounded-t-3xl shadow-2xl overflow-hidden flex flex-col h-[82dvh] sm:h-[560px] sm:max-h-[90dvh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white px-4 py-3 flex items-center gap-3 shrink-0">
+              <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                <Bot size={18} />
               </div>
-              <div className="bg-white border border-fuchsia-100 rounded-2xl rounded-tl-sm px-3.5 py-2.5 text-xs text-slate-700 leading-relaxed shadow-sm max-w-[85%]">
-                ¡Hola! 👋 Soy el asistente con IA de Glopsy. Pregúntame sobre{' '}
-                <b>{product?.name}</b>, stock, precios o pide recomendaciones de todo el catálogo.
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-extrabold leading-tight flex items-center gap-1.5">
+                  GlopsyBot
+                  <span className="inline-flex items-center gap-1 text-[9px] font-bold bg-white/20 px-1.5 py-0.5 rounded-full uppercase tracking-wide">
+                    <Sparkles size={9} /> IA
+                  </span>
+                </p>
+                <p className="text-[11px] text-white/80 truncate">
+                  Te ayudo con {product?.name || 'este producto'} y todo el catálogo
+                </p>
               </div>
-            </div>
-
-            {messages.length === 0 && !busy && budget.remaining > 0 && (
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {QUICK_PROMPTS.map((q) => (
-                  <button
-                    key={q}
-                    type="button"
-                    onClick={() => send(q)}
-                    className="px-2.5 py-1.5 rounded-xl bg-white border border-fuchsia-200 text-fuchsia-700 text-[11px] font-semibold hover:bg-fuchsia-50 transition-colors"
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {messages.map((m, i) => (
-              <div
-                key={i}
-                className={`flex items-start gap-2 ${m.role === 'user' ? 'justify-end' : ''}`}
+              <button
+                onClick={() => setOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-white/15 transition-colors shrink-0"
+                aria-label="Cerrar chat"
               >
-                {m.role === 'bot' && (
-                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-fuchsia-600 to-pink-600 text-white flex items-center justify-center shrink-0 mt-0.5">
-                    <Bot size={14} />
-                  </div>
-                )}
-                <div
-                  className={`rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed whitespace-pre-wrap max-w-[85%] ${
-                    m.role === 'user'
-                      ? 'bg-fuchsia-600 text-white rounded-tr-sm'
-                      : 'bg-white border border-fuchsia-100 text-slate-700 rounded-tl-sm shadow-sm'
-                  }`}
-                >
-                  {m.content}
-                </div>
-              </div>
-            ))}
+                <X size={16} />
+              </button>
+            </div>
 
-            {busy && (
+            {/* Mensajes */}
+            <div className="flex-1 overflow-y-auto px-3.5 py-4 space-y-3 bg-slate-50">
               <div className="flex items-start gap-2">
                 <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-fuchsia-600 to-pink-600 text-white flex items-center justify-center shrink-0 mt-0.5">
                   <Bot size={14} />
                 </div>
-                <div className="bg-white border border-fuchsia-100 rounded-2xl rounded-tl-sm px-3.5 py-3 shadow-sm inline-flex items-center gap-2">
-                  <Loader2 size={13} className="animate-spin text-fuchsia-600" />
-                  <span className="text-[11px] text-slate-500 font-medium">Consultando el catálogo…</span>
+                <div className="bg-white border border-fuchsia-100 rounded-2xl rounded-tl-sm px-3.5 py-2.5 text-xs text-slate-700 leading-relaxed shadow-sm max-w-[85%]">
+                  ¡Hola! 👋 Pregúntame sobre <b>{product?.name}</b>, pide sugerencias parecidas o de su mismo
+                  proveedor. Puedo recomendarte productos con enlaces directos.
                 </div>
               </div>
-            )}
 
-            {error && (
-              <p className="text-[11px] font-semibold text-pink-600 bg-pink-50 border border-pink-200 rounded-xl px-3 py-2">
-                {error}
-              </p>
-            )}
-            <div ref={bottomRef} />
-          </div>
+              {messages.length === 0 && !busy && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {QUICK_PROMPTS.map((q) => (
+                    <button
+                      key={q}
+                      type="button"
+                      onClick={() => send(q)}
+                      className="px-2.5 py-1.5 rounded-xl bg-white border border-fuchsia-200 text-fuchsia-700 text-[11px] font-semibold hover:bg-fuchsia-50 transition-colors"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              )}
 
-          {/* Input */}
-          <div className="border-t border-fuchsia-100 p-2.5 bg-white shrink-0">
-            {budget.remaining <= 0 ? (
-              <p className="text-center text-[11px] font-bold text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-3 py-3">
-                💬 Has agotado las {budget.limit} consultas con IA para este producto. Para más dudas escríbenos a soporte@glopsy.com
-              </p>
-            ) : (
+              {messages.map((m, i) => (
+                <div key={i} className={`flex items-start gap-2 ${m.role === 'user' ? 'justify-end' : ''}`}>
+                  {m.role === 'bot' && (
+                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-fuchsia-600 to-pink-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+                      <Bot size={14} />
+                    </div>
+                  )}
+                  <div
+                    className={`rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed max-w-[85%] ${
+                      m.role === 'user'
+                        ? 'bg-fuchsia-600 text-white rounded-tr-sm'
+                        : 'bg-white border border-fuchsia-100 text-slate-700 rounded-tl-sm shadow-sm'
+                    }`}
+                  >
+                    <RichText text={m.content} />
+                    {m.role === 'bot' && m.local && (
+                      <span className="mt-1.5 inline-block text-[9px] font-bold text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">
+                        Respuesta básica
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {busy && (
+                <div className="flex items-start gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-fuchsia-600 to-pink-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+                    <Bot size={14} />
+                  </div>
+                  <div className="bg-white border border-fuchsia-100 rounded-2xl rounded-tl-sm px-3.5 py-3 shadow-sm inline-flex items-center gap-2">
+                    <Loader2 size={13} className="animate-spin text-fuchsia-600" />
+                    <span className="text-[11px] text-slate-500 font-medium">Consultando el catálogo…</span>
+                  </div>
+                </div>
+              )}
+
+              {error && (
+                <p className="text-[11px] font-semibold text-pink-600 bg-pink-50 border border-pink-200 rounded-xl px-3 py-2">
+                  {error}
+                </p>
+              )}
+              <div ref={bottomRef} />
+            </div>
+
+            {/* Input */}
+            <div className="border-t border-fuchsia-100 p-2.5 bg-white shrink-0">
+              {budget.remaining <= 0 && (
+                <p className="text-center text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-2">
+                  Consultas IA agotadas para este producto · sigo ayudándote con respuestas básicas 💬
+                </p>
+              )}
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -199,16 +253,15 @@ export default function ProductAssistant({ product }) {
                   <Send size={15} />
                 </button>
               </form>
-            )}
-            {budget.remaining <= 0 ? (
-              <p className="text-[9px] text-slate-400 text-center mt-1.5">
-                Respuestas generadas por IA. Pueden tener errores.
+              <p className="text-[9px] text-slate-400 text-center mt-1.5 flex items-center justify-center gap-2">
+                <span>{input.length}/{MAX_CHARS}</span>
+                {budget.remaining > 0 ? (
+                  <span>Consultas IA restantes: {budget.remaining}</span>
+                ) : (
+                  <span>Modo respuestas básicas</span>
+                )}
               </p>
-            ) : (
-              <p className="text-[9px] text-slate-400 text-center mt-1.5 flex items-center justify-center gap-1">
-                <span>{input.length}/{MAX_CHARS}</span> · <span>Consultas IA restantes: {budget.remaining}</span>
-              </p>
-            )}
+            </div>
           </div>
         </div>
       )}

@@ -1,3 +1,4 @@
+import { pool } from '../db.js';
 import { cleanString } from '../utils/validation.js';
 import { getProductByPublicId } from '../services/product.service.js';
 import { productAssistantChat } from '../services/product.assistant.service.js';
@@ -27,6 +28,17 @@ export const productAssistant = async (req, res) => {
     if (!product) {
       return res.status(404).json({ ok: false, message: 'Producto no encontrado en el catálogo.' });
     }
+
+    // El detalle no trae el proveedor; se adjunta para sugerencias del mismo vendedor.
+    try {
+      const { rows } = await pool.query(
+        `SELECT t.nombres AS proveedor
+         FROM produc p JOIN tiendas t ON t.usrid = p.tienda_id
+         WHERE p.public_id = $1 LIMIT 1`,
+        [pid]
+      );
+      if (rows[0]?.proveedor) product.proveedor = rows[0].proveedor;
+    } catch {}
 
     const result = await productAssistantChat({ product, ciudad, messages, budgetKey });
     return res.json(result);
