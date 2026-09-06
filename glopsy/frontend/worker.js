@@ -1,5 +1,152 @@
 const BACKEND = 'glopsy-back.onrender.com';
 
+// ---------- Open Graph dinámico para crawlers (redes sociales / bots) ----------
+// Los crawlers (WhatsApp, Facebook, Telegram, LinkedIn, X…) NO ejecutan JavaScript,
+// así que estos tags deben entregarse como HTML estático desde el edge.
+
+const CRAWLER_RE =
+  /whatsapp|facebookexternalhit|facebot|meta-externalagent|twitterbot|linkedinbot|pinterest|tumblr|slackbot|telegrambot|discordbot|vkshare|embedly|quora link preview|outbrain|snapchat|viber|line|skypeuripreview|bitlybot|redditbot|tiktok|instagram|googlebot|bingbot|yandexbot|duckduckbot|baiduspider|semrushbot|ahrefsbot|petalbot|applebot/i;
+
+const esc = (s) =>
+  String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const cleanText = (text, max = 158) =>
+  String(text || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
+
+const absUrl = (src, origin) => {
+  if (!src) return '';
+  const s = String(src);
+  if (/^https?:\/\//i.test(s)) return s;
+  if (s.startsWith('//')) return `https:${s}`;
+  if (s.startsWith('/')) return origin + s;
+  return `${origin}/${s}`;
+};
+
+function ogDoc({ title, description, image, url, origin, type = 'website', price, availability, jsonLd }) {
+  const name = cleanText(title, 90) || 'Glopsy';
+  const desc = cleanText(description);
+  const fullUrl = url.startsWith('http') ? url : origin + url;
+  const img = absUrl(image, origin);
+
+  const extra = [];
+  if (type === 'product') {
+    if (price !== null && price !== undefined && price !== '') {
+      extra.push(`<meta property="product:price:amount" content="${esc(price)}" />
+  <meta property="product:price:currency" content="COP" />`);
+    }
+    if (availability) extra.push(`<meta property="og:availability" content="${esc(availability)}" />`);
+  }
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta http-equiv="refresh" content="0; url=${esc(fullUrl)}" />
+<title>${esc(name)}${name.includes('Glopsy') ? '' : ' | Glopsy'}</title>
+<meta name="description" content="${esc(desc)}" />
+<link rel="canonical" href="${esc(fullUrl)}" />
+<meta property="og:site_name" content="Glopsy" />
+<meta property="og:title" content="${esc(name)}" />
+<meta property="og:description" content="${esc(desc)}" />
+<meta property="og:type" content="${esc(type)}" />
+<meta property="og:url" content="${esc(fullUrl)}" />
+<meta property="og:image" content="${esc(img)}" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+${extra.join('\n')}
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="${esc(name)}" />
+<meta name="twitter:description" content="${esc(desc)}" />
+<meta name="twitter:image" content="${esc(img)}" />
+${jsonLd ? `<script type="application/ld+json">${JSON.stringify(jsonLd)}</script>` : ''}
+</head>
+<body style="margin:0;font-family:sans-serif;background:#faf5ff;display:flex;align-items:center;justify-content:center;min-height:100vh">
+  <p style="color:#9d174d;font-size:14px">Redirigiendo a Glopsy…</p>
+</body>
+</html>`;
+}
+
+const ogHeaders = {
+  'Content-Type': 'text/html; charset=utf-8',
+  'Cache-Control': 'public, max-age=600',
+};
+
+async function handleCrawlerHTML(request, url, env) {
+  const pathname = url.pathname;
+
+  // ---- Página de producto: OG con imagen real, siempre al día (dinámico) ----
+  if (pathname.startsWith('/product/')) {
+    const pid = pathname.slice('/product/'.length);
+    if (!pid || pid.includes('/') || !/^[A-Za-z0-9_-]{1,80}$/.test(pid)) return null;
+
+    try {
+      const res = await fetch(`https://${BACKEND}/api/product/${encodeURIComponent(pid)}`, {
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const p = data?.product;
+      if (!p) return null;
+
+      const imgs = Array.isArray(p.images) ? p.images.map((i) => (typeof i === 'string' ? i : i?.src || '')).filter(Boolean) : [];
+      const image = imgs[0] || '/og-image.png';
+      const base = Number(p.suggested_price ?? p.base_price ?? 0);
+      let price = base;
+      const of = p.oferta_activa;
+      if (of) {
+        if (of.tipo === 'porcentaje') price = base * (1 - Number(of.valor || 0) / 100);
+        else if (of.tipo === 'monto_fijo') price = Math.max(0, base - Number(of.valor || 0));
+      }
+      const inStock = Number(p.stock_total || 0) > 0 && p.tienda_activa !== false;
+      const productUrl = `${url.origin}/product/${pid}`;
+
+      return new Response(
+        ogDoc({
+          title: p.name,
+          description: p.description || 'Compra este producto en Glopsy con pagos seguros y envíos a todo Colombia.',
+          image,
+          url: productUrl,
+          origin: url.origin,
+          type: 'product',
+          price: Math.max(0, Number(price || base)).toFixed(0),
+          availability: inStock ? 'InStock' : 'OutOfStock',
+          jsonLd: {
+            '@context': 'https://schema.org',
+            '@type': 'Product',
+            name: p.name,
+            description: cleanText(p.description),
+            image: absUrl(image, url.origin),
+            offers: {
+              '@type': 'Offer',
+              priceCurrency: 'COP',
+              price: Math.max(0, Number(price || base)).toFixed(0),
+              availability: inStock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+              url: productUrl,
+            },
+          },
+        }),
+        { headers: ogHeaders }
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+
 const PANIC_HTML = `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -195,6 +342,14 @@ export default {
     }
 
     if (!url.pathname.startsWith('/api/')) {
+      // OG dinámico para crawlers de redes sociales / buscadores
+      if (request.method === 'GET' || request.method === 'HEAD') {
+        const ua = request.headers.get('user-agent') || '';
+        if (CRAWLER_RE.test(ua)) {
+          const og = await handleCrawlerHTML(request, url, env);
+          if (og) return og;
+        }
+      }
       return env.ASSETS.fetch(request);
     }
 
