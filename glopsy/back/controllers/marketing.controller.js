@@ -256,7 +256,7 @@ export const publishFacebook = async (req, res) => {
     }
 
     const { rows } = await pool.query(
-      `SELECT s.payload, p.images
+      `SELECT s.payload, p.images, p.suggested_price, p.base_price, p.name
        FROM marketing_suggestions s
        LEFT JOIN produc p ON p.id = s.product_id
        WHERE s.id = $1 AND s.tienda_id = $2
@@ -271,7 +271,28 @@ export const publishFacebook = async (req, res) => {
     const hashtags = String(payload.hashtags || '').trim();
     const message = hashtags ? `${texto}\n\n${hashtags}` : texto;
     const firstSrc = (x) => (typeof x === 'string' ? x : x?.src || '');
-    const photoUrl = firstSrc(payload.imagen) || (images.length ? firstSrc(images[0]) : '') || null;
+    let photoUrl = firstSrc(payload.imagen) || (images.length ? firstSrc(images[0]) : '') || null;
+
+    // Intenta publicar con un banner generado (foto real + texto). Si falla, usa la foto simple.
+    try {
+      const bannerSvc = await import('../services/banners.service.js');
+      const base = Number(rows[0]?.suggested_price ?? rows[0]?.base_price ?? 0);
+      const buf = await bannerSvc.generateBanner({
+        name: rows[0]?.name || suggestion.titulo || 'Descubre este producto',
+        category: '',
+        price: base > 0 ? `$${Math.round(base).toLocaleString('es-CO')} COP` : '',
+        badge: payload.badge || '',
+        brand: 'Glopsy',
+        images,
+        format: 'feed',
+      });
+      const key = bannerSvc.storeBanner({ name: suggestion.titulo, images }, buf);
+      const proto = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
+      const host = req.headers['x-forwarded-host'] || req.get('host');
+      photoUrl = `${proto}://${host}/api/banners/${key}.png`;
+    } catch (bannerErr) {
+      console.warn('[marketing] banner no generado, se usa la foto del producto:', bannerErr.message);
+    }
 
     const page = await getFacebookPageForTienda(tiendaId);
     if (!page) {

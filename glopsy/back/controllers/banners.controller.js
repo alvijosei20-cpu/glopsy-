@@ -1,8 +1,10 @@
 import { pool } from '../db.js';
 import { cleanString } from '../utils/validation.js';
-import { generateBanner, storeBanner, getBanner, FORMATS } from '../services/banners.service.js';
 
-const publicBase = (req) => {
+// Carga diferida para no romper el arranque si sharp no está instalado (p.ej. dev local).
+const svc = () => import('../services/banners.service.js');
+
+export const publicBase = (req) => {
   const proto = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
   const host = req.headers['x-forwarded-host'] || req.get('host');
   return `${proto}://${host}`;
@@ -10,13 +12,14 @@ const publicBase = (req) => {
 
 // Genera un banner publicitario con la foto real de un producto de la tienda.
 export const generateStoreBanner = async (req, res) => {
-  const tiendaId = req.auth.userId;
-  const format = FORMATS.includes(String(req.body?.format || '')) ? String(req.body.format) : 'feed';
-  const publicId = cleanString(req.body?.public_id, { maxLength: 100 });
-  const headline = cleanString(req.body?.headline, { maxLength: 100 });
-  const badge = cleanString(req.body?.badge, { maxLength: 30 });
-
   try {
+    const { generateBanner, storeBanner, FORMATS } = await svc();
+    const tiendaId = req.auth.userId;
+    const format = FORMATS.includes(String(req.body?.format || '')) ? String(req.body.format) : 'feed';
+    const publicId = cleanString(req.body?.public_id, { maxLength: 100 });
+    const headline = cleanString(req.body?.headline, { maxLength: 100 });
+    const badge = cleanString(req.body?.badge, { maxLength: 30 });
+
     const values = [tiendaId];
     let sql = `
       SELECT p.id, p.public_id, p.name, p.description, p.images, p.suggested_price, p.base_price,
@@ -68,9 +71,15 @@ export const generateStoreBanner = async (req, res) => {
 export const serveBanner = async (req, res) => {
   const key = String(req.params.key || '');
   if (!/^[a-f0-9]{40}$/i.test(key)) return res.status(404).json({ ok: false, message: 'Banner no encontrado.' });
-  const buffer = getBanner(key);
-  if (!buffer) return res.status(404).json({ ok: false, message: 'Banner expirado o no encontrado.' });
-  res.set('Content-Type', 'image/png');
-  res.set('Cache-Control', 'public, max-age=300');
-  return res.send(buffer);
+  try {
+    const { getBanner } = await svc();
+    const buffer = getBanner(key);
+    if (!buffer) return res.status(404).json({ ok: false, message: 'Banner expirado o no encontrado.' });
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=300');
+    return res.send(buffer);
+  } catch (err) {
+    console.error('Error sirviendo banner:', err.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible servir el banner.' });
+  }
 };
