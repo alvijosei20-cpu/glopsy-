@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { getProductById, saveProduct, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, createPreferenceController, processMpPaymentController, processSavedCardPaymentController, getTiposEmpaqueController, getUserComprasController, searchOrdersController, getOrderByHashController, getOrderReviewsStatusController, recordPurchaseController, cancelOrderController, updateOrderAddressController, getProductReviewsController, getUserReviewController, addReviewController, updateReviewController, deleteReviewController, getMyProductsManagement, pauseProduct, activateProduct, deleteProduct, addProductImages, updateProductName } from '../controllers/product.controller.js';
+import { productAssistant } from '../controllers/product.assistant.controller.js';
 import { requireAuth, optionalAuth } from '../middlewares/auth.js';
 import { tiendaLimiter, heavyLimiter } from '../middlewares/limiters.js';
 
@@ -53,6 +54,9 @@ router.post('/create-preference', heavyLimiter, createPreferenceController);
 router.post('/process-mp-payment', heavyLimiter, optionalAuth, processMpPaymentController);
 router.post('/process-saved-card-payment', requireAuth, heavyLimiter, processSavedCardPaymentController);
 router.post('/record-purchase', requireAuth, recordPurchaseController);
+
+// Endpoint: Asistente IA de la ficha de producto (consulta el catálogo real)
+router.post('/:id/assistant', heavyLimiter, productAssistant);
 
 // Endpoint: GET /api/product/:id (dynamic route at the end)
 router.get('/:id', getProductById);

@@ -8,6 +8,7 @@ import { trackEvent } from '../../utils/analytics';
 import { productShareUrl, shareProduct } from '../../utils/share';
 import { useUserCity } from '../../utils/location';
 import LocationPicker from '../../components/LocationPicker';
+import ProductAssistant from '../../components/ProductAssistant';
 import './product.css';
 import '@google/model-viewer';
 
@@ -1173,6 +1174,8 @@ export default function ProductDetail() {
           )}
         </div>
       )}
+
+      {product && <ProductAssistant key={product.public_id || product.id} product={product} />}
     </div>
   );
 }
