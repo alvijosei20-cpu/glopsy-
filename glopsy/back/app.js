@@ -18,6 +18,7 @@ import statsRoutes from './routes/stats.routes.js';
 import notificationsRoutes from './routes/notifications.routes.js';
 import pushRoutes from './routes/push.routes.js';
 import homeRoutes from './routes/home.routes.js';
+import bannersRoutes from './routes/banners.routes.js';
 
 const app = express();
 
@@ -63,5 +64,6 @@ app.use('/api/stats', statsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/push', pushRoutes);
 app.use('/api/home', homeRoutes);
+app.use('/api/banners', bannersRoutes);
 
 export default app;
