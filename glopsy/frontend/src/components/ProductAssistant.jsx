@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Bot, X, Send, Sparkles, Loader2 } from 'lucide-react';
 import api from '../services/api';
 import { useUserCity } from '../utils/location';
@@ -14,10 +14,11 @@ const QUICK_PROMPTS = [
 const MAX_CHARS = 300;
 const BUDGET_DEFAULT = { limit: 3, used: 0, remaining: 3 };
 
-// Convierte [nombre](/product/x) y rutas /product/... o /listpr en enlaces SPA.
+// Convierte [nombre](/product/x) y rutas /product/... o /listpr en enlaces que
+// navegan dentro de la app (onLink recibe la ruta destino y cierra el modal).
 const ROUTE_RE = /\[([^\]]+)\]\((\/product\/[A-Za-z0-9_-]{1,80}|\/listpr[^)\s]*)\)|(\/product\/[A-Za-z0-9_-]{1,80}|\/listpr)\b/g;
 
-function inlineLine(line, keyBase) {
+function inlineLine(line, keyBase, onLink) {
   const out = [];
   let last = 0;
   let m;
@@ -28,14 +29,19 @@ function inlineLine(line, keyBase) {
     const path = '/' + (m[2] || m[3]);
     const label = m[1] || m[2] || m[3];
     out.push(
-      <Link
+      <button
         key={`${keyBase}-l${k++}`}
-        to={path}
-        className="text-fuchsia-700 font-bold underline decoration-fuchsia-300 underline-offset-2 hover:text-fuchsia-900 transition-colors"
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onLink(path);
+        }}
+        className="inline text-fuchsia-700 font-bold underline decoration-fuchsia-300 underline-offset-2 hover:text-fuchsia-900 transition-colors cursor-pointer"
         title={path}
       >
         {label}
-      </Link>
+      </button>
     );
     last = m.index + m[0].length;
   }
@@ -43,12 +49,12 @@ function inlineLine(line, keyBase) {
   return out;
 }
 
-function RichText({ text }) {
+function RichText({ text, onLink }) {
   return (
     <span>
       {String(text || '').split('\n').map((line, i) => (
         <span key={i} className="block">
-          {inlineLine(line, i)}
+          {inlineLine(line, i, onLink)}
         </span>
       ))}
     </span>
@@ -56,6 +62,7 @@ function RichText({ text }) {
 }
 
 export default function ProductAssistant({ product }) {
+  const navigate = useNavigate();
   const ciudad = useUserCity();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -66,6 +73,11 @@ export default function ProductAssistant({ product }) {
   const bottomRef = useRef(null);
 
   const pid = String(product?.public_id || product?.id || '');
+
+  const go = (path) => {
+    setOpen(false);
+    navigate(path);
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -193,7 +205,7 @@ export default function ProductAssistant({ product }) {
                         : 'bg-white border border-fuchsia-100 text-slate-700 rounded-tl-sm shadow-sm'
                     }`}
                   >
-                    <RichText text={m.content} />
+                    <RichText text={m.content} onLink={go} />
                     {m.role === 'bot' && m.local && (
                       <span className="mt-1.5 inline-block text-[9px] font-bold text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">
                         Respuesta básica
