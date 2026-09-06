@@ -66,13 +66,20 @@ const KpiChip = ({ icon: Icon, label, value, sub, accent }) => (
   </Card>
 );
 
+const firstSrc = (x) => (typeof x === 'string' ? x : x && typeof x === 'object' ? x.src || '' : '');
+
 const SuggestionCard = ({ s, onAction, busy, fbConnected }) => {
   const [copied, setCopied] = useState(false);
   const [urlEditing, setUrlEditing] = useState(false);
   const [urlDraft, setUrlDraft] = useState('');
+  const [imgFailed, setImgFailed] = useState(false);
   const p = s.payload || {};
   const productName = s.product_name || (p.productName ? p.productName : null);
-  const primaryImage = s.product_images?.length ? s.product_images[0] : null;
+  const productImages = Array.isArray(s.product_images)
+    ? s.product_images.map(firstSrc).filter(Boolean)
+    : [];
+  const imgSrc = productImages[0] || firstSrc(p.imagen) || '';
+  const primaryImage = imgSrc && !imgFailed ? imgSrc : null;
   const isCopiable = s.tipo === 'social' || s.tipo === 'email';
   const dests = [
     { url: '/listpr', label: 'Catálogo' },
@@ -100,10 +107,29 @@ const SuggestionCard = ({ s, onAction, busy, fbConnected }) => {
     <Card className="!rounded-2xl !border-slate-200 !shadow-sm">
       <div className="flex items-start gap-3">
         {primaryImage ? (
-          <img src={primaryImage} alt="" className="w-14 h-14 rounded-xl object-cover bg-slate-100 shrink-0" />
+          <img
+            src={primaryImage}
+            alt=""
+            onError={() => setImgFailed(true)}
+            className="w-14 h-14 rounded-xl object-cover bg-slate-100 shrink-0"
+          />
         ) : (
-          <div className="w-14 h-14 rounded-xl bg-fuchsia-50 text-fuchsia-600 flex items-center justify-center shrink-0">
-            <Megaphone size={20} />
+          <div className={`w-14 h-14 rounded-xl shrink-0 flex items-center justify-center ${
+            s.tipo === 'promo'
+              ? 'bg-gradient-to-br from-fuchsia-100 to-pink-100 text-fuchsia-600'
+              : s.tipo === 'email'
+                ? 'bg-sky-50 text-sky-500'
+                : 'bg-fuchsia-50 text-fuchsia-600'
+          }`}>
+            {s.tipo === 'promo' ? (
+              <Tag size={20} />
+            ) : s.tipo === 'email' ? (
+              <Send size={20} />
+            ) : s.tipo === 'seo' ? (
+              <Search size={20} />
+            ) : (
+              <Megaphone size={20} />
+            )}
           </div>
         )}
         <div className="min-w-0 flex-1">
@@ -342,16 +368,16 @@ const FacebookConnectModal = ({ open, onClose, onConnected }) => {
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto"
       onClick={onClose}
     >
       <div
-        className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 p-5"
+        className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 p-5 max-h-[calc(100dvh-2rem)] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3 mb-4">
+        <div className="flex items-center justify-between gap-3 mb-5">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-[#1877F2]/10 text-[#1877F2]">
+            <div className="p-2 rounded-xl bg-[#1877F2]/10 text-[#1877F2] shrink-0">
               <FacebookIcon size={18} />
             </div>
             <div>
@@ -361,7 +387,7 @@ const FacebookConnectModal = ({ open, onClose, onConnected }) => {
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors shrink-0"
             aria-label="Cerrar"
           >
             <X size={16} />
@@ -370,24 +396,24 @@ const FacebookConnectModal = ({ open, onClose, onConnected }) => {
 
         {step === 'token' && (
           <>
-            <label className="block text-[11px] font-bold text-slate-500 mb-1.5">
-              Token del system user (Business Manager)
+            <label className="block text-center text-[11px] font-bold text-slate-500 mb-2">
+              Pega el token del system user de tu negocio
             </label>
             <textarea
               value={token}
               onChange={(e) => setToken(e.target.value)}
               rows={3}
               placeholder="EAA..."
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-700 font-mono placeholder:text-slate-300 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-700 font-mono text-center placeholder:text-slate-300 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
             />
-            <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
+            <p className="text-[10px] text-slate-400 mt-2 leading-relaxed text-center">
               Meta for Developers → tu app → Marketing API → System User (o Configuración del negocio).
               El system user debe tener tu página asignada con un rol que permita publicar contenido.
             </p>
             <button
               onClick={listPages}
               disabled={busy}
-              className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-xl bg-[#1877F2] text-white text-xs font-bold px-4 py-2.5 hover:bg-[#166FE5] transition-colors disabled:opacity-60"
+              className="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-xl bg-[#1877F2] text-white text-xs font-bold px-4 py-2.5 hover:bg-[#166FE5] transition-colors disabled:opacity-60"
             >
               {busy ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
               Buscar mis páginas
@@ -397,7 +423,7 @@ const FacebookConnectModal = ({ open, onClose, onConnected }) => {
 
         {step === 'pages' && (
           <>
-            <p className="text-[11px] text-slate-500 mb-2">
+            <p className="text-[11px] text-slate-500 mb-3 text-center">
               <b className="text-slate-700">{owner}</b> — elige la página donde publicar:
             </p>
             <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
@@ -620,38 +646,40 @@ const Marketing = () => {
         </div>
 
         {overview?.facebook?.connected ? (
-          <div className="mb-5 flex flex-wrap items-center gap-3 bg-[#1877F2]/5 border border-[#1877F2]/20 rounded-2xl px-4 py-3">
-            <div className="p-2 rounded-xl bg-[#1877F2] text-white">
-              <FacebookIcon size={16} />
+          <div className="mb-5 rounded-2xl border border-[#1877F2]/25 bg-gradient-to-br from-[#1877F2]/8 to-white px-5 py-4 flex flex-col items-center text-center sm:flex-row sm:items-center sm:text-left">
+            <div className="w-11 h-11 rounded-xl bg-[#1877F2] text-white flex items-center justify-center shadow-md shadow-[#1877F2]/25 mb-2.5 sm:mb-0 shrink-0">
+              <FacebookIcon size={18} />
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold text-slate-800">
+            <div className="min-w-0 sm:mx-4 flex-1">
+              <p className="text-sm font-bold text-slate-900">
                 Conectado a <span className="text-[#1877F2]">{overview.facebook.fb_page_name}</span>
               </p>
-              <p className="text-[11px] text-slate-500">Los posts sociales tendrán el botón “Publicar en Facebook”.</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">Los posts sociales tendrán el botón “Publicar en Facebook”.</p>
             </div>
             <button
               onClick={disconnectFb}
               disabled={busy}
-              className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-white text-slate-600 border border-slate-200 hover:border-pink-300 hover:text-pink-600 transition-colors disabled:opacity-60"
+              className="mt-3 sm:mt-0 inline-flex items-center gap-1.5 text-xs font-bold px-3.5 py-2 rounded-xl bg-white text-slate-600 border border-slate-200 hover:border-pink-300 hover:text-pink-600 transition-colors disabled:opacity-60 shrink-0"
             >
               <XCircle size={13} /> Desconectar
             </button>
           </div>
         ) : (
-          <div className="mb-5 flex flex-wrap items-center gap-3 bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-sm">
-            <div className="p-2 rounded-xl bg-slate-100 text-slate-400">
-              <FacebookIcon size={16} />
+          <div className="mb-5 rounded-2xl border border-slate-200 bg-white shadow-sm px-5 pt-7 pb-6 flex flex-col items-center text-center">
+            <div className="w-12 h-12 rounded-2xl bg-[#1877F2] text-white flex items-center justify-center shadow-md shadow-[#1877F2]/30 mb-3">
+              <FacebookIcon size={20} />
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold text-slate-800">Publica los posts de la IA directo en tu página de Facebook</p>
-              <p className="text-[11px] text-slate-500">Conecta tu página una sola vez y cada post social tendrá el botón para publicarlo con un clic.</p>
-            </div>
+            <p className="text-sm font-extrabold text-slate-900">
+              Publica los posts de la IA en tu página de Facebook
+            </p>
+            <p className="text-[11px] text-slate-500 max-w-xs mt-1 leading-relaxed">
+              Conecta tu página una sola vez y cada post social tendrá el botón para publicarlo con un clic.
+            </p>
             <button
               onClick={() => setFbModal(true)}
-              className="inline-flex items-center gap-1.5 text-xs font-bold px-3.5 py-2 rounded-xl bg-[#1877F2] text-white hover:bg-[#166FE5] transition-colors"
+              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[#1877F2] text-white text-xs font-bold px-4 py-2.5 hover:bg-[#166FE5] transition-colors shadow-sm shadow-[#1877F2]/25"
             >
-              <FacebookIcon size={13} /> Conectar página de Facebook
+              <FacebookIcon size={14} /> Conectar página de Facebook
             </button>
           </div>
         )}
