@@ -10,6 +10,13 @@ import {
 } from '../services/marketing.service.js';
 import { runMarketingAnalysis } from '../services/marketing/engine.js';
 import { sendPushToUser } from '../services/push.service.js';
+import {
+  listFacebookAccounts,
+  connectFacebookPage,
+  deleteFacebookPage,
+  getFacebookPageForTienda,
+  publishToFacebookPage,
+} from '../services/facebook.service.js';
 import { toInt, isAllowedEnum } from '../utils/validation.js';
 
 export const getMarketingOverview = async (req, res) => {
@@ -191,6 +198,111 @@ export const sendPushCampaign = async (req, res) => {
   }
 };
 
+export const facebookListPages = async (req, res) => {
+  try {
+    const result = await listFacebookAccounts(req.body?.token);
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('Error al listar páginas de Facebook:', err.message);
+    return res.status(400).json({ ok: false, message: err.message });
+  }
+};
+
+export const facebookConnect = async (req, res) => {
+  const tiendaId = req.auth.userId;
+  try {
+    const page = await connectFacebookPage(tiendaId, {
+      token: req.body?.token,
+      pageId: req.body?.pageId,
+    });
+    return res.json({
+      ok: true,
+      message: `Página "${page.pageName}" conectada. Ya puedes publicar los posts con IA.`,
+      page,
+    });
+  } catch (err) {
+    console.error('Error al conectar página de Facebook:', err.message);
+    return res.status(400).json({ ok: false, message: err.message });
+  }
+};
+
+export const facebookDisconnect = async (req, res) => {
+  const tiendaId = req.auth.userId;
+  try {
+    const removed = await deleteFacebookPage(tiendaId);
+    if (!removed) return res.status(404).json({ ok: false, message: 'No hay una página conectada.' });
+    return res.json({ ok: true, message: 'Página de Facebook desconectada.' });
+  } catch (err) {
+    console.error('Error al desconectar página de Facebook:', err.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible desconectar la página.' });
+  }
+};
+
+export const publishFacebook = async (req, res) => {
+  const tiendaId = req.auth.userId;
+  const id = toInt(req.params.id, { min: 1 });
+  if (!id) return res.status(400).json({ ok: false, message: 'ID inválido.' });
+  try {
+    const suggestion = await getSuggestionOwned(tiendaId, id);
+    if (!suggestion) return res.status(404).json({ ok: false, message: 'Sugerencia no encontrada.' });
+    if (suggestion.tipo !== 'social') {
+      return res.status(400).json({ ok: false, message: 'Solo los posts sociales se publican en Facebook.' });
+    }
+    if (suggestion.estado === 'aplicada') {
+      return res.status(409).json({ ok: false, message: 'Este post ya fue publicado.' });
+    }
+    if (suggestion.estado === 'descartada') {
+      return res.status(409).json({ ok: false, message: 'Este post fue descartado. Genera uno nuevo.' });
+    }
+
+    const { rows } = await pool.query(
+      `SELECT s.payload, p.images
+       FROM marketing_suggestions s
+       LEFT JOIN produc p ON p.id = s.product_id
+       WHERE s.id = $1 AND s.tienda_id = $2
+       LIMIT 1`,
+      [id, tiendaId]
+    );
+    const payload = rows[0]?.payload || suggestion.payload || {};
+    const images = Array.isArray(rows[0]?.images)
+      ? rows[0].images.map((i) => i?.src || i).filter(Boolean)
+      : [];
+    const texto = String(payload.texto || '').trim();
+    const hashtags = String(payload.hashtags || '').trim();
+    const message = hashtags ? `${texto}\n\n${hashtags}` : texto;
+    const firstSrc = (x) => (typeof x === 'string' ? x : x?.src || '');
+    const photoUrl = firstSrc(payload.imagen) || (images.length ? firstSrc(images[0]) : '') || null;
+
+    const page = await getFacebookPageForTienda(tiendaId);
+    if (!page) {
+      return res.status(400).json({
+        ok: false,
+        message: 'Conecta tu página de Facebook primero para poder publicar.',
+      });
+    }
+
+    const result = await publishToFacebookPage({
+      accessToken: page.access_token,
+      pageId: page.fb_page_id,
+      message,
+      photoUrl,
+    });
+
+    await markSuggestionState(tiendaId, id, 'aplicada');
+    return res.json({
+      ok: true,
+      message: result.kind === 'photo'
+        ? `Publicado con foto en "${page.fb_page_name}".`
+        : `Publicado en "${page.fb_page_name}" (sin imagen).`,
+      postId: result.postId,
+      page: page.fb_page_name,
+    });
+  } catch (err) {
+    console.error('Error al publicar en Facebook:', err.message);
+    return res.status(500).json({ ok: false, message: err.message || 'No fue posible publicar en Facebook.' });
+  }
+};
+
 export default {
   getMarketingOverview,
   getSuggestions,
@@ -199,4 +311,8 @@ export default {
   dismissSuggestion,
   updateCampaignUrl,
   sendPushCampaign,
+  facebookListPages,
+  facebookConnect,
+  facebookDisconnect,
+  publishFacebook,
 };

@@ -1,6 +1,7 @@
 import { pool } from '../db.js';
 import { invalidateCatalogCache, invalidateProductDetailCachesForStore } from './product.service.js';
 import { invalidateEdgeCache } from '../utils/cacheInvalidate.js';
+import { getFacebookPageStatus } from './facebook.service.js';
 
 const NOW = () => new Date().toISOString();
 
@@ -248,7 +249,7 @@ export const listSuggestions = async ({ tiendaId, tipo, estado, limit = 50, offs
 };
 
 export const marketingOverview = async (tiendaId) => {
-  const [counts, lastRun] = await Promise.all([
+  const [counts, lastRun, facebook] = await Promise.all([
     pool.query(
       `SELECT tipo,
               COUNT(*) FILTER (WHERE estado = 'pendiente')::int AS pendientes,
@@ -267,6 +268,7 @@ export const marketingOverview = async (tiendaId) => {
        LIMIT 1`,
       [tiendaId]
     ),
+    getFacebookPageStatus(tiendaId).catch(() => null),
   ]);
   const summary = {
     seo: 0, promo: 0, stock: 0, social: 0, email: 0,
@@ -281,5 +283,5 @@ export const marketingOverview = async (tiendaId) => {
     summary.total_descartadas += Number(r.descartadas || 0);
     if (r.tipo === 'promo') summary.total_pendientes_promo = Number(r.pendientes || 0);
   }
-  return { summary, lastRun: lastRun.rows[0] || null };
+  return { summary, lastRun: lastRun.rows[0] || null, facebook };
 };

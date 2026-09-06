@@ -21,6 +21,10 @@ import {
   dismissSuggestion,
   updateCampaignUrl,
   sendPushCampaign,
+  facebookListPages,
+  facebookConnect,
+  facebookDisconnect,
+  publishFacebook,
 } from '../controllers/marketing.controller.js';
 
 const router = Router();
@@ -53,5 +57,11 @@ router.post('/marketing/sugerencias/:id/aplicar', applySuggestion);
 router.post('/marketing/sugerencias/:id/descartar', dismissSuggestion);
 router.post('/marketing/sugerencias/:id/url', updateCampaignUrl);
 router.post('/marketing/sugerencias/:id/enviar', sendPushCampaign);
+router.post('/marketing/sugerencias/:id/facebook', publishFacebook);
+
+// Facebook Pages (publicar el contenido social del asistente)
+router.post('/marketing/facebook/pages', facebookListPages);
+router.post('/marketing/facebook/connect', facebookConnect);
+router.delete('/marketing/facebook', facebookDisconnect);
 
 export default router;

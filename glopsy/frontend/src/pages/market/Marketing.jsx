@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Megaphone, Sparkles, Tag, Send, Mail, RefreshCw,
   CheckCircle2, XCircle, Clock, Search, Copy, ExternalLink, Pencil, Info,
+  Loader2, X,
 } from 'lucide-react';
 import { Card } from '../../components/tremor/Card';
 import { Badge } from '../../components/tremor/Badge';
@@ -44,6 +45,12 @@ const copyText = async (text) => {
   }
 };
 
+const FacebookIcon = ({ size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M22 12a10 10 0 1 0-11.56 9.88v-6.99H7.9V12h2.54V9.8c0-2.5 1.49-3.89 3.77-3.89 1.09 0 2.23.2 2.23.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56V12h2.78l-.45 2.89h-2.33v6.99A10 10 0 0 0 22 12Z" />
+  </svg>
+);
+
 const KpiChip = ({ icon: Icon, label, value, sub, accent }) => (
   <Card className="!rounded-2xl !border-fuchsia-100 !shadow-sm">
     <div className="flex items-start justify-between">
@@ -59,7 +66,7 @@ const KpiChip = ({ icon: Icon, label, value, sub, accent }) => (
   </Card>
 );
 
-const SuggestionCard = ({ s, onAction, busy }) => {
+const SuggestionCard = ({ s, onAction, busy, fbConnected }) => {
   const [copied, setCopied] = useState(false);
   const [urlEditing, setUrlEditing] = useState(false);
   const [urlDraft, setUrlDraft] = useState('');
@@ -208,6 +215,15 @@ const SuggestionCard = ({ s, onAction, busy }) => {
             {copied ? 'Copiado' : 'Copiar texto'}
           </button>
         )}
+        {fbConnected && s.tipo === 'social' && s.estado === 'pendiente' && (
+          <button
+            onClick={() => onAction(s, 'facebook')}
+            disabled={busy}
+            className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-[#1877F2] text-white hover:bg-[#166FE5] transition-colors disabled:opacity-60"
+          >
+            <FacebookIcon size={14} /> Publicar en Facebook
+          </button>
+        )}
         {s.tipo === 'email' && s.estado !== 'aplicada' && (
           <button
             onClick={() => onAction(s, 'enviar')}
@@ -249,6 +265,196 @@ const SuggestionCard = ({ s, onAction, busy }) => {
   );
 };
 
+const FacebookConnectModal = ({ open, onClose, onConnected }) => {
+  const [token, setToken] = useState('');
+  const [step, setStep] = useState('token');
+  const [owner, setOwner] = useState('');
+  const [pages, setPages] = useState([]);
+  const [selected, setSelected] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    setToken('');
+    setStep('token');
+    setOwner('');
+    setPages([]);
+    setSelected('');
+    setError('');
+  }, [open]);
+
+  if (!open) return null;
+
+  const listPages = async () => {
+    const t = token.trim();
+    if (!t) {
+      setError('Pega el token del system user de tu negocio.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const { data } = await api.post('/tienda/marketing/facebook/pages', { token: t });
+      if (!data.ok) {
+        setError(data.message || 'No se pudo validar el token.');
+        return;
+      }
+      if (!data.pages?.length) {
+        setError('No se encontraron páginas para este token. Verifica que el system user tenga tu página asignada con permiso para publicar contenido.');
+        return;
+      }
+      setOwner(data.owner || 'Mi negocio');
+      setPages(data.pages);
+      setSelected(data.pages[0].id);
+      setStep('pages');
+    } catch (err) {
+      setError(err.response?.data?.message || 'No se pudieron cargar tus páginas.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const connect = async () => {
+    if (!selected) {
+      setError('Elige una página.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const { data } = await api.post('/tienda/marketing/facebook/connect', {
+        token: token.trim(),
+        pageId: selected,
+      });
+      if (!data.ok) {
+        setError(data.message || 'No se pudo conectar.');
+        return;
+      }
+      onConnected();
+      onClose();
+    } catch (err) {
+      setError(err.response?.data?.message || 'No se pudo conectar la página.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-[#1877F2]/10 text-[#1877F2]">
+              <FacebookIcon size={18} />
+            </div>
+            <div>
+              <h3 className="text-sm font-extrabold text-slate-900">Conectar página de Facebook</h3>
+              <p className="text-[11px] text-slate-500">La IA publicará los posts sociales en esta página.</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+            aria-label="Cerrar"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {step === 'token' && (
+          <>
+            <label className="block text-[11px] font-bold text-slate-500 mb-1.5">
+              Token del system user (Business Manager)
+            </label>
+            <textarea
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              rows={3}
+              placeholder="EAA..."
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-700 font-mono placeholder:text-slate-300 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            />
+            <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
+              Meta for Developers → tu app → Marketing API → System User (o Configuración del negocio).
+              El system user debe tener tu página asignada con un rol que permita publicar contenido.
+            </p>
+            <button
+              onClick={listPages}
+              disabled={busy}
+              className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-xl bg-[#1877F2] text-white text-xs font-bold px-4 py-2.5 hover:bg-[#166FE5] transition-colors disabled:opacity-60"
+            >
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+              Buscar mis páginas
+            </button>
+          </>
+        )}
+
+        {step === 'pages' && (
+          <>
+            <p className="text-[11px] text-slate-500 mb-2">
+              <b className="text-slate-700">{owner}</b> — elige la página donde publicar:
+            </p>
+            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+              {pages.map((pg) => (
+                <button
+                  key={pg.id}
+                  onClick={() => setSelected(pg.id)}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left transition-colors ${
+                    selected === pg.id
+                      ? 'border-[#1877F2] bg-[#1877F2]/5 ring-2 ring-[#1877F2]/15'
+                      : 'border-slate-200 hover:border-blue-200'
+                  }`}
+                >
+                  <div
+                    className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black text-white ${
+                      selected === pg.id ? 'bg-[#1877F2]' : 'bg-slate-300'
+                    }`}
+                  >
+                    {(pg.name || '?').charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-slate-800 truncate">{pg.name}</p>
+                    <p className="text-[10px] text-slate-400">Publicar como página</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={() => setStep('token')}
+                disabled={busy}
+                className="flex-1 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold px-4 py-2.5 hover:bg-slate-200 transition-colors disabled:opacity-60"
+              >
+                Volver
+              </button>
+              <button
+                onClick={connect}
+                disabled={busy}
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-[#1877F2] text-white text-xs font-bold px-4 py-2.5 hover:bg-[#166FE5] transition-colors disabled:opacity-60"
+              >
+                {busy ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                Conectar
+              </button>
+            </div>
+          </>
+        )}
+
+        {error && (
+          <p className="mt-3 bg-pink-50 border border-pink-200 text-pink-700 rounded-xl px-3 py-2 text-[11px] font-semibold" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const Marketing = () => {
   const navigate = useNavigate();
   const [tab, setTab] = useState('all');
@@ -260,6 +466,7 @@ const Marketing = () => {
   const [notice, setNotice] = useState('');
   const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState(null);
+  const [fbModal, setFbModal] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -317,6 +524,26 @@ const Marketing = () => {
       }
     } catch (err) {
       setError(err.response?.data?.message || 'No se pudo completar la acción.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disconnectFb = async () => {
+    if (!window.confirm('¿Desconectar la página de Facebook? Ya no podrás publicar desde aquí.')) return;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const { data } = await api.delete('/tienda/marketing/facebook');
+      if (data.ok) {
+        setNotice(data.message || 'Página desconectada.');
+        await load();
+      } else {
+        setError(data.message || 'No se pudo desconectar la página.');
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'No se pudo desconectar la página.');
     } finally {
       setBusy(false);
     }
@@ -384,13 +611,59 @@ const Marketing = () => {
             <p className="font-bold text-slate-800">Cómo funciona el contenido social</p>
           </div>
           <ul className="space-y-1 pl-5 list-disc marker:text-slate-300">
-            <li>La IA <b>no publica en tus redes</b>: solo redacta el post (texto, hashtags y foto del producto). Copia el texto con <b>“Copiar texto”</b> y publícalo tú en Instagram, Facebook, etc.</li>
+            <li>La IA <b>redacta el post</b> (texto, hashtags y foto del producto). Si conectas tu página de Facebook, publícalo con un clic en <b>“Publicar en Facebook”</b>; si no, cópialo con <b>“Copiar texto”</b> para Instagram u otras redes.</li>
             <li>Se genera solo cada <b>6 horas</b> (ciclo automático) o cuando pulsas <b>Analizar ahora</b>.</li>
             <li>Por ciclo genera hasta <b>3 posts</b>, de los productos con ventas recientes.</li>
             <li>Máximo <b>1 post por producto por día</b>.</li>
             <li><b>“Marcar aplicada”</b> es solo tu registro interno de que ya lo publicaste.</li>
           </ul>
         </div>
+
+        {overview?.facebook?.connected ? (
+          <div className="mb-5 flex flex-wrap items-center gap-3 bg-[#1877F2]/5 border border-[#1877F2]/20 rounded-2xl px-4 py-3">
+            <div className="p-2 rounded-xl bg-[#1877F2] text-white">
+              <FacebookIcon size={16} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold text-slate-800">
+                Conectado a <span className="text-[#1877F2]">{overview.facebook.fb_page_name}</span>
+              </p>
+              <p className="text-[11px] text-slate-500">Los posts sociales tendrán el botón “Publicar en Facebook”.</p>
+            </div>
+            <button
+              onClick={disconnectFb}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-white text-slate-600 border border-slate-200 hover:border-pink-300 hover:text-pink-600 transition-colors disabled:opacity-60"
+            >
+              <XCircle size={13} /> Desconectar
+            </button>
+          </div>
+        ) : (
+          <div className="mb-5 flex flex-wrap items-center gap-3 bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-sm">
+            <div className="p-2 rounded-xl bg-slate-100 text-slate-400">
+              <FacebookIcon size={16} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold text-slate-800">Publica los posts de la IA directo en tu página de Facebook</p>
+              <p className="text-[11px] text-slate-500">Conecta tu página una sola vez y cada post social tendrá el botón para publicarlo con un clic.</p>
+            </div>
+            <button
+              onClick={() => setFbModal(true)}
+              className="inline-flex items-center gap-1.5 text-xs font-bold px-3.5 py-2 rounded-xl bg-[#1877F2] text-white hover:bg-[#166FE5] transition-colors"
+            >
+              <FacebookIcon size={13} /> Conectar página de Facebook
+            </button>
+          </div>
+        )}
+
+        <FacebookConnectModal
+          open={fbModal}
+          onClose={() => setFbModal(false)}
+          onConnected={() => {
+            setNotice('Página conectada. Ya puedes publicar los posts con IA.');
+            load();
+          }}
+        />
 
         {runResult && (
           <div className="mb-5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl px-4 py-3 text-xs font-medium">
@@ -429,7 +702,13 @@ const Marketing = () => {
         {filtered.length > 0 ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {filtered.map((s) => (
-              <SuggestionCard key={s.id} s={s} onAction={action} busy={busy} />
+              <SuggestionCard
+                key={s.id}
+                s={s}
+                onAction={action}
+                busy={busy}
+                fbConnected={!!overview?.facebook?.connected}
+              />
             ))}
           </div>
         ) : (
