@@ -182,6 +182,74 @@ Reglas:
 const MAX_TOOL_ROUNDS = 4;
 const MAX_HISTORY = 12;
 
+// ------------------------------------------------------------------ Fallback sin IA
+// Si DeepSeek no está disponible se responde con FAQ local basada en datos reales.
+
+const fmtCOP = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')} COP`;
+
+const fallbackAnswer = async ({ product, ciudad, lastMessage }) => {
+  const base = Number(product?.suggested_price ?? product?.base_price ?? 0);
+  let precio = base;
+  const of = product?.oferta_activa;
+  if (of) {
+    if (of.tipo === 'porcentaje') precio = base * (1 - Number(of.valor || 0) / 100);
+    else if (of.tipo === 'monto_fijo') precio = Math.max(0, base - Number(of.valor || 0));
+  }
+  const stock = Number(product?.stock_total || 0);
+  const variants = Array.isArray(product?.variants) ? product.variants : [];
+  const msg = String(lastMessage || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  const mentions = (...words) => words.some((w) => msg.includes(w));
+
+  if (mentions('envio', 'envian', 'llega', 'tardas', 'cuanto cuesta el envio', 'domicilio')) {
+    return `Sobre el envío de "${product?.name}":\n• Se calcula en el checkout según tu ciudad (${ciudad || 'no especificada'}).\n• Algunas tiendas ofrecen envío gratis o descuentos visibles en el carrito.\n• Revisa en la página las condiciones de la tienda (proveedor) para tiempos y cobertura.`;
+  }
+  if (mentions('garantia', 'garanti', 'reembolso', 'devolucion', 'cambios', 'falla', 'defecto')) {
+    const w = product?.warranties;
+    if (Array.isArray(w) && w.length) {
+      return `Garantía de "${product?.name}": ${w.map((x) => typeof x === 'string' ? x : (x?.titulo || x?.descripcion || '')).filter(Boolean).join(', ')}.`;
+    }
+    return `Sobre garantía/reembolsos:\n• Glopsy protege tu compra: el pago se libera al vendedor cuando confirmas que el pedido llegó bien.\n• Si algo falla, puedes abrir una reclamación desde "Consultar pedido".\n• Detalles de garantía de este producto aparecen en la sección del proveedor.`;
+  }
+  if (mentions('stock', 'disponible', 'agotado', 'hay unidades', 'talla', 'quedan')) {
+    if (stock <= 0) return `Este producto está agotado ahora mismo. Prueba con "Recomiéndame algo similar" para ver alternativas.`;
+    let extra = '';
+    if (variants.length) extra = `\nOpciones disponibles: ${variants.map((v) => v?.name || v?.title || '').filter(Boolean).join(', ')}.`;
+    return `Disponibilidad de "${product?.name}":\n• Quedan ${stock} ${stock === 1 ? 'unidad' : 'unidades'} en stock.\n• Precio: ${fmtCOP(precio)}${extra}\n• Agrega al carrito o usa "Comprar ahora" para reservarlo.`;
+  }
+  if (mentions('precio', 'cuanto cuesta', 'costo', 'cuanto vale', 'oferta', 'descuento', 'barato', 'caro')) {
+    const orig = of ? `\nPrecio original: ${fmtCOP(base)} (${of.tipo === 'porcentaje' ? `${of.valor}% de descuento` : `descuento de ${fmtCOP(of.valor)}`})` : '';
+    return `Precio de "${product?.name}": ${fmtCOP(precio)}${orig}\n• IVA incluido.\n• El envío se suma en el checkout según tu ciudad (${ciudad || '—'}).`;
+  }
+  if (mentions('como comprar', 'como compro', 'como lo compro', 'como pago', 'como lo pago', 'comprar ahora', 'quiero comprar', 'pagar', 'pedido', 'compra', 'comprarlo')) {
+    return `Cómo comprar "${product?.name}":\n1. Pulsa "Comprar ahora" (o agrégalo al carrito).\n2. Elige cantidad/variante y verifica tu dirección de envío.\n3. Paga con Mercado Pago (tarjeta, PSE, etc.) de forma segura.\n4. Sigue tu pedido en "Consultar pedido".`;
+  }
+  if (mentions('calificacion', 'reseñas', 'opiniones', 'rating', 'bueno', 'recomendado', 'estrellas')) {
+    const rc = Number(product?.review_count || 0);
+    if (rc > 0) return `"${product?.name}" tiene ${Number(product?.avg_rating || 0).toFixed(1)}/5 estrellas basado en ${rc} ${rc === 1 ? 'reseña' : 'reseñas'}. Puedes leerlas más abajo en la página.`;
+    return `Este producto aún no tiene reseñas. Si lo compras, podrás ser el primero en opinar tras recibirlo.`;
+  }
+  if (mentions('recomiendame algo similar', 'alternativa', 'parecido', 'similar', 'opciones', 'otro', 'recomiendame', 'sugiere')) {
+    const key = msg.replace(/recomiendame|algo|similar|parecido|alternativa|de|menor|precio|mas|barato|otra|opcion|opciones|sugiere|un|una|del/g, ' ').replace(/\s+/g, ' ').trim() || product?.name;
+    try {
+      const results = await searchCatalog({ q: key, max: 4 });
+      const others = results.filter((r) => r.public_id !== (product?.public_id || product?.id));
+      if (!others.length) {
+        return `No encontré productos muy parecidos a "${product?.name}" en este momento. Puedes explorar la categoría "${product?.categoria_nombre || product?.category || 'General'}" desde el catálogo.`;
+      }
+      const lines = others.map((r) => `• ${r.name} — ${fmtCOP(r.precio)}${r.stock > 0 ? ` (${r.stock} uds)` : ' (agotado)'}${r.calificacion && Number(r.calificacion) > 0 ? ` ⭐${r.calificacion}` : ''}`).join('\n');
+      return `Alternativas en el catálogo:\n${lines}\n\nToca el producto para verlo en detalle.`;
+    } catch {
+      return `No pude consultar las alternativas ahora. Explora la categoría "${product?.categoria_nombre || product?.category || 'General'}" desde el catálogo.`;
+    }
+  }
+  if (mentions('hola', 'buenas', 'hey', 'que tal', 'buenos dias', 'buenas tardes', 'buenas noches')) {
+    return `¡Hola! 👋 Soy el asistente de "${product?.name}".\nPuedo decirte su precio, stock, envío, garantía o recomendarte alternativas del catálogo.`;
+  }
+
+  return `Puedo ayudarte con "${product?.name}" (${product?.categoria_nombre || product?.category || 'General'}): precio ${fmtCOP(precio)}, ${stock} en stock. Pregúntame por envío, garantía, reseñas o pídeme alternativas.`;
+};
+
 const callModel = async (messages) => {
   const { data } = await axios.post(
     `${BASE_URL}/chat/completions`,
@@ -202,8 +270,6 @@ const callModel = async (messages) => {
 };
 
 export const productAssistantChat = async ({ product, ciudad = '', messages = [] }) => {
-  if (!API_KEY) throw new Error('El asistente de IA no está configurado (falta la API key).');
-
   const clean = (m) => ({
     role: m?.role === 'assistant' ? 'assistant' : 'user',
     content: String(m?.content || '').replace(/\s+/g, ' ').trim().slice(0, 800),
@@ -218,25 +284,37 @@ export const productAssistantChat = async ({ product, ciudad = '', messages = []
     throw new Error('Mensaje inválido.');
   }
 
+  // Sin API key o con IA caída → fallback con datos reales (FAQ local).
+  if (!API_KEY) {
+    const reply = await fallbackAnswer({ product, ciudad, lastMessage: history[history.length - 1].content });
+    return { ok: true, reply, fallback: true };
+  }
+
   const msgs = [{ role: 'system', content: buildSystem(product, ciudad) }, ...history];
 
-  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const msg = await callModel(msgs);
-    if (!msg) throw new Error('No hubo respuesta del modelo.');
+  try {
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      const msg = await callModel(msgs);
+      if (!msg) throw new Error('No hubo respuesta del modelo.');
 
-    const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
-    msgs.push({ role: 'assistant', content: msg.content || '', tool_calls: toolCalls.length ? toolCalls : undefined });
+      const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
+      msgs.push({ role: 'assistant', content: msg.content || '', tool_calls: toolCalls.length ? toolCalls : undefined });
 
-    if (!toolCalls.length) {
-      return { ok: true, reply: (msg.content || '').trim() };
+      if (!toolCalls.length) {
+        return { ok: true, reply: (msg.content || '').trim() };
+      }
+
+      for (const tc of toolCalls) {
+        const name = tc?.function?.name || '';
+        const args = tc?.function?.arguments || '{}';
+        const result = await runTool(name, args);
+        msgs.push({ role: 'tool', tool_call_id: tc.id, content: result });
+      }
     }
-
-    for (const tc of toolCalls) {
-      const name = tc?.function?.name || '';
-      const args = tc?.function?.arguments || '{}';
-      const result = await runTool(name, args);
-      msgs.push({ role: 'tool', tool_call_id: tc.id, content: result });
-    }
+  } catch (err) {
+    console.warn('[product-assistant] IA no disponible, respondiendo con fallback:', err.message);
+    const reply = await fallbackAnswer({ product, ciudad, lastMessage: history[history.length - 1].content });
+    return { ok: true, reply, fallback: true };
   }
 
   return { ok: true, reply: 'Ups, tardé demasiado en organizar la respuesta. Vuelve a preguntarme 🙂' };

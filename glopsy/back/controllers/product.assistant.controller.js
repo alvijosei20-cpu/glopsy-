@@ -1,9 +1,6 @@
 import { cleanString } from '../utils/validation.js';
 import { getProductByPublicId } from '../services/product.service.js';
-import {
-  productAssistantChat,
-  assistantConfigured,
-} from '../services/product.assistant.service.js';
+import { productAssistantChat } from '../services/product.assistant.service.js';
 
 export const productAssistant = async (req, res) => {
   const pid = cleanString(req.params.id, { maxLength: 100 });
@@ -22,13 +19,6 @@ export const productAssistant = async (req, res) => {
     }
     if (!product) {
       return res.status(404).json({ ok: false, message: 'Producto no encontrado en el catálogo.' });
-    }
-
-    if (!assistantConfigured()) {
-      return res.status(503).json({
-        ok: false,
-        message: 'El asistente de IA no está configurado todavía. Escríbenos a soporte@glopsy.com',
-      });
     }
 
     const result = await productAssistantChat({ product, ciudad, messages });
