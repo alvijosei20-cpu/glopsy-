@@ -24,6 +24,8 @@ jobs:
         run: npm ci && npm run build
         env:
           VITE_API_URL: /api
+          SITE_URL: https://app.glopsy.shop
+          SEO_API: https://glopsy-back.onrender.com/api
 
       - name: Deploy Worker
         working-directory: glopsy/frontend
