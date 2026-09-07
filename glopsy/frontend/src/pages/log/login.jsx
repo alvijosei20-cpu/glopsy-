@@ -65,7 +65,7 @@ const LoginForm = ({ mode, onSwitch }) => {
           if (resVerify.data.ok) {
             localStorage.setItem('glopsy_biometric_login', 'true');
             await login();
-            navigate('/panel', { replace: true });
+            navigate('/', { replace: true });
             return;
           }
         }
@@ -112,7 +112,7 @@ const LoginForm = ({ mode, onSwitch }) => {
       if (resVerify.data.ok) {
         localStorage.setItem('glopsy_biometric_login', 'true');
         await login();
-        navigate('/panel', { replace: true });
+        navigate('/', { replace: true });
       } else {
         if (isAuto) {
           localStorage.removeItem('glopsy_biometric_login');
@@ -132,7 +132,7 @@ const LoginForm = ({ mode, onSwitch }) => {
           if (resVerify.data.ok) {
             localStorage.setItem('glopsy_biometric_login', 'true');
             await login();
-            navigate('/panel', { replace: true });
+            navigate('/', { replace: true });
             return;
           }
         } catch (e) {}
@@ -161,7 +161,7 @@ const LoginForm = ({ mode, onSwitch }) => {
 
       if (res.data.ok) {
         await login();
-        navigate('/panel', { replace: true });
+        navigate('/', { replace: true });
       } else {
         setError(res.data.message || 'Error de autenticación');
       }

@@ -227,7 +227,7 @@ function MainApp() {
           
           <Route
             path="/login" 
-            element={user ? <Navigate to="/panel" replace /> : <ErrorBoundary><Login /></ErrorBoundary>} 
+            element={user ? <Navigate to="/" replace /> : <ErrorBoundary><Login /></ErrorBoundary>} 
           />
           <Route path="/auth/success" element={<AuthSuccess />} />
 

@@ -17,7 +17,7 @@ export default function AuthSuccess() {
           await api.post('/auth/oauth/consume', { code });
         }
         await login();
-        navigate('/panel', { replace: true });
+        navigate('/', { replace: true });
       } catch {
         navigate('/login?error=oauth', { replace: true });
       }
