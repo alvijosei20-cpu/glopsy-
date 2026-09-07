@@ -717,8 +717,9 @@ const MarketConfig = () => {
             ⚠️ Tu tienda está pendiente de activación (no la ven los clientes).
           </p>
           <p style={{ margin: '0.35rem 0 0.75rem', fontSize: '0.85rem' }}>
-            Para darla de alta debes configurar en <b>PRODUCCIÓN</b>: <b>Mercado Pago</b>
-            (pestaña "Payments y checkout") y <b>ENVIA</b> (pestaña "Perfil de envíos").
+            Para darla de alta debes tener configurados en <b>PRODUCCIÓN</b>: tu token de
+            <b> Mercado Pago</b> (pagos) y tu token de <b>ENVIA</b> (envíos), en las pestañas
+            correspondientes de este panel.
           </p>
           {activationMsg && (
             <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: '#b91c1c', fontWeight: 600 }}>
