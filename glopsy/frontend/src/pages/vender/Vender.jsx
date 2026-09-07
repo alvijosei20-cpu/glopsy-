@@ -7,12 +7,36 @@ import { getRootOrigin, getRootDomain } from '../../utils/storeHost';
 
 export default function Vender() {
   const navigate = useNavigate();
-  const { tienda, tiendaLoading, refreshTienda } = useAuth();
+  const { user, tienda, tiendaLoading, refreshTienda } = useAuth();
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [gaId, setGaId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+
+  if (!tiendaLoading && !user?.can_sell && !tienda) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center px-4">
+        <div className="max-w-md w-full text-center space-y-3 bg-white border border-fuchsia-100 rounded-3xl shadow-xl p-8">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center">
+            <Store size={26} />
+          </div>
+          <h1 className="text-lg font-extrabold text-slate-800">Solo vendedores autorizados</h1>
+          <p className="text-sm text-slate-500">
+            La apertura de tiendas la aprueba el administrador de la plataforma. Si quieres
+            vender, contacta al administrador para habilitar tu cuenta.
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white font-bold px-5 py-2.5 hover:opacity-90 transition-opacity"
+          >
+            Volver al inicio
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!tiendaLoading && tienda) {
     return (

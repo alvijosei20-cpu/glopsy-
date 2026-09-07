@@ -85,6 +85,11 @@ export const createTiendaController = ({
   // Alta de tienda para un vendedor nuevo (idempotente: si ya existe la devuelve).
   createStore: async (req, res) => {
     try {
+      // Solo usuarios autorizados por el administrador (users.can_sell) pueden crear tienda.
+      const { rows: uRows } = await pool.query(`SELECT can_sell FROM users WHERE id = $1 LIMIT 1`, [req.auth.userId]);
+      if (!uRows[0]?.can_sell) {
+        return res.status(403).json({ ok: false, message: 'No estás autorizado para crear una tienda. Contacta al administrador.' });
+      }
       const name = cleanString(req.body?.name, { maxLength: 100 });
       const slug = cleanString(req.body?.slug, { maxLength: 63 });
       const gaRaw = req.body?.ga_id;

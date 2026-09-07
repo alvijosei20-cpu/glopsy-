@@ -52,7 +52,7 @@ export const registerWithEmail = async ({ email, password, name }) => {
   const { rows } = await pool.query(
     `INSERT INTO users (email, name, password_hash)
      VALUES ($1, $2, $3)
-     RETURNING id, email, name, avatar_url`,
+     RETURNING id, email, name, avatar_url, can_sell`,
     [safeEmail, safeName || safeEmail.split('@')[0], password_hash]
   );
   const user = rows[0];
@@ -70,7 +70,7 @@ export const loginWithEmail = async ({ email, password }) => {
   if (!safeEmail) throw new Error('Correo electrónico inválido.');
 
   const { rows } = await pool.query(
-    'SELECT id, email, name, avatar_url, password_hash FROM users WHERE email = $1 LIMIT 1',
+    'SELECT id, email, name, avatar_url, can_sell, password_hash FROM users WHERE email = $1 LIMIT 1',
     [safeEmail]
   );
   const user = rows[0];

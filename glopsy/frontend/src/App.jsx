@@ -55,7 +55,10 @@ function StoreRoute({ children }) {
   const { user, isLoading, tienda, tiendaLoading } = useAuth();
   if (isLoading || tiendaLoading) return null;
   if (!user) return <Navigate to="/login" replace />;
-  if (!tienda) return <Navigate to="/vender" replace />;
+  if (!tienda) {
+    // Solo quien el admin autorizó a vender llega a crear tienda; el resto a inicio.
+    return <Navigate to={user.can_sell ? '/vender' : '/'} replace />;
+  }
   return children;
 }
 

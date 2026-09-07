@@ -263,7 +263,7 @@ export const oauthConsume = async (req, res) => {
 export const getCurrentUser = async (req, res) => {
   try {
     const { rows } = await pool.query(
-      'SELECT id, email, name, avatar_url, phone, TO_CHAR(birthdate, \'YYYY-MM-DD\') AS birthdate, document_type, document_number, gender FROM users WHERE id = $1',
+      'SELECT id, email, name, avatar_url, phone, can_sell, TO_CHAR(birthdate, \'YYYY-MM-DD\') AS birthdate, document_type, document_number, gender FROM users WHERE id = $1',
       [req.auth.userId]
     );
 
