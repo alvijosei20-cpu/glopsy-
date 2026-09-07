@@ -31,8 +31,12 @@ import {
 
 const router = Router();
 
+// Consultar "mi tienda" debe estar disponible para todo usuario autenticado
+// (incluso compradores sin can_sell): la app lo llama en cada login para saber
+// si el usuario ya tiene tienda. requireSeller solo aplica a la gestion del vendedor.
+router.get('/', requireAuth, tiendaLimiter, getMine);
+
 router.use(requireAuth, requireSeller, tiendaLimiter);
-router.get('/', getMine);
 // Alta de tienda para un vendedor nuevo (idempotente)
 router.post('/', createStore);
 // Cambiar nombre/subdominio de la tienda
