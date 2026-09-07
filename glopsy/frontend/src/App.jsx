@@ -9,7 +9,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { StorefrontProvider, useStorefront } from './storefront/StorefrontContext';
 import StoreHeader from './storefront/StoreHeader';
-import { getRootOrigin } from './utils/storeHost';
+import { getRootOrigin, getStoreSlug } from './utils/storeHost';
 import { loadGA, trackPageView } from './utils/analytics';
 import NotificationCenter from './components/NotificationCenter';
 
@@ -71,7 +71,9 @@ function MainApp() {
   );
 
   useEffect(() => {
-    loadGA();
+    // El GA del dominio principal es el de la tienda principal; los subdominios
+    // cargan el GA propio de cada tienda (StorefrontProvider).
+    if (!getStoreSlug()) loadGA();
   }, []);
 
   useEffect(() => {

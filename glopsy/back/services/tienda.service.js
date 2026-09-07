@@ -12,6 +12,7 @@ const mapTienda = (row) => ({
   slug: row.slug || null,
   imageUrl: row.avatar,
   isActive: row.activa,
+  gaId: row.ga_id || null,
   registeredAt: row.fechareg,
 });
 
@@ -51,7 +52,7 @@ const slugFromInput = (slug) => {
   return isValidStoreSlug(normalized) ? normalized : null;
 };
 
-const STORE_COLUMNS = `hashid, nombres, slug, avatar, activa, fechareg`;
+const STORE_COLUMNS = `hashid, nombres, slug, avatar, activa, fechareg, ga_id`;
 
 export const getTiendaForUser = async (userId) => {
   const key = cacheKey(userId);
@@ -74,12 +75,15 @@ export const getTiendaForUser = async (userId) => {
 
 // Crea la tienda de un usuario si aún no existe (idempotente). Un mismo usuario
 // siempre tiene UNA tienda; otro usuario crea la suya sin afectar las demás.
-// name/slug opcionales (slug = subdominio). Lanza error 409 si el slug está ocupado.
-export const ensureTiendaForUser = async (userId, { name = '', slug = null } = {}) => {
+// name/slug/ga_id opcionales (slug = subdominio). Lanza error 409 si el slug está ocupado.
+export const ensureTiendaForUser = async (userId, { name = '', slug = null, ga_id = null } = {}) => {
   const uid = Number(userId);
   const storeName =
     String(name || '').trim().slice(0, 100) || `Tienda de Usuario ${uid}`;
   const storeSlug = slugFromInput(slug);
+  const storeGa = ga_id === null || ga_id === undefined || String(ga_id).trim() === ''
+    ? null
+    : String(ga_id).trim().slice(0, 40);
 
   if (slug !== null && slug !== undefined && String(slug).trim() !== '' && !storeSlug) {
     const err = new Error('Subdominio no válido. Usa solo minúsculas, números y guiones (ej: mi-tienda).');
@@ -98,11 +102,11 @@ export const ensureTiendaForUser = async (userId, { name = '', slug = null } = {
 
   try {
     const { rows } = await pool.query(
-      `INSERT INTO tiendas (usrid, nombres, slug, activa)
-       VALUES ($1, $2, $3, true)
+      `INSERT INTO tiendas (usrid, nombres, slug, ga_id, activa)
+       VALUES ($1, $2, $3, $4, true)
        ON CONFLICT (usrid) DO NOTHING
        RETURNING ${STORE_COLUMNS}`,
-      [uid, storeName, storeSlug]
+      [uid, storeName, storeSlug, storeGa]
     );
 
     await redisClient.del(cacheKey(uid)).catch(() => {});
@@ -126,8 +130,9 @@ export const ensureTiendaForUser = async (userId, { name = '', slug = null } = {
   }
 };
 
-// Actualiza nombre/subdominio de la tienda del usuario (slug null = no tocar).
-export const updateTiendaForUser = async (userId, { name = null, slug = null } = {}) => {
+// Actualiza nombre/subdominio/GA de la tienda del usuario (valores null/undefined = no tocar;
+// ga_id '' o null explícito limpia el GA de la tienda).
+export const updateTiendaForUser = async (userId, { name = null, slug = null, ga_id = undefined } = {}) => {
   const uid = Number(userId);
   const current = await getTiendaForUser(uid);
   if (!current) return null;
@@ -168,9 +173,16 @@ export const updateTiendaForUser = async (userId, { name = null, slug = null } =
         if (current.slug) removeStoreCustomDomain(current.slug).catch(() => {});
         if (tienda.slug) registerStoreCustomDomain(tienda.slug).catch(() => {});
       }
-      return tienda;
     }
-    return null;
+
+    // Google Analytics de la tienda (id definido => set/limpiar; undefined => no tocar).
+    if (ga_id !== undefined) {
+      const cleanGa = String(ga_id || '').trim().slice(0, 40) || null;
+      await pool.query(`UPDATE tiendas SET ga_id = $1 WHERE usrid = $2`, [cleanGa, uid]);
+      await redisClient.del(cacheKey(uid)).catch(() => {});
+    }
+
+    return getTiendaForUser(uid);
   } catch (error) {
     if (error.code === '23505') {
       const err = new Error('Ese subdominio ya está en uso. Elige otro.');

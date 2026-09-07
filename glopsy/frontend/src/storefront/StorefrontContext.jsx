@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import api from '../services/api';
+import { initGA } from '../utils/analytics';
 import { getStoreSlug } from '../utils/storeHost';
 
 const StorefrontContext = createContext({ slug: null, store: null, ready: false });
@@ -20,8 +21,11 @@ export function StorefrontProvider({ children }) {
       .get(`/storefront/${slug}`)
       .then(({ data }) => {
         if (!alive) return;
-        setStore(data?.store || null);
+        const st = data?.store || null;
+        setStore(st);
         setReady(true);
+        // Cada tienda reporta a SU propiedad de Google Analytics.
+        if (st?.gaId) initGA(st.gaId);
       })
       .catch(() => {
         if (!alive) return;

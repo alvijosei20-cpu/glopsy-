@@ -10,6 +10,7 @@ export default function Vender() {
   const { tienda, tiendaLoading, refreshTienda } = useAuth();
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
+  const [gaId, setGaId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -42,7 +43,7 @@ export default function Vender() {
     setBusy(true);
     setError('');
     try {
-      await api.post('/tienda', { name: name.trim(), slug: slug.trim().toLowerCase() });
+      await api.post('/tienda', { name: name.trim(), slug: slug.trim().toLowerCase(), ga_id: gaId.trim() || null });
       await refreshTienda();
       navigate('/market', { replace: true });
     } catch (err) {
@@ -99,6 +100,23 @@ export default function Vender() {
               />
             </div>
             {slug && <p className="mt-1 text-[11px] text-slate-400">Tu vitrina quedará en: {slug}.{getRootDomain()}</p>}
+          </div>
+
+          <div>
+            <label htmlFor="store-ga" className="block text-xs font-bold text-slate-600 mb-1.5">
+              Google Analytics de tu tienda (opcional)
+            </label>
+            <input
+              id="store-ga"
+              value={gaId}
+              onChange={(e) => setGaId(e.target.value.trim())}
+              placeholder="G-XXXXXXXXXX"
+              maxLength={40}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-800 outline-none focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-100 placeholder:text-slate-400"
+            />
+            <p className="mt-1 text-[11px] text-slate-400">
+              Lo puedes cambiar después desde el panel de tu tienda.
+            </p>
           </div>
 
           {error && (

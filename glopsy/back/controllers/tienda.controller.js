@@ -86,7 +86,12 @@ export const createTiendaController = ({
     try {
       const name = cleanString(req.body?.name, { maxLength: 100 });
       const slug = cleanString(req.body?.slug, { maxLength: 63 });
-      const tienda = await ensureTienda(req.auth.userId, { name, slug });
+      const gaRaw = req.body?.ga_id;
+      const tienda = await ensureTienda(req.auth.userId, {
+        name,
+        slug,
+        ga_id: gaRaw !== undefined && gaRaw !== null ? String(gaRaw).trim().slice(0, 40) : null,
+      });
       if (!tienda) {
         return res.status(400).json({ ok: false, message: 'No fue posible crear la tienda.' });
       }
@@ -104,17 +109,23 @@ export const createTiendaController = ({
     }
   },
 
-  // Actualiza nombre/subdominio de la tienda del usuario logueado.
+  // Actualiza nombre/subdominio/GA de la tienda del usuario logueado.
   updateStore: async (req, res) => {
     try {
       const name = cleanString(req.body?.name, { maxLength: 100 });
       const slug = cleanString(req.body?.slug, { maxLength: 63 });
+      const gaRaw = req.body?.ga_id;
       const hasName = name !== undefined && name !== null && String(name).trim() !== '';
       const hasSlug = slug !== undefined && slug !== null && String(slug).trim() !== '';
-      if (!hasName && !hasSlug) {
+      const hasGa = gaRaw !== undefined && gaRaw !== null;
+      if (!hasName && !hasSlug && !hasGa) {
         return res.status(400).json({ ok: false, message: 'No hay cambios que aplicar.' });
       }
-      const tienda = await updateTienda(req.auth.userId, { name: hasName ? name : null, slug: hasSlug ? slug : null });
+      const tienda = await updateTienda(req.auth.userId, {
+        name: hasName ? name : null,
+        slug: hasSlug ? slug : null,
+        ga_id: hasGa ? String(gaRaw).trim() : undefined,
+      });
       if (!tienda) {
         return res.status(404).json({ ok: false, message: 'No tienes una tienda registrada.' });
       }
