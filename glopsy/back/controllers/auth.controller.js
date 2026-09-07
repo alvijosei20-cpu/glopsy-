@@ -52,13 +52,13 @@ export const googleLogin = (req, res) => {
 };
 
 export const googleCallback = async (req, res) => {
-  const code = cleanString(req.query.code, { maxLength: 2000 });
+  const authCode = cleanString(req.query.code, { maxLength: 2000 });
 
   if (req.query.error) {
     return res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
   }
 
-  if (!code) {
+  if (!authCode) {
     return res.status(400).json({ message: 'Código de autorización no provisto' });
   }
 
@@ -66,7 +66,7 @@ export const googleCallback = async (req, res) => {
     const tokenResponse = await axios.post(
       'https://oauth2.googleapis.com/token',
       new URLSearchParams({
-        code,
+        code: authCode,
         client_id: process.env.GOOGLE_CLIENT_ID,
         client_secret: process.env.GOOGLE_CLIENT_SECRET,
         redirect_uri: process.env.GOOGLE_REDIRECT_URI,
@@ -95,10 +95,10 @@ export const googleCallback = async (req, res) => {
     // El callback corre en el dominio del backend (p. ej. glopsy-back.onrender.com),
     // distinto del dominio de la app. La cookie httpOnly no puede saltar de dominio:
     // se entrega un código de un solo uso y la app lo canjea por la cookie en su dominio.
-    const code = await createOAuthCode(token);
-    res.redirect(`${process.env.FRONTEND_URL}/auth/success?code=${code}`);
+    const oauthCode = await createOAuthCode(token);
+    res.redirect(`${process.env.FRONTEND_URL}/auth/success?code=${oauthCode}`);
   } catch (error) {
-    console.error('Error en callback de Google:', error.response?.data || error.message);
+    console.error('Error en callback de Google:', error.response?.data || error.message, error.stack);
     res.status(500).json({ message: 'Error en la autenticación con Google' });
   }
 };
@@ -119,13 +119,13 @@ export const discordLogin = (req, res) => {
 };
 
 export const discordCallback = async (req, res) => {
-  const code = cleanString(req.query.code, { maxLength: 2000 });
+  const authCode = cleanString(req.query.code, { maxLength: 2000 });
 
   if (req.query.error) {
     return res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
   }
 
-  if (!code) {
+  if (!authCode) {
     return res.status(400).json({ message: 'Código de autorización no provisto' });
   }
 
@@ -136,7 +136,7 @@ export const discordCallback = async (req, res) => {
         client_id: process.env.DISCORD_CLIENT_ID,
         client_secret: process.env.DISCORD_CLIENT_SECRET,
         grant_type: 'authorization_code',
-        code,
+        code: authCode,
         redirect_uri: process.env.DISCORD_REDIRECT_URI,
       }).toString(),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
@@ -165,10 +165,10 @@ export const discordCallback = async (req, res) => {
 
     // Cookie no puede cruzar dominios (callback en backend, app en otro origen):
     // se entrega un código de un solo uso para que la app lo canjee en su dominio.
-    const code = await createOAuthCode(token);
-    res.redirect(`${process.env.FRONTEND_URL}/auth/success?code=${code}`);
+    const oauthCode = await createOAuthCode(token);
+    res.redirect(`${process.env.FRONTEND_URL}/auth/success?code=${oauthCode}`);
   } catch (error) {
-    console.error('Error en callback de Discord:', error.response?.data || error.message);
+    console.error('Error en callback de Discord:', error.response?.data || error.message, error.stack);
     res.status(500).json({ message: 'Error en la autenticación con Discord' });
   }
 };
@@ -197,13 +197,13 @@ export const tiktokLogin = (req, res) => {
 };
 
 export const tiktokCallback = async (req, res) => {
-  const code = cleanString(req.query.code, { maxLength: 2000 });
+  const authCode = cleanString(req.query.code, { maxLength: 2000 });
 
   if (req.query.error) {
     return res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
   }
 
-  if (!code) {
+  if (!authCode) {
     return res.status(400).json({ message: 'Código de autorización no provisto' });
   }
 
@@ -213,7 +213,7 @@ export const tiktokCallback = async (req, res) => {
       new URLSearchParams({
         client_key: process.env.TIKTOK_CLIENT_KEY,
         client_secret: process.env.TIKTOK_CLIENT_SECRET,
-        code,
+        code: authCode,
         grant_type: 'authorization_code',
         redirect_uri: process.env.TIKTOK_REDIRECT_URI,
       }).toString(),
@@ -240,10 +240,10 @@ export const tiktokCallback = async (req, res) => {
 
     // Cookie no puede cruzar dominios (callback en backend, app en otro origen):
     // se entrega un código de un solo uso para que la app lo canjee en su dominio.
-    const code = await createOAuthCode(token);
-    res.redirect(`${process.env.FRONTEND_URL}/auth/success?code=${code}`);
+    const oauthCode = await createOAuthCode(token);
+    res.redirect(`${process.env.FRONTEND_URL}/auth/success?code=${oauthCode}`);
   } catch (error) {
-    console.error('Error en callback de TikTok:', error.response?.data || error.message);
+    console.error('Error en callback de TikTok:', error.response?.data || error.message, error.stack);
     res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
   }
 };
