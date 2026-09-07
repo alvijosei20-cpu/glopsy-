@@ -55,8 +55,8 @@ router.post('/process-mp-payment', heavyLimiter, optionalAuth, processMpPaymentC
 router.post('/process-saved-card-payment', requireAuth, heavyLimiter, processSavedCardPaymentController);
 router.post('/record-purchase', requireAuth, recordPurchaseController);
 
-// Endpoint: Asistente IA de la ficha de producto (consulta el catálogo real)
-router.post('/:id/assistant', heavyLimiter, productAssistant);
+// Endpoint: Asistente IA de la ficha de producto (solo usuarios logueados; consulta el catálogo real)
+router.post('/:id/assistant', requireAuth, heavyLimiter, productAssistant);
 
 // Endpoint: GET /api/product/:id (dynamic route at the end)
 router.get('/:id', getProductById);

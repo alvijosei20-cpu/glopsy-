@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Bot, X, Send, Sparkles, Loader2 } from 'lucide-react';
 import api from '../services/api';
 import { useUserCity } from '../utils/location';
+import { isLoggedIn } from '../utils/session';
+import { trackEvent } from '../utils/analytics';
 
 const QUICK_PROMPTS = [
   '¿Vale la pena comprarlo?',
@@ -90,10 +92,24 @@ export default function ProductAssistant({ product }) {
   const bottomRef = useRef(null);
 
   const pid = String(product?.public_id || product?.id || '');
+  const gaBase = {
+    product_id: pid,
+    product_name: product?.name || '',
+    categoria: product?.categoria_nombre || product?.category || '',
+  };
 
   const go = (path) => {
+    trackEvent('asistente_enlace', {
+      ...gaBase,
+      destino: path && path.startsWith('/product') ? 'producto' : path && path.startsWith('/listpr') ? 'catalogo' : path,
+    });
     setOpen(false);
     navigate(path);
+  };
+
+  const openChat = () => {
+    trackEvent('asistente_abierto', gaBase);
+    setOpen(true);
   };
 
   useEffect(() => {
@@ -105,6 +121,7 @@ export default function ProductAssistant({ product }) {
     if (!clean || busy || !pid) return;
     setError('');
     setInput('');
+    trackEvent('asistente_pregunta', { ...gaBase, pregunta: clean.slice(0, 120) });
     const history = [...messages, { role: 'user', content: clean }];
     setMessages(history);
     setBusy(true);
@@ -115,6 +132,8 @@ export default function ProductAssistant({ product }) {
       });
       if (data?.ok && data.reply) {
         setMessages((prev) => [...prev, { role: 'bot', content: data.reply, local: !!data.fallback }]);
+        if (data.reply.includes('/listpr')) trackEvent('asistente_respuesta_catalogo', gaBase);
+        if (/\/product\//.test(data.reply)) trackEvent('asistente_respuesta_producto', gaBase);
       } else {
         setError(data?.message || 'No obtuve respuesta. Intenta de nuevo.');
       }
@@ -126,7 +145,8 @@ export default function ProductAssistant({ product }) {
     }
   };
 
-  if (!pid) return null;
+  // Solo disponible para usuarios logueados.
+  if (!pid || !isLoggedIn()) return null;
 
   return (
     <>
@@ -134,7 +154,7 @@ export default function ProductAssistant({ product }) {
       {!open && (
         <button
           type="button"
-          onClick={() => setOpen(true)}
+          onClick={openChat}
           className="fixed bottom-5 right-5 z-50 inline-flex items-center gap-2 bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-bold pl-3.5 pr-4 py-3 rounded-full shadow-2xl shadow-fuchsia-600/40 transition-all hover:scale-105 active:scale-95"
           title="Pregúntale al asistente"
         >
