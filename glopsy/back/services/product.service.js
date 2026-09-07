@@ -639,7 +639,30 @@ const buildSearchWhere = (idx) => {
   return where;
 };
 
-export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadName, categoriaId, sortBy, priceMin, priceMax, envioGratis, minRating }) => {
+// Tienda principal (dueña de app.glopsy.shop). El catálogo público se aísla a su tienda.
+const resolveMainStoreId = async () => {
+  try {
+    const { rows } = await pool.query(`SELECT usrid FROM tiendas WHERE is_main = true LIMIT 1`);
+    if (rows[0]) return Number(rows[0].usrid);
+  } catch {}
+  try {
+    const { rows: fallback } = await pool.query(`SELECT usrid FROM tiendas ORDER BY usrid ASC LIMIT 1`);
+    return fallback[0] ? Number(fallback[0].usrid) : null;
+  } catch {
+    return null;
+  }
+};
+
+export const getMainStoreId = resolveMainStoreId;
+
+const getStoreIdBySlug = async (slug) => {
+  const clean = String(slug || '').trim().slice(0, 63);
+  if (!clean) return null;
+  const { rows } = await pool.query(`SELECT usrid FROM tiendas WHERE slug = $1 LIMIT 1`, [clean]);
+  return rows[0] ? Number(rows[0].usrid) : null;
+};
+
+export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadName, categoriaId, sortBy, priceMin, priceMax, envioGratis, minRating, tienda }) => {
   const lim = Math.max(1, parseInt(limit, 10) || 12);
   const off = Math.max(0, parseInt(offset, 10) || 0);
   const search = q ? String(q).trim() : null;
@@ -650,6 +673,19 @@ export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadNam
   const freeShip = envioGratis === 'true' || envioGratis === true;
   const minRate = minRating !== undefined && minRating !== null && minRating !== '' ? Number(minRating) : null;
   const orderBy = SORT_CLAUSES[sortBy] || SORT_CLAUSES.relevance;
+
+  // Aislamiento: sin tienda explícita el catálogo público es SOLO de la tienda principal.
+  // Las demás tiendas solo se ven en su subdominio (endpoint /storefront/:slug).
+  let scopeClause = '';
+  const scopeSlug = tienda ? String(tienda).trim().slice(0, 63) : null;
+  if (scopeSlug) {
+    const scopeId = await getStoreIdBySlug(scopeSlug);
+    if (!scopeId) return { products: [], total: 0, limit: lim, offset: off };
+    scopeClause = `p.tienda_id = ${scopeId}`;
+  } else {
+    const mainId = await resolveMainStoreId();
+    if (mainId) scopeClause = `p.tienda_id = ${mainId}`;
+  }
 
   const ratingSelect = `(
     SELECT COUNT(*) FROM reviews rv WHERE rv.product_id = p.id
@@ -723,7 +759,7 @@ export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadNam
     LEFT JOIN fullments f ON p.fullm_id = f.id
     LEFT JOIN ciudades c ON f.ciudad_id = c.id
     LEFT JOIN categorias cat ON p.categoria_id = cat.id
-    WHERE ${buildSearchWhere(mainIdx)}
+    WHERE ${buildSearchWhere(mainIdx)}${scopeClause ? ` AND ${scopeClause}` : ''}
     ORDER BY ${orderBy}
     LIMIT $3 OFFSET $4
   `;
@@ -731,7 +767,7 @@ export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadNam
   const countQueryText = `
     SELECT COUNT(*) AS total
     FROM produc p
-    WHERE ${buildSearchWhere(countIdx)}
+    WHERE ${buildSearchWhere(countIdx)}${scopeClause ? ` AND ${scopeClause}` : ''}
   `;
 
   const values = [search, city, lim, off, catId, pMin, pMax, minRate, freeShip];
@@ -764,6 +800,7 @@ export const searchQueryProductsCached = async (params) => {
       priceMax: params.priceMax ?? null,
       envioGratis: params.envioGratis ?? false,
       minRating: params.minRating ?? null,
+      tienda: params.tienda ?? null,
     }))
     .digest('hex')}`;
 
@@ -779,17 +816,22 @@ export const searchQueryProductsCached = async (params) => {
 // Listado público de los productos de UNA tienda por su subdominio (slug). Cada
 // subdominio (x.glopsy.shop) muestra SOLO los productos de esa tienda.
 export const getStorefrontProducts = async ({ slug = '', q = '', limit = 48, offset = 0, ciudadName = null } = {}) => {
-  const cleanSlug = String(slug || '').toLowerCase().trim().slice(0, 63);
+  const isMain = String(slug || '').toLowerCase() === 'main';
+  const cleanSlug = isMain ? '' : String(slug || '').toLowerCase().trim().slice(0, 63);
   const lim = Math.max(1, parseInt(limit, 10) || 48);
   const off = Math.max(0, parseInt(offset, 10) || 0);
-  if (!cleanSlug) return { store: null, products: [], total: 0 };
 
-  const { rows: storeRows } = await pool.query(
-    `SELECT usrid FROM tiendas WHERE slug = $1 AND COALESCE(activa, true) = true LIMIT 1`,
-    [cleanSlug]
-  );
-  if (!storeRows[0]) return { store: null, products: [], total: 0 };
-  const tiendaId = Number(storeRows[0].usrid);
+  let tiendaId = null;
+  if (isMain) {
+    tiendaId = await resolveMainStoreId();
+  } else if (cleanSlug) {
+    const { rows: storeRows } = await pool.query(
+      `SELECT usrid FROM tiendas WHERE slug = $1 AND COALESCE(activa, true) = true LIMIT 1`,
+      [cleanSlug]
+    );
+    tiendaId = storeRows[0] ? Number(storeRows[0].usrid) : null;
+  }
+  if (!tiendaId) return { store: null, products: [], total: 0 };
 
   const city = ciudadName ? String(ciudadName).trim().slice(0, 100) : null;
   const search = String(q || '').trim().slice(0, 120);
@@ -1501,6 +1543,9 @@ export const processMpPaymentForCart = async (userId, formData, preferenceId, cu
 };
 
 export const getFavoriteProductsDetails = async (userId, ciudad = null) => {
+  const mainId = await resolveMainStoreId();
+  const extraWhere = mainId ? ' AND p.tienda_id = $3' : '';
+  const values = [userId, ciudad, ...(mainId ? [mainId] : [])];
   const { rows } = await pool.query(
     `SELECT p.*, f.created_at as favorited_at,
        (COALESCE(p.suggested_price, p.base_price) + ${freeShippingCostoExpr('$2')}) AS suggested_price_efectivo
@@ -1508,9 +1553,9 @@ export const getFavoriteProductsDetails = async (userId, ciudad = null) => {
      JOIN produc p ON f.product_id = p.id
      JOIN tiendas t ON t.usrid = p.tienda_id
      WHERE f.user_id = $1
-       AND COALESCE(t.activa, true) = true
+       AND COALESCE(t.activa, true) = true${extraWhere}
      ORDER BY f.created_at DESC`,
-    [userId, ciudad]
+    values
   );
   return rows.map(r => ({ ...r, suggested_price: r.suggested_price_efectivo ?? r.suggested_price }));
 };

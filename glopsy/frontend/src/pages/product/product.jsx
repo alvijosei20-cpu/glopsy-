@@ -217,7 +217,7 @@ export default function ProductDetail() {
   useEffect(() => {
     if (!product) return;
     const catId = product.categoria_id;
-    api.get('/product', { params: { categoria_id: catId, limit: 12, ciudad: userCity } })
+    api.get('/product', { params: { categoria_id: catId, limit: 12, ciudad: userCity, ...(storeSlug ? { tienda: storeSlug } : {}) } })
       .then(res => {
         if (res.data.ok) {
           const list = (res.data.products || []).filter(p => Number(p.id) !== Number(product.id));

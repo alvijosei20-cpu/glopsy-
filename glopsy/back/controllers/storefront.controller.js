@@ -1,12 +1,15 @@
 import { cleanString, toInt } from '../utils/validation.js';
-import { getPublicStoreBySlug } from '../services/tienda.service.js';
+import { getPublicStoreBySlug, getMainStore } from '../services/tienda.service.js';
 import { getStorefrontProducts } from '../services/product.service.js';
 
 // GET /api/storefront/:slug -> información pública de la tienda (vitrina del subdominio).
+// El slug especial "main" resuelve la tienda principal (app.glopsy.shop).
 export const storefrontInfo = async (req, res) => {
   try {
     const slug = cleanString(req.params.slug, { maxLength: 63 });
-    const store = await getPublicStoreBySlug(slug);
+    const store = slug.toLowerCase() === 'main'
+      ? await getMainStore()
+      : await getPublicStoreBySlug(slug);
     if (!store) {
       return res.status(404).json({ ok: false, message: 'Tienda no encontrada.' });
     }

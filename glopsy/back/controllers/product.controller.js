@@ -1,5 +1,5 @@
 import { obtenerProductoPorId } from '../services/mastershopService.js';
-import { saveProductForUser, getProductsForUser, getProductsForUserManagement, setProductStatusForUser, deleteProductForUser, addProductImagesForUser, updateProductNameForUser, searchQueryProductsCached, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, cancelOrderForUser, updateOrderAddressForUser, getProductReviews, getUserReviewStatus, getOrderReviewsStatus, addProductReview, updateProductReview, deleteProductReview } from '../services/product.service.js';
+import { saveProductForUser, getProductsForUser, getProductsForUserManagement, setProductStatusForUser, deleteProductForUser, addProductImagesForUser, updateProductNameForUser, searchQueryProductsCached, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, getMainStoreId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, cancelOrderForUser, updateOrderAddressForUser, getProductReviews, getUserReviewStatus, getOrderReviewsStatus, addProductReview, updateProductReview, deleteProductReview } from '../services/product.service.js';
 import { validatePaymentBiometricNonce } from '../services/auth.service.js';
 import { pool } from '../db.js';
 import {
@@ -47,12 +47,20 @@ export const getProductById = async (req, res) => {
 
   try {
     const producto = await getProductByPublicId(productId, ciudad);
-    // Si se pide desde un subdominio de tienda, el producto debe pertenecer a esa tienda.
-    if (storeSlug && producto && String(producto.tienda_slug || '').toLowerCase() !== storeSlug.toLowerCase()) {
-      return res.status(404).json({
-        ok: false,
-        message: 'Este producto no está disponible en esta tienda.',
-      });
+    // Aislamiento por tienda:
+    // - con ?tienda=<slug> el producto debe pertenecer a esa tienda (subdominio),
+    // - sin el parámetro (app.glopsy.shop) solo se sirven productos de la tienda principal.
+    if (producto) {
+      if (storeSlug) {
+        if (String(producto.tienda_slug || '').toLowerCase() !== storeSlug.toLowerCase()) {
+          return res.status(404).json({ ok: false, message: 'Este producto no está disponible en esta tienda.' });
+        }
+      } else {
+        const mainId = await getMainStoreId();
+        if (mainId && Number(producto.tienda_id) !== Number(mainId)) {
+          return res.status(404).json({ ok: false, message: 'Este producto no está disponible.' });
+        }
+      }
     }
     res.json({
       ok: true,
@@ -183,8 +191,9 @@ export const searchProducts = async (req, res) => {
     const price_max = toNumber(req.query.price_max, { min: 0 });
     const envio_gratis = cleanBoolean(req.query.envio_gratis, undefined);
     const min_rating = toNumber(req.query.min_rating, { min: 1, max: 5 });
+    const tienda = cleanString(req.query.tienda, { maxLength: 63 }) || undefined;
     await autoCategorizeUncategorizedProducts().catch(() => {});
-    const data = await searchQueryProductsCached({ q, limit, offset, ciudadName: ciudad, categoriaId: categoria_id, sortBy: sort, priceMin: price_min, priceMax: price_max, envioGratis: envio_gratis, minRating: min_rating });
+    const data = await searchQueryProductsCached({ q, limit, offset, ciudadName: ciudad, categoriaId: categoria_id, sortBy: sort, priceMin: price_min, priceMax: price_max, envioGratis: envio_gratis, minRating: min_rating, tienda });
     res.json({
       ok: true,
       ...data,

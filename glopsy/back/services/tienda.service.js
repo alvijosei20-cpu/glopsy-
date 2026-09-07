@@ -1,6 +1,7 @@
 import { pool } from '../db.js';
 import { redisClient } from './redis.service.js';
 import { encryptSecret, decryptSecret, maskSecret } from '../utils/crypto.js';
+import { registerStoreCustomDomain, removeStoreCustomDomain } from './cloudflare.service.js';
 
 const CACHE_TTL_SECONDS = 60;
 const cacheKey = (userId) => `tienda:${userId}`;
@@ -106,7 +107,14 @@ export const ensureTiendaForUser = async (userId, { name = '', slug = null } = {
 
     await redisClient.del(cacheKey(uid)).catch(() => {});
 
-    if (rows[0]) return mapTienda(rows[0]);
+    if (rows[0]) {
+      const tienda = mapTienda(rows[0]);
+      // Aprovisiona <slug>.glopsy.shop como dominio del worker (DNS+cert auto).
+      if (tienda.slug) {
+        registerStoreCustomDomain(tienda.slug).catch(() => {});
+      }
+      return tienda;
+    }
     return getTiendaForUser(uid);
   } catch (error) {
     if (error.code === '23505') {
@@ -123,7 +131,6 @@ export const updateTiendaForUser = async (userId, { name = null, slug = null } =
   const uid = Number(userId);
   const current = await getTiendaForUser(uid);
   if (!current) return null;
-
   const newName = name !== null && name !== undefined
     ? String(name).trim().slice(0, 100)
     : null;
@@ -154,7 +161,16 @@ export const updateTiendaForUser = async (userId, { name = null, slug = null } =
       [newName, wantsSlug ? storeSlug : current.slug, uid]
     );
     await redisClient.del(cacheKey(uid)).catch(() => {});
-    return rows[0] ? mapTienda(rows[0]) : null;
+    if (rows[0]) {
+      const tienda = mapTienda(rows[0]);
+      // Si cambió el subdominio se libera el viejo y se registra el nuevo en Cloudflare.
+      if (tienda.slug !== current.slug) {
+        if (current.slug) removeStoreCustomDomain(current.slug).catch(() => {});
+        if (tienda.slug) registerStoreCustomDomain(tienda.slug).catch(() => {});
+      }
+      return tienda;
+    }
+    return null;
   } catch (error) {
     if (error.code === '23505') {
       const err = new Error('Ese subdominio ya está en uso. Elige otro.');
@@ -165,18 +181,34 @@ export const updateTiendaForUser = async (userId, { name = null, slug = null } =
   }
 };
 
-// Info pública de una tienda para servir su subdominio/vitrina.
+// Info pública de una tienda para servir su subdominio/vitrina (solo tiendas activas).
 export const getPublicStoreBySlug = async (slug) => {
   const cleanSlug = normalizeStoreSlug(slug);
   if (!cleanSlug) return null;
   const { rows } = await pool.query(
     `SELECT ${STORE_COLUMNS}
      FROM tiendas
-     WHERE slug = $1
+     WHERE slug = $1 AND COALESCE(activa, true) = true
      LIMIT 1`,
     [cleanSlug]
   );
   return rows[0] ? mapTienda(rows[0]) : null;
+};
+
+// Tienda principal (la que se sirve en app.glopsy.shop). Sin slug obligatorio.
+export const getMainStore = async () => {
+  const { rows } = await pool.query(
+    `SELECT ${STORE_COLUMNS}
+     FROM tiendas
+     WHERE is_main = true AND COALESCE(activa, true) = true
+     LIMIT 1`
+  );
+  if (rows[0]) return mapTienda(rows[0]);
+  // Compatibilidad: si aún no hay marcada, se usa la tienda más antigua.
+  const { rows: fallback } = await pool.query(
+    `SELECT ${STORE_COLUMNS} FROM tiendas WHERE COALESCE(activa, true) = true ORDER BY usrid ASC LIMIT 1`
+  );
+  return fallback[0] ? mapTienda(fallback[0]) : null;
 };
 
 export const updateTiendaStatus = async (userId, isActive) => {
