@@ -33,6 +33,21 @@ const ensure8DigitDane = (daneCode) => {
   return '11001000';
 };
 
+// El token de respaldo del entorno solo se usa para la tienda principal (dueña de la
+// plataforma). Las demás tiendas deben configurar su propio ENVIA; si no lo tienen no
+// se cotiza con la cuenta de otra tienda ni con la del dueño.
+const fallbackTokenAllowedFor = async (tiendaId) => {
+  if (!tiendaId) return true; // uso legacy/global interno
+  try {
+    const { rows } = await pool.query(`SELECT usrid FROM tiendas WHERE is_main = true LIMIT 1`);
+    if (rows[0]) return Number(tiendaId) === Number(rows[0].usrid);
+    const { rows: fallback } = await pool.query(`SELECT usrid FROM tiendas ORDER BY usrid ASC LIMIT 1`);
+    return fallback[0] ? Number(tiendaId) === Number(fallback[0].usrid) : false;
+  } catch {
+    return false;
+  }
+};
+
 const getBaseEnviaUrl = (isProd) => {
   return isProd ? (process.env.ENVIA_SHIPPING_API_PROD || 'https://api.envia.com') : (process.env.ENVIA_SHIPPING_API_TEST || 'https://api-test.envia.com');
 };
@@ -90,10 +105,16 @@ export const getShippingOptionsFromEnvia = async (items = [], destinationCiudadI
     ).then(r => r.rows).catch(() => [])
   ]);
 
-  const accessToken = dbRow?.access_token ? decryptSecret(dbRow.access_token) : (process.env.ENVIA_API_TOKEN || process.env.ENVIA_TOKEN);
+  let accessToken = dbRow?.access_token ? decryptSecret(dbRow.access_token) : null;
   const mode = dbRow?.mode || opts.mode || 'prueba';
+  if (!accessToken && (await fallbackTokenAllowedFor(tiendaId))) {
+    accessToken = process.env.ENVIA_API_TOKEN || process.env.ENVIA_TOKEN || null;
+  }
   if (!accessToken) {
-    // No token available -> cannot query Envia
+    // No token propio de la tienda -> no se cotiza con una cuenta ajena.
+    if (tiendaId) {
+      console.warn(`[envia] tienda ${tiendaId} sin ENVIA configurado; no se usa token global.`);
+    }
     return { shippingOptions: [], shippingCost: 0 };
   }
 
@@ -301,7 +322,10 @@ export const getShippingOptionsForTipoEmpaque = async (tipoId, destinationCiudad
         dbRow = r.rows[0];
       } catch {}
     }
-  const accessToken = dbRow?.access_token ? decryptSecret(dbRow.access_token) : (process.env.ENVIA_API_TOKEN || process.env.ENVIA_TOKEN);
+    let accessToken = dbRow?.access_token ? decryptSecret(dbRow.access_token) : null;
+    if (!accessToken && (await fallbackTokenAllowedFor(tiendaId))) {
+      accessToken = process.env.ENVIA_API_TOKEN || process.env.ENVIA_TOKEN || null;
+    }
     if (!accessToken) return null;
     const isProdFinal = dbRow?.mode ? String(dbRow.mode).toLowerCase() === 'produccion' : String(mode).toLowerCase() === 'produccion';
     const baseEnviaUrl = getBaseEnviaUrl(isProdFinal);

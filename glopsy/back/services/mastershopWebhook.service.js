@@ -110,15 +110,15 @@ const updateOrderShipmentsFromWebhook = async (orderId, { logistics, idStatus, c
   return updated;
 };
 
+// Sin tienda identificable NO se importa el producto a ninguna tienda (evita mezclar
+// inventario de vendedores distintos). Retorna null en vez de caer en la primera tienda.
 const resolveTiendaIdForWebhook = async (productId, publicId) => {
   const { rows: existing } = await pool.query(
     `SELECT tienda_id FROM produc WHERE id = $1 OR public_id = $2 LIMIT 1`,
     [Number(productId) || 0, publicId || '']
   );
   if (existing[0]?.tienda_id) return Number(existing[0].tienda_id);
-
-  const { rows: tiendaRows } = await pool.query(`SELECT usrid FROM tiendas ORDER BY usrid LIMIT 1`);
-  return tiendaRows[0]?.usrid ? Number(tiendaRows[0].usrid) : 1;
+  return null;
 };
 
 const updateOrderFromWebhook = async (mastershopOrderId, data) => {
@@ -214,27 +214,31 @@ export const processMastershopWebhookEvent = async (payload) => {
 
     if (productId || publicId) {
       const tiendaId = data.tienda_id
-        ? toNumber(data.tienda_id, { min: 1, fallback: 1 })
+        ? toNumber(data.tienda_id, { min: 1 })
         : await resolveTiendaIdForWebhook(productId, publicId);
 
-      await pool.query(
-        `INSERT INTO produc (tienda_id, id, public_id, name, base_price, updated_at, status)
-         VALUES ($1, $2, $3, $4, $5, NOW(), 'active')
-         ON CONFLICT (id) DO UPDATE SET
-           tienda_id = EXCLUDED.tienda_id,
-           name = EXCLUDED.name,
-           base_price = EXCLUDED.base_price,
-           updated_at = NOW(),
-           -- Si el producto fue eliminado/pausado por el dueño, el webhook no lo revive
-           status = CASE WHEN produc.status = 'deleted' THEN produc.status ELSE EXCLUDED.status END`,
-        [tiendaId, Number(productId) || Math.floor(Math.random() * 1000000), publicId || String(productId), name || 'Producto Webhook', price]
-      );
+      if (!tiendaId) {
+        console.warn(`[Mastershop Webhook] Producto sin tienda identificable; se ignora (no se mezcla inventario). id=${productId} public_id=${publicId}`);
+      } else {
+        await pool.query(
+          `INSERT INTO produc (tienda_id, id, public_id, name, base_price, updated_at, status)
+           VALUES ($1, $2, $3, $4, $5, NOW(), 'active')
+           ON CONFLICT (id) DO UPDATE SET
+             tienda_id = EXCLUDED.tienda_id,
+             name = EXCLUDED.name,
+             base_price = EXCLUDED.base_price,
+             updated_at = NOW(),
+             -- Si el producto fue eliminado/pausado por el dueño, el webhook no lo revive
+             status = CASE WHEN produc.status = 'deleted' THEN produc.status ELSE EXCLUDED.status END`,
+          [tiendaId, Number(productId) || Math.floor(Math.random() * 1000000), publicId || String(productId), name || 'Producto Webhook', price]
+        );
 
-      if (productId) {
-        await redisClient.del(`producto:${productId}`);
-        const keys = [`product:detail:${productId}`];
-        if (publicId) keys.push(`product:detail:${publicId}`);
-        await redisClient.del(keys).catch(() => {});
+        if (productId) {
+          await redisClient.del(`producto:${productId}`);
+          const keys = [`product:detail:${productId}`];
+          if (publicId) keys.push(`product:detail:${publicId}`);
+          await redisClient.del(keys).catch(() => {});
+        }
       }
     }
   }
