@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { 
   changeStatus, 
+  createStore,
+  updateStore,
   getMine, 
   getDian, 
   saveDian,
@@ -31,6 +33,10 @@ const router = Router();
 
 router.use(requireAuth, tiendaLimiter);
 router.get('/', getMine);
+// Alta de tienda para un vendedor nuevo (idempotente)
+router.post('/', createStore);
+// Cambiar nombre/subdominio de la tienda
+router.patch('/', updateStore);
 router.patch('/estado', changeStatus);
 router.get('/dian', getDian);
 router.put('/dian', saveDian);

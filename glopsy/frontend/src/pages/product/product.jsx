@@ -7,6 +7,7 @@ import { useSEO } from '../../utils/seo';
 import { trackEvent } from '../../utils/analytics';
 import { productShareUrl, shareProduct } from '../../utils/share';
 import { useUserCity } from '../../utils/location';
+import { getStoreSlug } from '../../utils/storeHost';
 import LocationPicker from '../../components/LocationPicker';
 import ProductAssistant from '../../components/ProductAssistant';
 import './product.css';
@@ -94,6 +95,7 @@ function Spin360({ images, startIdx = 0, autoRotate = true, name = 'Producto' })
 export default function ProductDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const storeSlug = getStoreSlug();
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -164,21 +166,26 @@ export default function ProductDetail() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     if (!id) return;
     setLoading(true);
-    api.get(`/product/${id}`, { params: { ciudad: userCity } })
+    api.get(`/product/${id}`, { params: { ciudad: userCity, ...(storeSlug ? { tienda: storeSlug } : {}) } })
       .then(res => {
         if (res.data.ok) {
           const p = res.data.product;
-          setProduct(p);
+          // En un subdominio de tienda el producto debe ser de ESA tienda.
+          if (storeSlug && p?.tienda_slug && p.tienda_slug.toLowerCase() !== storeSlug.toLowerCase()) {
+            setError('Este producto no está disponible en esta tienda.');
+          } else {
+            setProduct(p);
+          }
         } else {
           setError('No se pudo cargar el producto.');
         }
       })
       .catch(err => {
         console.error('Error al cargar detalle del producto:', err);
-        setError('Producto no encontrado o error en el servidor.');
+        setError('Producto no encontrado o no disponible en esta tienda.');
       })
       .finally(() => setLoading(false));
-  }, [id, userCity]);
+  }, [id, userCity, storeSlug]);
 
   useEffect(() => {
     if (!product) return;

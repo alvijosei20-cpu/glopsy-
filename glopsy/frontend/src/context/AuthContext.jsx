@@ -35,6 +35,21 @@ export const AuthProvider = ({ children }) => {
     return data.user;
   }, []);
 
+  const refreshTienda = useCallback(async () => {
+    if (!isLoggedIn()) {
+      setTienda(null);
+      return null;
+    }
+    try {
+      const { data } = await api.get('/tienda');
+      setTienda(data.tienda || null);
+      return data.tienda || null;
+    } catch {
+      setTienda(null);
+      return null;
+    }
+  }, []);
+
   useEffect(() => {
     const restoreSession = async () => {
       if (!isLoggedIn()) {
@@ -84,7 +99,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout, tienda, tiendaLoading, setTienda }}>
+    <AuthContext.Provider value={{ user, isLoading, login, logout, tienda, tiendaLoading, setTienda, refreshTienda }}>
       {children}
     </AuthContext.Provider>
   );

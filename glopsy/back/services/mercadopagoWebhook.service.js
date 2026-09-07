@@ -3,18 +3,61 @@ import { pool } from '../db.js';
 import { MercadoPagoConfig, Payment } from 'mercadopago';
 import { decryptSecret } from '../utils/crypto.js';
 
-const getMpAccessToken = async () => {
+// ------------------------------------------------------------------ Credenciales por tienda
+// Con más de una tienda cada una cobra con SU cuenta de Mercado Pago. El webhook no
+// trae la tienda en el payload, así que se identifica por el pedido (mercadopago_payment_id
+// o preference_id) y se usan el access_token y el webhook_secret de ESA tienda.
+
+const getMpIntegrationForStore = async (tiendaId, { includeSecret = true } = {}) => {
+  if (!tiendaId) return null;
   const { rows } = await pool.query(
-    `SELECT access_token, public_key, mode FROM checkout_integrations
+    `SELECT access_token, public_key, mode${includeSecret ? ', webhook_secret' : ''}
+     FROM checkout_integrations
+     WHERE tienda_id = $1 AND provider = 'mercadopago'
+     ORDER BY (mode = 'produccion') DESC LIMIT 1`,
+    [Number(tiendaId)]
+  );
+  const mp = rows[0];
+  if (!mp?.access_token) return null;
+  mp.access_token = decryptSecret(mp.access_token);
+  if (mp.webhook_secret) mp.webhook_secret = decryptSecret(mp.webhook_secret);
+  return { tienda_id: Number(tiendaId), ...mp };
+};
+
+// Fallback: integración global única (comportamiento original con una sola tienda).
+const getGlobalMpIntegration = async ({ includeSecret = true } = {}) => {
+  const { rows } = await pool.query(
+    `SELECT access_token, public_key, mode${includeSecret ? ', webhook_secret' : ''}
+     FROM checkout_integrations
      WHERE provider = 'mercadopago'
      ORDER BY (mode = 'produccion') DESC LIMIT 1`
   );
-  const mpInt = rows[0];
-  if (!mpInt?.access_token) {
-    throw new Error('No hay integración de Mercado Pago configurada.');
+  const mp = rows[0];
+  if (!mp?.access_token) return null;
+  mp.access_token = decryptSecret(mp.access_token);
+  if (mp.webhook_secret) mp.webhook_secret = decryptSecret(mp.webhook_secret);
+  return mp;
+};
+
+const getMpIntegration = async (tiendaId, opts) => {
+  if (tiendaId) {
+    const byStore = await getMpIntegrationForStore(tiendaId, opts);
+    if (byStore) return byStore;
   }
-  mpInt.access_token = decryptSecret(mpInt.access_token);
-  return mpInt;
+  return getGlobalMpIntegration(opts);
+};
+
+// Tienda dueña de un pago/orden según los ids conocidos.
+const findPaymentStore = async (paymentId, preferenceId) => {
+  const { rows } = await pool.query(
+    `SELECT tienda_id FROM orders
+     WHERE ($1::text IS NOT NULL AND mercadopago_payment_id = $1)
+        OR ($2::text IS NOT NULL AND preference_id = $2)
+     ORDER BY (mercadopago_payment_id = $1) DESC NULLS LAST, id DESC
+     LIMIT 1`,
+    [paymentId ? String(paymentId) : null, preferenceId ? String(preferenceId) : null]
+  );
+  return rows[0]?.tienda_id ? Number(rows[0].tienda_id) : null;
 };
 
 const verifyWebhookSignature = (secret, rawBody, headers) => {
@@ -43,17 +86,28 @@ const verifyWebhookSignature = (secret, rawBody, headers) => {
   }
 };
 
-const updateOrderFromPayment = async (paymentId) => {
-  const mpInt = await getMpAccessToken();
-  const client = new MercadoPagoConfig({ accessToken: mpInt.access_token });
-  const payment = new Payment(client);
+const fetchPaymentById = async (paymentId, tiendaId) => {
+  const mpInt = await getMpIntegration(tiendaId, { includeSecret: false });
+  if (!mpInt?.access_token) return null;
+  const { default: axios } = await import('axios');
+  const { data } = await axios.get(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+    headers: { Authorization: `Bearer ${mpInt.access_token}` },
+  });
+  return data;
+};
+
+const updateOrderFromPayment = async (paymentId, tiendaId) => {
+  const mpInt = await getMpIntegration(tiendaId, { includeSecret: false });
+  if (!mpInt?.access_token) return { ok: false, reason: 'sin_integracion' };
 
   let paymentData;
   try {
+    const client = new MercadoPagoConfig({ accessToken: mpInt.access_token });
+    const payment = new Payment(client);
     const res = await payment.get({ id: String(paymentId) });
-    paymentData = res?.id ? res : await fetchPaymentById(paymentId);
+    paymentData = res?.id ? res : await fetchPaymentById(paymentId, tiendaId);
   } catch {
-    paymentData = await fetchPaymentById(paymentId);
+    paymentData = await fetchPaymentById(paymentId, tiendaId);
   }
   if (!paymentData?.id) return { ok: false, reason: 'payment_not_found' };
 
@@ -70,15 +124,6 @@ const updateOrderFromPayment = async (paymentId) => {
   return { ok: true, orderId: rows[0]?.id || null, orderHash: rows[0]?.order_hash || null, status };
 };
 
-const fetchPaymentById = async (paymentId) => {
-  const mpInt = await getMpAccessToken();
-  const { default: axios } = await import('axios');
-  const { data } = await axios.get(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
-    headers: { Authorization: `Bearer ${mpInt.access_token}` },
-  });
-  return data;
-};
-
 export const processMercadopagoWebhook = async (payload, rawBody, headers = {}) => {
   const type = payload.type || payload.topic || payload.action || 'unknown';
   const paymentId = payload.data?.id || payload.payment_id || payload.id;
@@ -93,15 +138,14 @@ export const processMercadopagoWebhook = async (payload, rawBody, headers = {}) 
     return { ok: true, ignored: true, reason: 'no_payment_id' };
   }
 
-  const { rows: webhookRows } = await pool.query(
-    `SELECT ci.webhook_secret
-     FROM checkout_integrations ci
-     WHERE ci.provider = 'mercadopago'
-     ORDER BY (ci.mode = 'produccion') DESC
-     LIMIT 1`
-  );
-  const secret = webhookRows[0]?.webhook_secret ? decryptSecret(webhookRows[0].webhook_secret) : null;
+  // Identificar la tienda dueña del pago (si la orden ya existe).
+  const merchantPaymentId =
+    type === 'merchant_order' ? payload.data?.payments?.[0]?.id || null : null;
+  const tiendaId = await findPaymentStore(paymentId, merchantPaymentId || null);
 
+  // Verificar firma con el secreto de la tienda (o el global de una sola tienda).
+  const mpInt = await getMpIntegration(tiendaId);
+  const secret = mpInt?.webhook_secret || null;
   if (secret && rawBody && !verifyWebhookSignature(secret, rawBody, headers)) {
     return { ok: false, error: 'invalid_signature', status: 401 };
   }
@@ -113,10 +157,10 @@ export const processMercadopagoWebhook = async (payload, rawBody, headers = {}) 
     );
     const mpPaymentId = payload.data?.payments?.[0]?.id || rows[0]?.mercadopago_payment_id;
     if (mpPaymentId) {
-      return updateOrderFromPayment(mpPaymentId);
+      return updateOrderFromPayment(mpPaymentId, tiendaId);
     }
     return { ok: true, ignored: true, reason: 'no_related_payment' };
   }
 
-  return updateOrderFromPayment(paymentId);
+  return updateOrderFromPayment(paymentId, tiendaId);
 };

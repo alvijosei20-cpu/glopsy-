@@ -342,6 +342,13 @@ export default function Navbar() {
               </Link>
             )}
 
+            {user && !tiendaLoading && !tienda && (
+              <Link to="/vender" className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-semibold text-white bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:opacity-90 transition-opacity">
+                <Store size={18} />
+                <span>Vender</span>
+              </Link>
+            )}
+
             {/* Theme Toggle Button Desktop */}
             <button
               onClick={toggleTheme}
@@ -493,6 +500,12 @@ export default function Navbar() {
             <Link to="/market" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-black font-semibold dark:text-white hover:text-fuchsia-600 hover:bg-fuchsia-50 dark:hover:bg-zinc-800 text-base">
               <Store size={20} className="text-fuchsia-500" />
               Mi tienda
+            </Link>
+          )}
+          {user && !tiendaLoading && !tienda && (
+            <Link to="/vender" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-black font-semibold dark:text-white hover:text-fuchsia-600 hover:bg-fuchsia-50 dark:hover:bg-zinc-800 text-base">
+              <Store size={20} className="text-fuchsia-500" />
+              Vender
             </Link>
           )}
           <Link

@@ -775,6 +775,75 @@ export const searchQueryProductsCached = async (params) => {
   return result;
 };
 
+// ------------------------------------------------------------------ Vitrina de tienda
+// Listado público de los productos de UNA tienda por su subdominio (slug). Cada
+// subdominio (x.glopsy.shop) muestra SOLO los productos de esa tienda.
+export const getStorefrontProducts = async ({ slug = '', q = '', limit = 48, offset = 0, ciudadName = null } = {}) => {
+  const cleanSlug = String(slug || '').toLowerCase().trim().slice(0, 63);
+  const lim = Math.max(1, parseInt(limit, 10) || 48);
+  const off = Math.max(0, parseInt(offset, 10) || 0);
+  if (!cleanSlug) return { store: null, products: [], total: 0 };
+
+  const { rows: storeRows } = await pool.query(
+    `SELECT usrid FROM tiendas WHERE slug = $1 AND COALESCE(activa, true) = true LIMIT 1`,
+    [cleanSlug]
+  );
+  if (!storeRows[0]) return { store: null, products: [], total: 0 };
+  const tiendaId = Number(storeRows[0].usrid);
+
+  const city = ciudadName ? String(ciudadName).trim().slice(0, 100) : null;
+  const search = String(q || '').trim().slice(0, 120);
+  const values = [tiendaId, city];
+  const conds = ["p.status = 'active'", 'p.tienda_id = $1'];
+  if (search) {
+    values.push(`%${search}%`);
+    conds.push(`(p.name ILIKE $${values.length} OR p.description ILIKE $${values.length})`);
+  }
+
+  const priceExpr = `(COALESCE(p.suggested_price, p.base_price) + ${freeShippingCostoExpr('$2')})`;
+  const select = `
+    SELECT p.id, p.public_id, p.name, p.base_price,
+           ${priceExpr} AS suggested_price_efectivo,
+           p.images, p.stock_total, p.created_at,
+           c.nombre AS ciudad,
+           (SELECT COALESCE(AVG(rv.rating), 0)::numeric(3,2) FROM reviews rv WHERE rv.product_id = p.id) AS avg_rating,
+           (SELECT COUNT(*) FROM reviews rv WHERE rv.product_id = p.id) AS review_count
+    FROM produc p
+    LEFT JOIN fullments f ON p.fullm_id = f.id
+    LEFT JOIN ciudades c ON f.ciudad_id = c.id
+    WHERE ${conds.join(' AND ')}`;
+
+  const [{ rows }, { rows: countRows }] = await Promise.all([
+    pool.query(`${select} ORDER BY p.created_at DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`, [...values, lim, off]),
+    (async () => {
+      const cvals = [tiendaId];
+      const cconds = ["p.status = 'active'", 'p.tienda_id = $1'];
+      if (search) {
+        cvals.push(`%${search}%`);
+        cconds.push(`(p.name ILIKE $${cvals.length} OR p.description ILIKE $${cvals.length})`);
+      }
+      const { rows: cr } = await pool.query(`SELECT COUNT(*)::int AS total FROM produc p WHERE ${cconds.join(' AND ')}`, cvals);
+      return { rows: cr };
+    })(),
+  ]);
+
+  return {
+    store: { tienda_id: tiendaId },
+    products: rows.map((r) => ({
+      id: r.public_id,
+      public_id: r.public_id,
+      name: r.name,
+      images: r.images,
+      price: Number(r.suggested_price_efectivo ?? r.base_price ?? 0),
+      stock_total: Number(r.stock_total || 0),
+      avg_rating: Number(r.avg_rating || 0),
+      review_count: Number(r.review_count || 0),
+      ciudad: r.ciudad || '',
+    })),
+    total: countRows[0]?.total || 0,
+  };
+};
+
 export const getUserFavorites = async (userId) => {
   const { rows } = await pool.query(
     `SELECT product_id FROM favoritos WHERE user_id = $1`,
@@ -810,12 +879,13 @@ export const toggleProductFavorite = async (userId, productId) => {
 };
 
 export const getProductByPublicId = async (identifier, ciudad = null) => {
-  const cacheKey = `product:detail:${identifier}:${String(ciudad || '').toLowerCase()}`;
+  const cacheKey = `product:detail:${identifier}:${String(ciudad || '').toLowerCase()}:v2`;
   const cached = await redisClient.get(cacheKey).catch(() => null);
   if (cached) return JSON.parse(cached);
 
   let queryText = `
     SELECT p.*, c.nombre AS ciudad_nombre, cat.nombre AS categoria_nombre,
+      t.slug AS tienda_slug, t.nombres AS tienda_nombre,
       COALESCE(t.activa, true) AS tienda_activa,
       (COALESCE(p.suggested_price, p.base_price) + ${freeShippingCostoExpr('$2')}) AS suggested_price_efectivo,
       (
@@ -1268,30 +1338,94 @@ export const calculateShippingCost = async (items, destinationCiudadId) => {
   };
 };
 
+// ------------------------------------------------------------------ Mercado Pago por tienda
+// La preferencia, la captura del pago y el webhook deben usar la cuenta MP de la
+// tienda dueña del carrito (cada vendedor cobra con SU integración). Antes la captura
+// y el webhook elegían una sola fila global, lo que rompía o desviaba el dinero con
+// más de una tienda.
+
+// Items del carrito (los que manda el front o la reserva en Redis).
+const resolveCartItems = async (inputItems, userId, guestHash) => {
+  if (Array.isArray(inputItems) && inputItems.length > 0) return { items: inputItems, foundKey: null };
+  const identifiers = [
+    guestHash ? `cart:reserve:${guestHash}` : null,
+    userId ? `cart:reserve:user_${userId}` : null,
+    'cart:reserve:guest_anonymous',
+  ].filter(Boolean);
+  for (const key of identifiers) {
+    const data = await redisClient.get(key);
+    if (data) {
+      try {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed) && parsed.length > 0) return { items: parsed, foundKey: key };
+      } catch {}
+    }
+  }
+  return { items: [], foundKey: null };
+};
+
+// Tienda dueña del carrito: viene en el item o se resuelve por el producto.
+const resolveCartTiendaId = async (items) => {
+  let tiendaId = Number(items?.[0]?.tienda_id) || null;
+  if (!tiendaId && items?.[0]?.id) {
+    const { rows } = await pool.query(`SELECT tienda_id FROM produc WHERE id = $1 LIMIT 1`, [items[0].id]);
+    tiendaId = Number(rows[0]?.tienda_id) || null;
+  }
+  if (!tiendaId) {
+    // Último recurso (productos sin tienda válida): se usa la única/primera tienda.
+    const { rows } = await pool.query(`SELECT usrid FROM tiendas LIMIT 1`);
+    tiendaId = Number(rows[0]?.usrid) || null;
+  }
+  return tiendaId;
+};
+
+const getMpIntegrationForStore = async (tiendaId) => {
+  if (!tiendaId) return null;
+  const { rows } = await pool.query(
+    `SELECT access_token, public_key, mode
+     FROM checkout_integrations
+     WHERE tienda_id = $1 AND provider = 'mercadopago'
+     ORDER BY (mode = 'produccion') DESC LIMIT 1`,
+    [Number(tiendaId)]
+  );
+  const mp = rows[0];
+  if (!mp?.access_token) return null;
+  mp.access_token = decryptSecret(mp.access_token);
+  return { tienda_id: Number(tiendaId), ...mp };
+};
+
+const getMpIntegrationForCart = async (items) => {
+  const tiendaId = await resolveCartTiendaId(items);
+  return tiendaId ? getMpIntegrationForStore(tiendaId) : null;
+};
+
+// Una orden pertenece a UNA sola tienda (orders.tienda_id único). Si el carrito mezcla
+// productos de varias tiendas se le pide comprar por separado para no cobrar/atribuir mal.
+const ensureSingleStoreCart = async (items) => {
+  const list = Array.isArray(items) ? items : [];
+  const stores = new Set(list.filter((i) => i.tienda_id).map((i) => Number(i.tienda_id)));
+  const ids = list.map((i) => Number(i.id)).filter(Boolean);
+  if (ids.length) {
+    const { rows } = await pool.query(
+      `SELECT DISTINCT tienda_id FROM produc WHERE id = ANY($1::int[]) AND tienda_id IS NOT NULL`,
+      [ids]
+    );
+    for (const r of rows) stores.add(Number(r.tienda_id));
+  }
+  if (stores.size > 1) {
+    throw new Error('Tu carrito tiene productos de varias tiendas: haz la compra por separado para cada tienda.');
+  }
+  return [...stores][0] || null;
+};
+
 export const createMercadoPagoPreferenceForCart = async (userId, items, shippingCost, customerInfo, guestHash) => {
   await reserveStockForSession(items, guestHash || `user_${userId}`);
+  await ensureSingleStoreCart(items);
 
-  let tiendaId = items[0]?.tienda_id;
-  if (!tiendaId && items[0]?.id) {
-    const { rows: prodRows } = await pool.query(`SELECT tienda_id FROM produc WHERE id = $1 LIMIT 1`, [items[0].id]);
-    tiendaId = prodRows[0]?.tienda_id;
-  }
-
-  if (!tiendaId) {
-    const { rows: tiendaRows } = await pool.query(`SELECT usrid FROM tiendas LIMIT 1`);
-    tiendaId = tiendaRows[0]?.usrid || 1;
-  }
-
-  const { rows: mpRows } = await pool.query(
-    `SELECT access_token, public_key, mode FROM checkout_integrations WHERE tienda_id = $1 AND provider = 'mercadopago' ORDER BY (mode = 'produccion') DESC LIMIT 1`,
-    [tiendaId]
-  );
-  const mpInt = mpRows[0];
-
+  const mpInt = await getMpIntegrationForCart(items);
   if (!mpInt?.access_token) {
     throw new Error('La tienda no tiene configurada la integración de Mercado Pago.');
   }
-  mpInt.access_token = decryptSecret(mpInt.access_token);
 
   const client = new MercadoPagoConfig({ accessToken: mpInt.access_token });
   const preference = new Preference(client);
@@ -1334,15 +1468,12 @@ export const createMercadoPagoPreferenceForCart = async (userId, items, shipping
 };
 
 export const processMpPaymentForCart = async (userId, formData, preferenceId, customerInfo, guestHash, shippingCost, shippingPayload, inputItems) => {
-  const { rows: mpRows } = await pool.query(
-    `SELECT access_token, public_key, mode FROM checkout_integrations WHERE provider = 'mercadopago' ORDER BY (mode = 'produccion') DESC LIMIT 1`
-  );
-  const mpInt = mpRows[0];
-
+  const { items: resolvedItems, foundKey } = await resolveCartItems(inputItems, userId, guestHash);
+  await ensureSingleStoreCart(resolvedItems);
+  const mpInt = await getMpIntegrationForCart(resolvedItems);
   if (!mpInt?.access_token) {
     throw new Error('La tienda no tiene configurada la integración de Mercado Pago.');
   }
-  mpInt.access_token = decryptSecret(mpInt.access_token);
 
   const client = new MercadoPagoConfig({ accessToken: mpInt.access_token });
   const payment = new Payment(client);
@@ -1352,44 +1483,17 @@ export const processMpPaymentForCart = async (userId, formData, preferenceId, cu
   const status = paymentResponse?.status;
   const isSuccessful = status === 'approved' || status === 'pending' || status === 'in_process' || status === 'authorized' || (paymentResponse && !['rejected', 'cancelled', 'refunded', 'charged_back'].includes(status));
 
-  if (paymentResponse && isSuccessful) {
-    let items = Array.isArray(inputItems) && inputItems.length > 0 ? inputItems : null;
-    let foundKey = null;
-
-    if (!items) {
-      const identifiers = [
-        guestHash ? `cart:reserve:${guestHash}` : null,
-        userId ? `cart:reserve:user_${userId}` : null,
-        `cart:reserve:guest_anonymous`
-      ].filter(Boolean);
-
-      for (const key of identifiers) {
-        const data = await redisClient.get(key);
-        if (data) {
-          try {
-            const parsed = JSON.parse(data);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              items = parsed;
-              foundKey = key;
-              break;
-            }
-          } catch {}
-        }
-      }
-    }
-
-    if (items && items.length > 0) {
-      await recordPurchaseForUser(userId, items, {
-        preferenceId,
-        paymentResponse,
-        customerInfo,
-        guestHash,
-        shippingCost,
-        shippingPayload
-      });
-      if (foundKey) {
-        await redisClient.del(foundKey);
-      }
+  if (paymentResponse && isSuccessful && resolvedItems.length > 0) {
+    await recordPurchaseForUser(userId, resolvedItems, {
+      preferenceId,
+      paymentResponse,
+      customerInfo,
+      guestHash,
+      shippingCost,
+      shippingPayload
+    });
+    if (foundKey) {
+      await redisClient.del(foundKey);
     }
   }
 
@@ -2137,19 +2241,17 @@ export const processSavedCardPaymentForCart = async (userId, payload) => {
     throw new Error('Tarjeta no encontrada o no válida para pagos de 1 clic.');
   }
 
-  const { rows: mpRows } = await pool.query(
-    `SELECT access_token, public_key, mode FROM checkout_integrations WHERE provider = 'mercadopago' ORDER BY (mode = 'produccion') DESC LIMIT 1`
-  );
-  const mpInt = mpRows[0];
+  const { items: resolvedItems, foundKey } = await resolveCartItems(inputItems, userId, guestHash);
+  await ensureSingleStoreCart(resolvedItems);
+  const mpInt = await getMpIntegrationForCart(resolvedItems);
   if (!mpInt?.access_token) {
     throw new Error('La tienda no tiene configurada la integración de Mercado Pago.');
   }
-  mpInt.access_token = decryptSecret(mpInt.access_token);
 
   const { rows: userRows } = await pool.query(`SELECT email, name FROM users WHERE id = $1 LIMIT 1`, [userId]);
   const userEmail = userRows[0]?.email || 'cliente@glopsy.com';
 
-  let items = Array.isArray(inputItems) && inputItems.length > 0 ? inputItems : [];
+  let items = resolvedItems;
   const subtotal = items.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0);
   const total = subtotal + Number(shipping_cost || 0);
 
@@ -2172,44 +2274,17 @@ export const processSavedCardPaymentForCart = async (userId, payload) => {
   const status = paymentResponse?.status;
   const isSuccessful = status === 'approved' || status === 'pending' || status === 'in_process' || status === 'authorized' || (paymentResponse && !['rejected', 'cancelled', 'refunded', 'charged_back'].includes(status));
 
-  if (paymentResponse && isSuccessful) {
-    let resolvedItems = items;
-    let foundKey = null;
-
-    if (!resolvedItems || resolvedItems.length === 0) {
-      const identifiers = [
-        guestHash ? `cart:reserve:${guestHash}` : null,
-        userId ? `cart:reserve:user_${userId}` : null,
-        `cart:reserve:guest_anonymous`
-      ].filter(Boolean);
-
-      for (const key of identifiers) {
-        const data = await redisClient.get(key);
-        if (data) {
-          try {
-            const parsed = JSON.parse(data);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              resolvedItems = parsed;
-              foundKey = key;
-              break;
-            }
-          } catch {}
-        }
-      }
-    }
-
-    if (resolvedItems && resolvedItems.length > 0) {
-      await recordPurchaseForUser(userId, resolvedItems, {
-        preferenceId: `1click_${card.id}_${Date.now()}`,
-        paymentResponse,
-        customerInfo: customer_info,
-        guestHash,
-        shippingCost: shipping_cost,
-        shippingPayload: shipping_payload
-      });
-      if (foundKey) {
-        await redisClient.del(foundKey);
-      }
+  if (paymentResponse && isSuccessful && resolvedItems.length > 0) {
+    await recordPurchaseForUser(userId, resolvedItems, {
+      preferenceId: `1click_${card.id}_${Date.now()}`,
+      paymentResponse,
+      customerInfo: customer_info,
+      guestHash,
+      shippingCost: shipping_cost,
+      shippingPayload: shipping_payload
+    });
+    if (foundKey) {
+      await redisClient.del(foundKey);
     }
   }
 

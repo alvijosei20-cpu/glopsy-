@@ -8,10 +8,49 @@ const cacheKey = (userId) => `tienda:${userId}`;
 const mapTienda = (row) => ({
   id: row.hashid,
   name: row.nombres,
+  slug: row.slug || null,
   imageUrl: row.avatar,
   isActive: row.activa,
   registeredAt: row.fechareg,
 });
+
+// ------------------------------------------------------------------ Subdominio (slug)
+const RESERVED_SLUGS = new Set([
+  'app', 'www', 'api', 'tienda', 'store', 'stores', 'admin', 'panel', 'market',
+  'marketing', 'listpr', 'catalogo', 'glopsy', 'glopsybot', 'auth', 'cart',
+  'checkout', 'profile', 'favorites', 'terminos', 'privacidad', 'compras',
+  'consultar-pedido', 'deep-link', 'product', 'products', 'home', 'search',
+  'banners', 'notifications', 'webhooks', 'webhook', 'geo', 'stats', 'returns',
+  'login', 'register', 'vender', 'publish', 'pago', 'pagos', 'mi-tienda',
+  'micuenta', 'ayuda', 'faq', 'blog', 'legal', 'mail', 'smtp', 'support',
+]);
+
+export const normalizeStoreSlug = (input) =>
+  String(input || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 63);
+
+export const isValidStoreSlug = (slug) => {
+  const s = String(slug || '');
+  return (
+    s.length >= 2 &&
+    s.length <= 63 &&
+    /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(s) &&
+    !RESERVED_SLUGS.has(s)
+  );
+};
+
+const slugFromInput = (slug) => {
+  if (slug === null || slug === undefined || String(slug).trim() === '') return null;
+  const normalized = normalizeStoreSlug(slug);
+  return isValidStoreSlug(normalized) ? normalized : null;
+};
+
+const STORE_COLUMNS = `hashid, nombres, slug, avatar, activa, fechareg`;
 
 export const getTiendaForUser = async (userId) => {
   const key = cacheKey(userId);
@@ -20,7 +59,7 @@ export const getTiendaForUser = async (userId) => {
   if (cached) return JSON.parse(cached);
 
   const { rows } = await pool.query(
-    `SELECT hashid, nombres, avatar, activa, fechareg
+    `SELECT ${STORE_COLUMNS}
      FROM tiendas
      WHERE usrid = $1
      LIMIT 1`,
@@ -30,6 +69,114 @@ export const getTiendaForUser = async (userId) => {
   const tienda = rows[0] ? mapTienda(rows[0]) : null;
   await redisClient.set(key, JSON.stringify(tienda), { EX: CACHE_TTL_SECONDS });
   return tienda;
+};
+
+// Crea la tienda de un usuario si aún no existe (idempotente). Un mismo usuario
+// siempre tiene UNA tienda; otro usuario crea la suya sin afectar las demás.
+// name/slug opcionales (slug = subdominio). Lanza error 409 si el slug está ocupado.
+export const ensureTiendaForUser = async (userId, { name = '', slug = null } = {}) => {
+  const uid = Number(userId);
+  const storeName =
+    String(name || '').trim().slice(0, 100) || `Tienda de Usuario ${uid}`;
+  const storeSlug = slugFromInput(slug);
+
+  if (slug !== null && slug !== undefined && String(slug).trim() !== '' && !storeSlug) {
+    const err = new Error('Subdominio no válido. Usa solo minúsculas, números y guiones (ej: mi-tienda).');
+    err.code = 400;
+    throw err;
+  }
+
+  if (storeSlug) {
+    const { rows: taken } = await pool.query(`SELECT 1 FROM tiendas WHERE slug = $1 LIMIT 1`, [storeSlug]);
+    if (taken.length) {
+      const err = new Error('Ese subdominio ya está en uso. Elige otro.');
+      err.code = 'DUPLICATE_SLUG';
+      throw err;
+    }
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO tiendas (usrid, nombres, slug, activa)
+       VALUES ($1, $2, $3, true)
+       ON CONFLICT (usrid) DO NOTHING
+       RETURNING ${STORE_COLUMNS}`,
+      [uid, storeName, storeSlug]
+    );
+
+    await redisClient.del(cacheKey(uid)).catch(() => {});
+
+    if (rows[0]) return mapTienda(rows[0]);
+    return getTiendaForUser(uid);
+  } catch (error) {
+    if (error.code === '23505') {
+      const err = new Error('Ese subdominio ya está en uso. Elige otro.');
+      err.code = 'DUPLICATE_SLUG';
+      throw err;
+    }
+    throw error;
+  }
+};
+
+// Actualiza nombre/subdominio de la tienda del usuario (slug null = no tocar).
+export const updateTiendaForUser = async (userId, { name = null, slug = null } = {}) => {
+  const uid = Number(userId);
+  const current = await getTiendaForUser(uid);
+  if (!current) return null;
+
+  const newName = name !== null && name !== undefined
+    ? String(name).trim().slice(0, 100)
+    : null;
+  const wantsSlug = slug !== null && slug !== undefined && String(slug).trim() !== '';
+  const storeSlug = wantsSlug ? slugFromInput(slug) : null;
+  if (wantsSlug && !storeSlug) {
+    const err = new Error('Subdominio no válido. Usa solo minúsculas, números y guiones (ej: mi-tienda).');
+    err.code = 400;
+    throw err;
+  }
+
+  if (storeSlug && storeSlug !== current.slug) {
+    const { rows: taken } = await pool.query(`SELECT 1 FROM tiendas WHERE slug = $1 AND usrid <> $2 LIMIT 1`, [storeSlug, uid]);
+    if (taken.length) {
+      const err = new Error('Ese subdominio ya está en uso. Elige otro.');
+      err.code = 'DUPLICATE_SLUG';
+      throw err;
+    }
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `UPDATE tiendas SET
+         nombres = COALESCE($1, nombres),
+         slug = $2
+       WHERE usrid = $3
+       RETURNING ${STORE_COLUMNS}`,
+      [newName, wantsSlug ? storeSlug : current.slug, uid]
+    );
+    await redisClient.del(cacheKey(uid)).catch(() => {});
+    return rows[0] ? mapTienda(rows[0]) : null;
+  } catch (error) {
+    if (error.code === '23505') {
+      const err = new Error('Ese subdominio ya está en uso. Elige otro.');
+      err.code = 'DUPLICATE_SLUG';
+      throw err;
+    }
+    throw error;
+  }
+};
+
+// Info pública de una tienda para servir su subdominio/vitrina.
+export const getPublicStoreBySlug = async (slug) => {
+  const cleanSlug = normalizeStoreSlug(slug);
+  if (!cleanSlug) return null;
+  const { rows } = await pool.query(
+    `SELECT ${STORE_COLUMNS}
+     FROM tiendas
+     WHERE slug = $1
+     LIMIT 1`,
+    [cleanSlug]
+  );
+  return rows[0] ? mapTienda(rows[0]) : null;
 };
 
 export const updateTiendaStatus = async (userId, isActive) => {

@@ -7,15 +7,20 @@ import { LoadingScreen, ConfiguringScreen } from './components/LoadingScreen';
 import ErrorBoundary from './components/ErrorBoundary';
 // 1. IMPORTAR useAuth JUNTO A AuthProvider
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { StorefrontProvider, useStorefront } from './storefront/StorefrontContext';
+import StoreHeader from './storefront/StoreHeader';
+import { getRootOrigin } from './utils/storeHost';
 import { loadGA, trackPageView } from './utils/analytics';
 import NotificationCenter from './components/NotificationCenter';
 
+const StorefrontHome = lazy(() => import('./storefront/StorefrontHome'));
 const Home = lazy(() => import('./pages/home/home'));
 const Cart = lazy(() => import('./pages/cart/cart'));
 const Checkout = lazy(() => import('./pages/cart/checkout'));
 const ProductDetail = lazy(() => import('./pages/product/product'));
 const Login = lazy(() => import('./pages/log/login'));
 const AuthSuccess = lazy(() => import('./pages/log/authSuccess'));
+const Vender = lazy(() => import('./pages/vender/Vender'));
 const Panel = lazy(() => import('./pages/panel/panel'));
 const Market = lazy(() => import('./pages/market/market'));
 const MarketConfig = lazy(() => import('./pages/market/MarketConfig'));
@@ -50,7 +55,7 @@ function StoreRoute({ children }) {
   const { user, isLoading, tienda, tiendaLoading } = useAuth();
   if (isLoading || tiendaLoading) return null;
   if (!user) return <Navigate to="/login" replace />;
-  if (!tienda) return <Navigate to="/" replace />;
+  if (!tienda) return <Navigate to="/vender" replace />;
   return children;
 }
 
@@ -107,6 +112,28 @@ function MainApp() {
     }
   }, [locationReady]);
 
+  const { slug: storeSlug, store: sfStore, ready: sfReady } = useStorefront();
+  const deniedStorePath =
+    storeSlug &&
+    location.pathname !== '/' &&
+    ![
+      '/product',
+      '/products',
+      '/cart',
+      '/checkout',
+      '/login',
+      '/auth/success',
+      '/compras',
+      '/consultar-pedido',
+      '/profile',
+      '/favorites',
+      '/deep-link',
+      '/panel',
+      '/terminos',
+      '/privacidad',
+      '/vender',
+    ].some((p) => location.pathname.startsWith(p));
+
   if (!locationReady) {
     return <LoadingScreen onLocationReady={() => setLocationReady(true)} />;
   }
@@ -155,15 +182,41 @@ function MainApp() {
     );
   }
 
+  if (deniedStorePath) {
+    return <Navigate to="/" replace />;
+  }
+  if (storeSlug && !sfReady) {
+    return (
+      <div className="app-shell" style={{ textAlign: 'center', padding: '90px 16px', color: '#64748b', fontSize: 14 }}>
+        Cargando tienda…
+      </div>
+    );
+  }
+  if (storeSlug && !sfStore) {
+    return (
+      <div className="app-shell">
+        <div style={{ textAlign: 'center', padding: '100px 16px' }}>
+          <p style={{ fontSize: 18, fontWeight: 800, color: '#1e293b' }}>Tienda no disponible</p>
+          <p style={{ color: '#64748b', fontSize: 13, marginTop: 8 }}>
+            Este subdominio no corresponde a una tienda activa en Glopsy.
+          </p>
+          <a href={getRootOrigin()} style={{ display: 'inline-block', marginTop: 16, color: '#c026d3', fontWeight: 700, fontSize: 13 }}>
+            Ir a Glopsy
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell">
-      <Navbar />
+      {storeSlug ? <StoreHeader store={sfStore} /> : <Navbar />}
 
       <main className="app-content">
         <Suspense fallback={<ConfiguringScreen message="Cargando Glopsy ..." />}>
         <Routes>
           {/* RUTAS PÚBLICAS */}
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={storeSlug ? <StorefrontHome /> : <Home />} />
           <Route path="/products" element={<ProductDetail />} />
           <Route path="/product/:id" element={<ErrorBoundary><ProductDetail /></ErrorBoundary>} />
           <Route path="/products/:id" element={<ErrorBoundary><ProductDetail /></ErrorBoundary>} />
@@ -211,6 +264,7 @@ function MainApp() {
           />
 
           <Route path="/market" element={<StoreRoute><Market /></StoreRoute>} />
+          <Route path="/vender" element={<ProtectedRoute><Vender /></ProtectedRoute>} />
           <Route path="/market/config" element={<StoreRoute><MarketConfig /></StoreRoute>} />
           <Route path="/market/analytics" element={<StoreRoute><Analytics /></StoreRoute>} />
           <Route path="/market/products" element={<StoreRoute><ProductsManage /></StoreRoute>} />
@@ -238,8 +292,10 @@ function MainApp() {
 export default function App() {
   return (
     <AuthProvider>
-      <MainApp />
-      <NotificationCenter />
+      <StorefrontProvider>
+        <MainApp />
+        <NotificationCenter />
+      </StorefrontProvider>
     </AuthProvider>
   );
 }

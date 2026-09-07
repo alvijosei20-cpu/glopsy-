@@ -1,5 +1,7 @@
 import { 
   getTiendaForUser, 
+  ensureTiendaForUser,
+  updateTiendaForUser,
   updateTiendaStatus, 
   getDianConfigForUser, 
   saveDianConfigForUser,
@@ -60,6 +62,8 @@ export const createTiendaController = ({
     }
   },
   getTienda = getTiendaForUser,
+  ensureTienda = ensureTiendaForUser,
+  updateTienda = updateTiendaForUser,
   updateStatus = updateTiendaStatus,
   getDianConfig = getDianConfigForUser,
   saveDianConfig = saveDianConfigForUser,
@@ -74,6 +78,56 @@ export const createTiendaController = ({
     } catch (error) {
       console.error('Error al consultar tienda:', error.message);
       return res.status(500).json({ ok: false, message: 'No fue posible consultar la tienda.' });
+    }
+  },
+
+  // Alta de tienda para un vendedor nuevo (idempotente: si ya existe la devuelve).
+  createStore: async (req, res) => {
+    try {
+      const name = cleanString(req.body?.name, { maxLength: 100 });
+      const slug = cleanString(req.body?.slug, { maxLength: 63 });
+      const tienda = await ensureTienda(req.auth.userId, { name, slug });
+      if (!tienda) {
+        return res.status(400).json({ ok: false, message: 'No fue posible crear la tienda.' });
+      }
+      await invalidateCatalogCache().catch(() => {});
+      return res.json({ ok: true, tienda });
+    } catch (error) {
+      if (error.code === 'DUPLICATE_SLUG') {
+        return res.status(409).json({ ok: false, message: error.message });
+      }
+      if (error.code === 400) {
+        return res.status(400).json({ ok: false, message: error.message });
+      }
+      console.error('Error al crear tienda:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible crear la tienda.' });
+    }
+  },
+
+  // Actualiza nombre/subdominio de la tienda del usuario logueado.
+  updateStore: async (req, res) => {
+    try {
+      const name = cleanString(req.body?.name, { maxLength: 100 });
+      const slug = cleanString(req.body?.slug, { maxLength: 63 });
+      const hasName = name !== undefined && name !== null && String(name).trim() !== '';
+      const hasSlug = slug !== undefined && slug !== null && String(slug).trim() !== '';
+      if (!hasName && !hasSlug) {
+        return res.status(400).json({ ok: false, message: 'No hay cambios que aplicar.' });
+      }
+      const tienda = await updateTienda(req.auth.userId, { name: hasName ? name : null, slug: hasSlug ? slug : null });
+      if (!tienda) {
+        return res.status(404).json({ ok: false, message: 'No tienes una tienda registrada.' });
+      }
+      return res.json({ ok: true, tienda });
+    } catch (error) {
+      if (error.code === 'DUPLICATE_SLUG') {
+        return res.status(409).json({ ok: false, message: error.message });
+      }
+      if (error.code === 400) {
+        return res.status(400).json({ ok: false, message: error.message });
+      }
+      console.error('Error al actualizar tienda:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible actualizar la tienda.' });
     }
   },
 
@@ -232,6 +286,8 @@ export const createTiendaController = ({
 const tiendaController = createTiendaController();
 export const { 
   getMine, 
+  createStore,
+  updateStore,
   changeStatus, 
   getDian, 
   saveDian,

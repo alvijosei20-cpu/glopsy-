@@ -43,9 +43,17 @@ const requirePaymentBiometric = async (userId, biometricNonce) => {
 export const getProductById = async (req, res) => {
   const productId = cleanString(req.params.id, { maxLength: 100 });
   const ciudad = cleanString(req.query.ciudad, { maxLength: 100 }) || null;
+  const storeSlug = cleanString(req.query.tienda, { maxLength: 63 }) || null;
 
   try {
     const producto = await getProductByPublicId(productId, ciudad);
+    // Si se pide desde un subdominio de tienda, el producto debe pertenecer a esa tienda.
+    if (storeSlug && producto && String(producto.tienda_slug || '').toLowerCase() !== storeSlug.toLowerCase()) {
+      return res.status(404).json({
+        ok: false,
+        message: 'Este producto no está disponible en esta tienda.',
+      });
+    }
     res.json({
       ok: true,
       product: producto,
