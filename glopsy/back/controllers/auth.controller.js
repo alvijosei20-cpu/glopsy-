@@ -14,6 +14,8 @@ import {
   verifyBiometricRegistrationService,
   getBiometricLoginOptionsService,
   verifyBiometricLoginService,
+  createOAuthCode,
+  consumeOAuthCode,
 } from '../services/auth.service.js';
 import { pool } from '../db.js';
 import { setAuthCookie, clearAuthCookie } from '../utils/cookies.js';
@@ -90,9 +92,11 @@ export const googleCallback = async (req, res) => {
       provider_id: googleUser.id,
     });
 
-    // El fragmento no se envía a servidores ni a cabeceras Referer.
-    setAuthCookie(res, token);
-    res.redirect(`${process.env.FRONTEND_URL}/auth/success`);
+    // El callback corre en el dominio del backend (p. ej. glopsy-back.onrender.com),
+    // distinto del dominio de la app. La cookie httpOnly no puede saltar de dominio:
+    // se entrega un código de un solo uso y la app lo canjea por la cookie en su dominio.
+    const code = await createOAuthCode(token);
+    res.redirect(`${process.env.FRONTEND_URL}/auth/success?code=${code}`);
   } catch (error) {
     console.error('Error en callback de Google:', error.response?.data || error.message);
     res.status(500).json({ message: 'Error en la autenticación con Google' });
@@ -159,8 +163,10 @@ export const discordCallback = async (req, res) => {
       provider_id: discordUser.id,
     });
 
-    setAuthCookie(res, token);
-    res.redirect(`${process.env.FRONTEND_URL}/auth/success`);
+    // Cookie no puede cruzar dominios (callback en backend, app en otro origen):
+    // se entrega un código de un solo uso para que la app lo canjee en su dominio.
+    const code = await createOAuthCode(token);
+    res.redirect(`${process.env.FRONTEND_URL}/auth/success?code=${code}`);
   } catch (error) {
     console.error('Error en callback de Discord:', error.response?.data || error.message);
     res.status(500).json({ message: 'Error en la autenticación con Discord' });
@@ -232,11 +238,25 @@ export const tiktokCallback = async (req, res) => {
       provider_id: tiktokId,
     });
 
-    setAuthCookie(res, token);
-    res.redirect(`${process.env.FRONTEND_URL}/auth/success`);
+    // Cookie no puede cruzar dominios (callback en backend, app en otro origen):
+    // se entrega un código de un solo uso para que la app lo canjee en su dominio.
+    const code = await createOAuthCode(token);
+    res.redirect(`${process.env.FRONTEND_URL}/auth/success?code=${code}`);
   } catch (error) {
     console.error('Error en callback de TikTok:', error.response?.data || error.message);
     res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
+  }
+};
+
+// Canjea el código OAuth de un solo uso por la cookie de sesión en el dominio de la app.
+export const oauthConsume = async (req, res) => {
+  try {
+    const token = await consumeOAuthCode(req.body?.code);
+    setAuthCookie(res, token);
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('Error al canjear código OAuth:', error.message);
+    return res.status(400).json({ ok: false, message: error.message || 'No fue posible completar el inicio de sesión.' });
   }
 };
 

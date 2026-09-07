@@ -150,6 +150,28 @@ export const revokeSession = async (userId) => {
   await redisClient.del(`session:${userId}`);
 };
 
+// OAuth cruza dominios distintos (el callback vive en el backend y la app en otro
+// origen), por eso no se puede fijar la cookie httpOnly desde el callback. En su
+// lugar se entrega un código de un solo uso y corto plazo que la app canjea por la
+// cookie en SU dominio vía /auth/oauth/consume.
+const OAUTH_CODE_TTL = 120;
+
+export const createOAuthCode = async (token) => {
+  const code = crypto.randomBytes(24).toString('hex');
+  await redisClient.set(`oauth:code:${code}`, token, { EX: OAUTH_CODE_TTL });
+  return code;
+};
+
+export const consumeOAuthCode = async (code) => {
+  const cleanCode = cleanString(code, { maxLength: 100 });
+  if (!cleanCode) throw new Error('Código inválido.');
+  const key = `oauth:code:${cleanCode}`;
+  const token = await redisClient.get(key).catch(() => null);
+  if (!token) throw new Error('Código inválido o vencido. Vuelve a intentarlo.');
+  await redisClient.del(key).catch(() => {});
+  return token;
+};
+
 export const savePushSubscriptionService = async (userId, subscription) => {
   await pool.query(
     'UPDATE users SET push_subscription = $1, updated_at = NOW() WHERE id = $2',

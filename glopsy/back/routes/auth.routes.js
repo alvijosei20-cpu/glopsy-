@@ -6,6 +6,7 @@ import {
   discordCallback,
   tiktokLogin,
   tiktokCallback,
+  oauthConsume,
   getCurrentUser,
   updateCurrentUser,
   getAddresses,
@@ -44,6 +45,9 @@ router.get('/discord/callback', authLimiter, discordCallback);
 // Rutas de TikTok OAuth
 router.get('/tiktok', authLimiter, tiktokLogin);
 router.get('/tiktok/callback', authLimiter, tiktokCallback);
+
+// Canje del código OAuth (un solo uso) por la cookie de sesión en el dominio de la app.
+router.post('/oauth/consume', authLimiter, oauthConsume);
 
 // Rutas de Email / Contraseña
 router.post('/register', authLimiter, registerEmail);
