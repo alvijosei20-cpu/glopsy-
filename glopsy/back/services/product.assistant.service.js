@@ -90,6 +90,44 @@ const normCity = (s) =>
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]/g, '');
 
+// Palabras genéricas que NO sirven para relacionar productos (marketing, colores,
+// conectores, materiales comunes…). Evitan falsos positivos tipo "audífonos por 'negro'".
+const STOP_TERMS = new Set([
+  'con', 'del', 'de', 'la', 'el', 'los', 'las', 'un', 'una', 'uno', 'para', 'por', 'y', 'en', 'es', 'al', 'su', 'que', 'se', 'o', 'a', 'como', 'mas', 'no', 'ni', 'te', 'tu', 'tus', 'lo', 'x', 'muy', 'este', 'esta', 'estos', 'estas', 'son', 'sin', 'ser', 'cada', 'desde', 'hasta', 'tener', 'hacer', 'poder', 'tambien', 'ademas', 'toda', 'todo', 'todos', 'todas', 'ideal', 'mejor', 'gran', 'mayor', 'nuevo', 'nueva', 'nuevos', 'original', 'importado', 'importados', 'importada', 'exclusivo', 'premium', 'plus', 'max', 'pro', 'mini', 'total', 'solo', 'auto', 'digital', 'real', 'multi', 'smart', 'ultra',
+  'producto', 'productos', 'articulo', 'articulos', 'compra', 'comprar', 'comprador', 'tienda', 'nuestro', 'nuestra', 'nuestros', 'glopsy', 'mercado', 'vendedor', 'proveedor', 'oferta', 'ofertas', 'precio', 'precios', 'valor', 'costo', 'envio', 'envios', 'enviar', 'despacho', 'despachado', 'despachamos', 'enviamos', 'llega', 'llegar', 'llegue', 'tiempo', 'entrega', 'informacion', 'cuenta', 'cliente', 'clientes', 'carrito', 'pedido', 'pedidos', 'ahora', 'pagina', 'paginas', 'disponible', 'marca', 'marcas', 'garantia', 'reembolso', 'uso', 'usar', 'bien', 'buena', 'bueno', 'dias', 'dia', 'numero', 'codigo', 'codigos', 'cantidad', 'unidad', 'unidades', 'color', 'colores', 'modelo', 'modelos', 'version', 'tamano', 'tamanos', 'medidas', 'peso', 'material', 'materiales', 'incluye', 'incluyen', 'detalle', 'detalles', 'direccion', 'realizar', 'realiza', 'realizado', 'finalizar', 'confirmar', 'confirmacion', 'recibido', 'siguientes', 'paso', 'pasos', 'pago', 'pagado', 'ciudad', 'checkout', 'opcion', 'opciones', 'opcional', 'consultar', 'clic', 'aca', 'aqui', 'descripcion', 'descripciones', 'caracteristicas', 'especificaciones', 'beneficios', 'ventajas', 'experiencia', 'perfecto', 'perfecta', 'excelente', 'calidad', 'resistente', 'suave', 'natural', 'profesional', 'facil', 'practico', 'practica', 'comodo', 'comoda', 'comodidad', 'seguridad', 'seguro', 'estilo', 'diseno', 'disenos', 'elegante', 'moderno', 'versatil', 'duradero', 'eficiente', 'liviano', 'ligero', 'portatil', 'recargable', 'inalambrico', 'inalambricos', 'electrico', 'automatico', 'accesorio', 'accesorios', 'regalo', 'caja', 'box', 'kit', 'pack', 'set', 'collar', 'bolsa', 'empaque',
+  'negro', 'negra', 'blanco', 'blanca', 'azul', 'rojo', 'roja', 'rosa', 'verde', 'gris', 'morado', 'amarillo', 'naranja', 'dorado', 'dorada', 'plateado', 'plata', 'multicolor', 'transparente', 'oscuro', 'claro', 'beige', 'cafe',
+  's', 'm', 'l', 'xl', 'xxl', 'xs', 'ml', 'mm', 'cm', 'w', 'hz', 'wats', 'watts', 'v', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'n', 'p', 'r', 't', 'u',
+]);
+
+// Convierte texto en un SET de tokens significativos (minúsculas, sin acentos,
+// sin números de referencia ni palabras genéricas). Se usa para medir qué tan
+// relacionado está un producto del catálogo con el producto que ve el cliente.
+const productTokens = (s) => {
+  const set = new Set();
+  for (const w of String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(/\s+/)) {
+    if (w.length >= 3 && !/^[0-9]+$/.test(w) && !STOP_TERMS.has(w)) set.add(w);
+  }
+  return set;
+};
+
+// Primera línea no vacía de la descripción (normalmente el título del producto).
+const firstLine = (desc) =>
+  String(desc || '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find(Boolean) || '';
+
+const sharedCount = (a, b) => {
+  let n = 0;
+  for (const w of a) if (b.has(w)) n += 1;
+  return n;
+};
+
 // Parsea warranties: objeto { period, conditions }, array o string JSON. Devuelve { period, conditions } o null.
 const parseWarranty = (raw) => {
   let w = raw;
@@ -172,6 +210,77 @@ const getProductFull = async (publicIdOrId, ciudad = '') => {
   const r = rows[0];
   if (!r) return null;
   return mapCatalogRow(r);
+};
+
+// ------------------------------------------------------------------ Relacionados
+// Busca en el catálogo productos REALMENTE relacionados con el que ve el cliente:
+// mismo proveedor/tienda, misma categoría y, sobre todo, con palabras en común en su
+// nombre/descripción (mismo tipo de artículo). Evita recomendar cosas incoherentes
+// como "audífonos" para unos leggins solo por ser populares o estar en la misma tienda.
+const findRelatedProducts = async (product, ciudad = '', { max = 4, providerOnly = false } = {}) => {
+  const refId = Number(product?.id) || null;
+  const tiendaId = Number(product?.tienda_id) || null;
+  const catId = Number(product?.categoria_id) || null;
+  const refName = String(product?.name || '').trim();
+  if (!refId || (!tiendaId && !catId)) return [];
+
+  const city = String(ciudad || '').trim().slice(0, 120) || null;
+  const values = [refId, city];
+  const conds = ["p.status = 'active'", 'COALESCE(t.activa, true) = true', 'p.id <> $1'];
+  const poolConds = [];
+  if (providerOnly) {
+    if (!tiendaId) return [];
+    values.push(tiendaId);
+    poolConds.push(`p.tienda_id = $${values.length}`);
+  } else {
+    if (tiendaId) {
+      values.push(tiendaId);
+      poolConds.push(`p.tienda_id = $${values.length}`);
+    }
+    if (catId) {
+      values.push(catId);
+      poolConds.push(`p.categoria_id = $${values.length}`);
+    }
+  }
+  conds.push(`(${poolConds.join(' OR ')})`);
+
+  let rows = [];
+  try {
+    values.push(60);
+    const { rows: found } = await pool.query(
+      `${catalogSelect(2)} WHERE ${conds.join(' AND ')} LIMIT $${values.length}`,
+      values
+    );
+    rows = found;
+  } catch (err) {
+    console.warn('[product-assistant] sin candidatos relacionados:', err.message);
+    return [];
+  }
+  if (!rows.length) return [];
+
+  const rn = productTokens(refName);
+  const rt = productTokens(firstLine(product?.description));
+
+  const scored = rows
+    .map((r) => {
+      const cn = productTokens(r.name);
+      const ct = productTokens(firstLine(r.description));
+      const score =
+        sharedCount(rn, cn) * 4 +
+        sharedCount(rn, ct) * 3 +
+        sharedCount(rt, cn) * 2 +
+        sharedCount(rt, ct);
+      return { r, score };
+    })
+    .sort((a, b) => b.score - a.score || (Number(b.r.avg_rating) || 0) - (Number(a.r.avg_rating) || 0));
+
+  const results = [];
+  for (const { r, score } of scored) {
+    if (!providerOnly && score < 3) continue; // para "similares" se exige relación real
+    results.push(r);
+    if (results.length >= Math.max(1, Math.min(8, Number(max) || 4))) break;
+  }
+  return results.map(mapCatalogRow);
 };
 
 const TOOLS = [
@@ -356,7 +465,7 @@ const quoteShippingDelivery = async (identifier, ciudad) => {
 
 // ------------------------------------------------------------------ Contexto
 
-const buildSystem = (product, ciudad) => {
+const buildSystem = (product, ciudad, related = []) => {
   const base = Number(product?.suggested_price ?? product?.base_price ?? 0);
   let precio = base;
   const of = product?.oferta_activa;
@@ -368,13 +477,21 @@ const buildSystem = (product, ciudad) => {
   const envioGratis = product?.envio_gratis ? 'SÍ' : 'NO';
   const ciudadDespacho = product?.ciudad_despacho || product?.ciudad_nombre || 'no especificada';
   const garantia = fmtWarranty(product?.warranties) || 'Información según el proveedor (aparece en la página).';
+
+  const relatedList = Array.isArray(related) && related.length
+    ? related
+        .slice(0, 6)
+        .map((r) => `- ${r.name} (public_id: ${r.public_id}, $${Math.round(r.precio).toLocaleString('es-CO')} COP, stock ${r.stock}, ${r.envio_gratis ? 'envío gratis para su ciudad' : 'envío NO gratis'})`)
+        .join('\n')
+    : '(vacía: no hay productos relacionados en el catálogo)';
+
   return `Eres "GlopsyBot", el asesor virtual de Glopsy (marketplace colombiano) que aparece en la ficha de un producto.
 
 Producto que está viendo el cliente:
 - Nombre: ${product?.name || '—'}
 - Categoría: ${product?.categoria_nombre || product?.category || 'General'}
 - Precio final: $${Math.round(precio).toLocaleString('es-CO')} COP${of ? ` (con ${of.tipo === 'porcentaje' ? `${of.valor}% de descuento` : `descuento de $${of.valor}`} aplicado)` : ''}
-- Stock: ${stock} ${stock === 1 ? 'unidad' : 'unidades'}${stock <= 0 ? ' — AGOTADO, sugiere alternativas' : ''}
+- Stock: ${stock} ${stock === 1 ? 'unidad' : 'unidades'}${stock <= 0 ? ' — AGOTADO, sugiere de la lista RELACIONADA' : ''}
 - Ciudad de envío del cliente: ${ciudad || 'no especificada'}
 - Ciudad desde donde se despacha el producto: ${ciudadDespacho}
 - Envío gratis para la ciudad del cliente: ${envioGratis}
@@ -382,11 +499,13 @@ Producto que está viendo el cliente:
 - Tienda del producto: ${product?.tienda_nombre || product?.proveedor || 'Glopsy'}
 - Calificación: ${Number(product?.avg_rating || 0).toFixed(1)}/5 (${Number(product?.review_count || 0)} reseñas)
 
-Puedes consultar TODO el catálogo real usando las herramientas buscar_catalogo y ver_producto para:
-- recomendar productos parecidos o en oferta,
+Productos RELACIONADOS verificados en el catálogo (mismo proveedor/categoría y con palabras en común con este producto). Son la ÚNICA fuente válida para recomendar "similares/alternativas/parecidos" a este producto:
+${relatedList}
+
+Puedes consultar el catálogo real con las herramientas buscar_catalogo y ver_producto para:
+- comparar precios y stock entre productos (incluso los de la lista RELACIONADA),
 - recomendar OTROS productos del MISMO proveedor/vendedor (usa buscar_catalogo con proveedor = nombre de la tienda),
-- comparar precios y stock entre productos,
-- sugerir qué comprar según el presupuesto/interés del cliente.
+- responder pedidos explícitos como "algo más barato", "de otra categoría", "marca X" o comparaciones con un producto concreto.
 
 Cada resultado de estas herramientas incluye: nombre, precio, stock, ciudad (desde donde se despacha), envio_gratis (si el envío es gratis para la ciudad del cliente) y garantia (texto de la garantía del producto).
 
@@ -395,12 +514,13 @@ Para saber cuánto cuesta el envío o cuántos días tardaría en llegar un prod
 Reglas:
 1. Responde en español con respuestas CORTAS y PRECISAS. Ve directo al dato que piden: sin rodeos ni repeticiones.
 2. NUNCA inventes precios, stock, descuentos, envíos, tiempos de entrega ni garantías: usa las herramientas o la información anterior. Si cotizar_envio no devuelve opciones o falla, dilo sin inventar días ni costos.
-3. Cuando el cliente pida una RECOMENDACIÓN, alternativa o productos similares: SIEMPRE consulta buscar_catalogo (o ver_producto) y responde ENUMERANDO los productos encontrados (máx 3). Cada producto debe ir como enlace clicable: [Nombre del producto](/product/public_id), seguido de su precio y su envío: si es gratis para la ciudad del cliente ("Envío gratis") o no, y desde qué ciudad se despacha. Al final añade [Ver todos en el catálogo](/listpr). NUNCA respondas una recomendación solo con el enlace del catálogo ni sin productos concretos.
-4. Si el producto está agotado, ofrece alternativas concretas consultando el catálogo.
-5. No des consejos médicos, financieros ni prometas resultados.
-6. Si te preguntan cómo comprar: indica que use "Comprar ahora" o "Agregar al carrito" y complete el pago; el envío se calcula según la ciudad en el checkout.
-7. Si no hay stock o el precio no está claro, dilo y sugiere preguntar al vendedor.
-8. Si preguntan por la GARANTÍA, devoluciones o cambios del producto: responde con la información de la línea "Garantía:" de arriba o la que traiga ver_producto (garantia). Si no hay datos específicos, explica el respaldo de Glopsy (el pago se libera al vendedor al confirmar la entrega y se pueden abrir reclamaciones desde "Consultar pedido") sin inventar términos.`.replace(/\n{3,}/g, '\n\n');
+3. Cuando el cliente pida algo SIMILAR, PARECIDO, ALTERNATIVA o "recomiéndame algo similar" a este producto: recomienda SOLO productos de la lista "Productos RELACIONADOS" anterior (máx 3), cada uno como enlace clicable [Nombre del producto](/product/public_id), seguido de precio y si el envío es gratis para su ciudad. Si esa lista está vacía responde textualmente que no hay artículos relacionados a este producto y NO uses otras herramientas para inventar alternativas.
+4. Para los demás pedidos (mismo proveedor, otra categoría, más barato, comparar, marca concreta) usa buscar_catalogo filtrando por proveedor o categoría, y solo propón productos con relación real (misma categoría/proveedor o palabras en común). NUNCA propongas productos de otra categoría "porque son populares" o "porque tienen envío gratis".
+5. Si el producto está agotado, ofrece alternativas concretas de la lista RELACIONADA.
+6. No des consejos médicos, financieros ni prometas resultados.
+7. Si te preguntan cómo comprar: indica que use "Comprar ahora" o "Agregar al carrito" y complete el pago; el envío se calcula según la ciudad en el checkout.
+8. Si no hay stock o el precio no está claro, dilo y sugiere preguntar al vendedor.
+9. Si preguntan por la GARANTÍA, devoluciones o cambios del producto: responde con la información de la línea "Garantía:" de arriba o la que traiga ver_producto (garantia). Si no hay datos específicos, explica el respaldo de Glopsy (el pago se libera al vendedor al confirmar la entrega y se pueden abrir reclamaciones desde "Consultar pedido") sin inventar términos.`.replace(/\n{3,}/g, '\n\n');
 };
 
 // ------------------------------------------------------------------ Chat con tools
@@ -413,7 +533,7 @@ const MAX_HISTORY = 12;
 
 const fmtCOP = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')} COP`;
 
-const fallbackAnswer = async ({ product, ciudad, lastMessage }) => {
+const fallbackAnswer = async ({ product, ciudad, lastMessage, related = [] }) => {
   const base = Number(product?.suggested_price ?? product?.base_price ?? 0);
   let precio = base;
   const of = product?.oferta_activa;
@@ -482,40 +602,31 @@ const fallbackAnswer = async ({ product, ciudad, lastMessage }) => {
     return `Este producto aún no tiene reseñas. Si lo compras, podrás ser el primero en opinar tras recibirlo.`;
   }
   if (mentions('recomiendame algo similar', 'alternativa', 'parecido', 'similar', 'opciones', 'otro', 'recomiendame', 'sugiere', 'mismo proveedor', 'misma tienda', 'mismo vendedor', 'de la misma tienda', 'del mismo vendedor', 'del mismo proveedor')) {
-    const key = msg.replace(/recomiendame|algo|similar|parecido|alternativa|de|menor|precio|mas|barato|otra|opcion|opciones|sugiere|un|una|del/g, ' ').replace(/\s+/g, ' ').trim();
-    const wantSameProvider = mentions('mismo proveedor', 'misma tienda', 'mismo vendedor', 'de la misma tienda', 'del mismo vendedor', 'del mismo proveedor');
-    const categ = product?.categoria_nombre || product?.category || '';
+    const askProvider = mentions('mismo proveedor', 'misma tienda', 'mismo vendedor', 'de la misma tienda', 'del mismo vendedor', 'del mismo proveedor');
     try {
+      // "Similar/parecido": solo productos realmente relacionados (misma familia de artículo).
+      const similar = Array.isArray(related) ? related.slice(0, 4) : [];
+      if (!askProvider) {
+        if (!similar.length) {
+          return `No hay artículos relacionados a "${product?.name}" en el catálogo por ahora. Explora más en [Catálogo](/listpr).`;
+        }
+        const lines = similar
+          .map((r) => `• ${fmtCOP(r.precio)} · [${r.name}](${r.url})${r.envio_gratis ? ' · 🚚 Envío gratis' : ''}${r.ciudad ? ` · desde ${r.ciudad}` : ''}${r.stock > 0 ? '' : ' · agotado'}${r.calificacion && Number(r.calificacion) > 0 ? ` · ⭐${r.calificacion}` : ''}`)
+          .join('\n');
+        return `Alternativas parecidas a "${product?.name}":\n${lines}\n\n¿Quieres ver más opciones? [Catálogo](/listpr)`;
+      }
+      // "Del mismo proveedor/tienda": se listan productos de esa tienda (con los más parecidos primero).
       const prov = product?.proveedor || product?.tienda_nombre || '';
-      const excludeSelf = (arr) => arr.filter((r) => String(r.name || '').toLowerCase() !== String(product?.name || '').toLowerCase());
-      let others = [];
-      // Del mismo proveedor siempre que se pida, sino parecidos por nombre.
-      if (wantSameProvider && prov) {
-        others = excludeSelf(await searchCatalog({ proveedor: prov, max: 6, ciudad }));
-      } else if (key && key !== product?.name) {
-        others = excludeSelf(await searchCatalog({ q: key, max: 6, ciudad }));
+      const providerItems = await findRelatedProducts(product, ciudad, { max: 4, providerOnly: true }).catch(() => []);
+      if (!providerItems.length) {
+        return `No hay más artículos del proveedor **${prov || 'de este producto'}** en el catálogo por ahora.`;
       }
-      // Si aún no hay sugerencias concretas, busca por la misma categoría.
-      if (!others.length && categ) {
-        others = excludeSelf(await searchCatalog({ q: '', categoria: categ, max: 6, ciudad }));
-      }
-      // Último recurso: populares del catálogo.
-      if (!others.length) {
-        others = excludeSelf(await searchCatalog({ q: '', max: 6, ciudad }));
-      }
-      const head = wantSameProvider && prov
-        ? `Otros productos del proveedor **${prov}**:`
-        : 'Alternativas parecidas:';
-      if (!others.length) {
-        return `No encontré ${wantSameProvider ? 'otros productos del mismo proveedor' : 'productos muy parecidos'} a "${product?.name}" en este momento. Explora más en [Catálogo](/listpr).`;
-      }
-      const lines = others
-        .slice(0, 4)
+      const lines = providerItems
         .map((r) => `• ${fmtCOP(r.precio)} · [${r.name}](${r.url})${r.envio_gratis ? ' · 🚚 Envío gratis' : ''}${r.ciudad ? ` · desde ${r.ciudad}` : ''}${r.stock > 0 ? '' : ' · agotado'}${r.calificacion && Number(r.calificacion) > 0 ? ` · ⭐${r.calificacion}` : ''}`)
         .join('\n');
-      return `${head}\n${lines}\n\n¿Quieres ver más opciones? [Catálogo](/listpr)`;
+      return `Otros artículos de **${prov || 'este proveedor'}**:\n${lines}\n\n¿Quieres ver más opciones? [Catálogo](/listpr)`;
     } catch {
-      return `No pude consultar las alternativas ahora. Explora la categoría "${product?.categoria_nombre || product?.category || 'General'}" desde [Catálogo](/listpr).`;
+      return `No pude consultar los productos relacionados ahora. Explora la categoría "${product?.categoria_nombre || product?.category || 'General'}" desde [Catálogo](/listpr).`;
     }
   }
   if (mentions('hola', 'buenas', 'hey', 'que tal', 'buenos dias', 'buenas tardes', 'buenas noches')) {
@@ -570,19 +681,24 @@ export const productAssistantChat = async ({ product, ciudad = '', messages = []
 
   const budget = budgetKey ? budgetState(budgetKey) : { date: today(), count: 0 };
 
+  // Productos relacionados verificados (coherentes con el producto visible). Se usan
+  // para anclar las recomendaciones del modelo y del fallback local.
+  const related = await findRelatedProducts(ctxProduct, ciudad, { max: 6 }).catch(() => []);
+  const relatedForFallback = related.slice(0, 4);
+
   // Sin API key → FAQ local gratis (no descuenta IA).
   if (!API_KEY) {
-    const reply = await fallbackAnswer({ product: ctxProduct, ciudad, lastMessage: history[history.length - 1].content });
+    const reply = await fallbackAnswer({ product: ctxProduct, ciudad, lastMessage: history[history.length - 1].content, related: relatedForFallback });
     return { ok: true, reply, fallback: true, budget: budgetInfo(budget) };
   }
 
   // Límite de consultas IA alcanzado → se sigue ayudando con FAQ local (gratis, sin LLM).
   if (budgetKey && budget.count >= ASSISTANT_BUDGET_LIMIT) {
-    const reply = await fallbackAnswer({ product: ctxProduct, ciudad, lastMessage: history[history.length - 1].content });
+    const reply = await fallbackAnswer({ product: ctxProduct, ciudad, lastMessage: history[history.length - 1].content, related: relatedForFallback });
     return { ok: true, reply, fallback: true, budget: budgetInfo(budget) };
   }
 
-  const msgs = [{ role: 'system', content: buildSystem(ctxProduct, ciudad) }, ...history];
+  const msgs = [{ role: 'system', content: buildSystem(ctxProduct, ciudad, related) }, ...history];
   const used = budgetKey ? budgetUse(budgetKey) : { ...budget, count: budget.count + 1 };
   const info = budgetInfo(used);
 
@@ -607,7 +723,7 @@ export const productAssistantChat = async ({ product, ciudad = '', messages = []
     }
   } catch (err) {
     console.warn('[product-assistant] IA no disponible, respondiendo con fallback:', err.message);
-    const reply = await fallbackAnswer({ product: ctxProduct, ciudad, lastMessage: history[history.length - 1].content });
+    const reply = await fallbackAnswer({ product: ctxProduct, ciudad, lastMessage: history[history.length - 1].content, related: relatedForFallback });
     return { ok: true, reply, fallback: true, budget: info };
   }
 
