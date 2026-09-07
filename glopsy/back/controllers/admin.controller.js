@@ -44,7 +44,16 @@ export const setUserCanSell = async (req, res) => {
     if (!rows[0]) {
       return res.status(404).json({ ok: false, message: 'Usuario no encontrado.' });
     }
-    return res.json({ ok: true, user: rows[0] });
+    // Al deshabilitar al vendedor, su tienda deja de estar activa (no sigue vendiendo).
+    let storeActive = null;
+    if (!canSell) {
+      const { rows: tRows } = await pool.query(
+        `UPDATE tiendas SET activa = false WHERE usrid = $1 RETURNING activa`,
+        [rows[0].id]
+      );
+      storeActive = tRows[0] ? Boolean(tRows[0].activa) : null;
+    }
+    return res.json({ ok: true, user: rows[0], storeActive });
   } catch (error) {
     console.error('Error actualizando can_sell:', error.message);
     return res.status(500).json({ ok: false, message: 'No fue posible actualizar el usuario.' });
