@@ -335,7 +335,7 @@ export default function Navbar() {
               <span>Carrito</span>
             </Link>
 
-            {user && !tiendaLoading && tienda && (
+            {user && user.can_sell && !tiendaLoading && tienda && (
               <Link to="/market" className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-semibold text-black dark:text-white hover:text-fuchsia-600 dark:hover:text-fuchsia-400 hover:bg-fuchsia-50 dark:hover:bg-zinc-800 transition-all duration-200">
                 <Store size={18} className="text-fuchsia-500" />
                 <span>Mi tienda</span>
@@ -496,7 +496,7 @@ export default function Navbar() {
             Inicio
           </Link>
 
-          {user && !tiendaLoading && tienda && (
+          {user && user.can_sell && !tiendaLoading && tienda && (
             <Link to="/market" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-black font-semibold dark:text-white hover:text-fuchsia-600 hover:bg-fuchsia-50 dark:hover:bg-zinc-800 text-base">
               <Store size={20} className="text-fuchsia-500" />
               Mi tienda

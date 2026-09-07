@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { getProductById, saveProduct, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, createPreferenceController, processMpPaymentController, processSavedCardPaymentController, getTiposEmpaqueController, getUserComprasController, searchOrdersController, getOrderByHashController, getOrderReviewsStatusController, recordPurchaseController, cancelOrderController, updateOrderAddressController, getProductReviewsController, getUserReviewController, addReviewController, updateReviewController, deleteReviewController, getMyProductsManagement, pauseProduct, activateProduct, deleteProduct, addProductImages, updateProductName } from '../controllers/product.controller.js';
 import { productAssistant } from '../controllers/product.assistant.controller.js';
-import { requireAuth, optionalAuth } from '../middlewares/auth.js';
+import { requireAuth, optionalAuth, requireSeller } from '../middlewares/auth.js';
 import { tiendaLimiter, heavyLimiter } from '../middlewares/limiters.js';
 
 const router = Router();
@@ -24,7 +24,7 @@ router.delete('/:id/review', requireAuth, deleteReviewController);
 
 // Specific GET routes (must be before /:id)
 router.get('/search', searchProducts);
-router.get('/mine', requireAuth, getMyProducts);
+router.get('/mine', requireAuth, requireSeller, getMyProducts);
 router.get('/compras', optionalAuth, getUserComprasController);
 router.get('/compras/buscar', optionalAuth, searchOrdersController);
 router.get('/compras/hash/:hash', optionalAuth, getOrderByHashController);
@@ -36,16 +36,16 @@ router.get('/tipos-empaque', getTiposEmpaqueController);
 // Endpoint: GET /api/product (and /search)
 router.get('/', searchProducts);
 
-// Gestión de productos de la tienda (deben ir antes de /:id)
-router.get('/manage', requireAuth, getMyProductsManagement);
-router.patch('/:id/pause', requireAuth, pauseProduct);
-router.patch('/:id/activate', requireAuth, activateProduct);
-router.patch('/:id/name', requireAuth, updateProductName);
-router.delete('/:id', requireAuth, deleteProduct);
-router.post('/:id/images', requireAuth, addProductImages);
+// Gestión de productos de la tienda (solo vendedores autorizados, deben ir antes de /:id)
+router.get('/manage', requireAuth, requireSeller, getMyProductsManagement);
+router.patch('/:id/pause', requireAuth, requireSeller, pauseProduct);
+router.patch('/:id/activate', requireAuth, requireSeller, activateProduct);
+router.patch('/:id/name', requireAuth, requireSeller, updateProductName);
+router.delete('/:id', requireAuth, requireSeller, deleteProduct);
+router.post('/:id/images', requireAuth, requireSeller, addProductImages);
 
 // Endpoint: POST /api/product
-router.post('/', requireAuth, tiendaLimiter, saveProduct);
+router.post('/', requireAuth, requireSeller, tiendaLimiter, saveProduct);
 router.post('/reserve-stock', reserveStockController);
 router.post('/release-stock', releaseStockController);
 router.post('/migrate-cart', requireAuth, migrateCartController);

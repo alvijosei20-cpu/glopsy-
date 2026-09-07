@@ -11,7 +11,7 @@ import {
   deleteCheckoutIntegration,
   getAnalytics
 } from '../controllers/tienda.controller.js';
-import { requireAuth } from '../middlewares/auth.js';
+import { requireAuth, requireSeller } from '../middlewares/auth.js';
 import { tiendaLimiter } from '../middlewares/limiters.js';
 import { getPerfilesForUser, createPerfilForUser, deletePerfilForUser } from '../controllers/perfiles.controller.js';
 import { getOfertas, createOferta, updateOfertaProductos, deleteOferta } from '../controllers/ofertas.controller.js';
@@ -31,7 +31,7 @@ import {
 
 const router = Router();
 
-router.use(requireAuth, tiendaLimiter);
+router.use(requireAuth, requireSeller, tiendaLimiter);
 router.get('/', getMine);
 // Alta de tienda para un vendedor nuevo (idempotente)
 router.post('/', createStore);
