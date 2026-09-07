@@ -124,10 +124,12 @@ export const saveProductForUser = async (userId, productData) => {
     throw new Error('El nombre del producto es obligatorio.');
   }
 
-  // 1. Asegurar que la tienda exista para el usuario (Upsert)
+  // 1. Asegurar que la tienda exista para el usuario (Upsert).
+  //    Nueva tienda nace INACTIVA: debe configurar pagos/envíos en producción
+  //    y activarse antes de que los clientes la vean.
   await pool.query(
     `INSERT INTO tiendas (usrid, nombres, activa)
-     VALUES ($1, $2, true)
+     VALUES ($1, $2, false)
      ON CONFLICT (usrid) DO NOTHING`,
     [userId, `Tienda de Usuario ${userId}`]
   );

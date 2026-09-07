@@ -3,6 +3,7 @@ import {
   ensureTiendaForUser,
   updateTiendaForUser,
   updateTiendaStatus, 
+  getProductionIntegrationsForUser,
   getDianConfigForUser, 
   saveDianConfigForUser,
   getCheckoutIntegrationsForUser,
@@ -151,6 +152,17 @@ export const createTiendaController = ({
     }
 
     try {
+      // Dar de alta (activar) exige credenciales de PRODUCCIÓN de pagos y envíos.
+      if (req.body.isActive === true) {
+        const setup = await getProductionIntegrationsForUser(req.auth.userId);
+        if (!setup.ok) {
+          return res.status(400).json({
+            ok: false,
+            message: `No puedes activar la tienda sin: ${setup.missing.join(', ')}. Configúralas en producción e inténtalo de nuevo.`,
+          });
+        }
+      }
+
       const tienda = await updateStatus(req.auth.userId, req.body.isActive);
       if (!tienda) {
         return res.status(404).json({ ok: false, message: 'No tienes una tienda registrada.' });

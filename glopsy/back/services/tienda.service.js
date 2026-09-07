@@ -103,7 +103,7 @@ export const ensureTiendaForUser = async (userId, { name = '', slug = null, ga_i
   try {
     const { rows } = await pool.query(
       `INSERT INTO tiendas (usrid, nombres, slug, ga_id, activa)
-       VALUES ($1, $2, $3, $4, true)
+       VALUES ($1, $2, $3, $4, false)
        ON CONFLICT (usrid) DO NOTHING
        RETURNING ${STORE_COLUMNS}`,
       [uid, storeName, storeSlug, storeGa]
@@ -193,6 +193,25 @@ export const updateTiendaForUser = async (userId, { name = null, slug = null, ga
   }
 };
 
+// Una tienda nueva nace inactiva. Solo puede "darse de alta" si ya configuró en
+// PRODUCCIÓN Mercado Pago y ENVIA (token de envíos y de pagos), para no operar
+// con credenciales de prueba o de la plataforma.
+export const getProductionIntegrationsForUser = async (userId) => {
+  const { rows } = await pool.query(
+    `SELECT provider, mode,
+            (access_token IS NOT NULL AND length(access_token) > 0) AS has_token
+     FROM checkout_integrations
+     WHERE tienda_id = $1 AND provider IN ('mercadopago', 'envia')`,
+    [userId]
+  );
+  const hasInProduction = (provider) =>
+    rows.some((r) => r.provider === provider && r.mode === 'produccion' && r.has_token);
+  const missing = [];
+  if (!hasInProduction('mercadopago')) missing.push('Mercado Pago (producción)');
+  if (!hasInProduction('envia')) missing.push('ENVIA (producción)');
+  return { ok: missing.length === 0, missing };
+};
+
 // Info pública de una tienda para servir su subdominio/vitrina (solo tiendas activas).
 export const getPublicStoreBySlug = async (slug) => {
   const cleanSlug = normalizeStoreSlug(slug);
@@ -208,8 +227,7 @@ export const getPublicStoreBySlug = async (slug) => {
 };
 
 // Tienda principal (la que se sirve en app.glopsy.shop). Sin slug obligatorio.
-export const getMainStore = async () => {
-  const { rows } = await pool.query(
+export const getMainStore = async () => {  const { rows } = await pool.query(
     `SELECT ${STORE_COLUMNS}
      FROM tiendas
      WHERE is_main = true AND COALESCE(activa, true) = true

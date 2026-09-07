@@ -45,7 +45,7 @@ export default function Vender() {
     try {
       await api.post('/tienda', { name: name.trim(), slug: slug.trim().toLowerCase(), ga_id: gaId.trim() || null });
       await refreshTienda();
-      navigate('/market', { replace: true });
+      navigate('/market/config', { replace: true });
     } catch (err) {
       setError(err.response?.data?.message || 'No fue posible crear la tienda. Intenta de nuevo.');
     } finally {

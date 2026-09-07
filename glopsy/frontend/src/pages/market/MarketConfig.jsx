@@ -5,9 +5,11 @@ import api from '../../services/api';
 import './marketConfig.css';
 
 const MarketConfig = () => {
-  const { tienda } = useAuth();
+  const { tienda, refreshTienda } = useAuth();
   const [activeTab, setActiveTab] = useState('envios');
   const [notice, setNotice] = useState('');
+  const [activating, setActivating] = useState(false);
+  const [activationMsg, setActivationMsg] = useState('');
   const [ciudades, setCiudades] = useState([]);
   const [fullments, setFullments] = useState([]);
   const [selectedCiudadId, setSelectedCiudadId] = useState('');
@@ -656,6 +658,21 @@ const MarketConfig = () => {
     return f ? `${f.ciudad_nombre} (${f.departamento_nombre})` : 'Centro específico';
   };
 
+  const activateStore = async () => {
+    if (activating) return;
+    setActivating(true);
+    setActivationMsg('');
+    try {
+      const { data } = await api.patch('/tienda/estado', { isActive: true });
+      await refreshTienda();
+      setNotice(data?.message || 'Tienda activada con éxito.');
+    } catch (err) {
+      setActivationMsg(err.response?.data?.message || 'No fue posible activar la tienda. Revisa tu configuración.');
+    } finally {
+      setActivating(false);
+    }
+  };
+
   if (!tienda) return null;
 
   return (
@@ -690,6 +707,38 @@ const MarketConfig = () => {
           <p>Administra la configuración comercial, envíos, pagos y promociones.</p>
         </div>
       </div>
+
+      {!tienda.isActive && (
+        <div style={{
+          background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '1rem',
+          padding: '1rem 1.25rem', marginBottom: '1.5rem', color: '#78350f',
+        }}>
+          <p style={{ margin: 0, fontWeight: 800 }}>
+            ⚠️ Tu tienda está pendiente de activación (no la ven los clientes).
+          </p>
+          <p style={{ margin: '0.35rem 0 0.75rem', fontSize: '0.85rem' }}>
+            Para darla de alta debes configurar en <b>PRODUCCIÓN</b>: <b>Mercado Pago</b>
+            (pestaña "Payments y checkout") y <b>ENVIA</b> (pestaña "Perfil de envíos").
+          </p>
+          {activationMsg && (
+            <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: '#b91c1c', fontWeight: 600 }}>
+              {activationMsg}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={activateStore}
+            disabled={activating}
+            style={{
+              background: activating ? '#d97706' : '#f59e0b', color: '#fff', border: 'none',
+              borderRadius: '0.75rem', padding: '0.6rem 1.25rem', fontWeight: 700,
+              cursor: activating ? 'wait' : 'pointer', fontSize: '0.85rem',
+            }}
+          >
+            {activating ? 'Verificando…' : 'Verificar y activar tienda'}
+          </button>
+        </div>
+      )}
 
       <div className="config-layout">
         {/* Sidebar con iconos */}
