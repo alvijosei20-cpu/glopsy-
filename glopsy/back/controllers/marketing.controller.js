@@ -25,7 +25,7 @@ export const getMarketingOverview = async (req, res) => {
     return res.json({
       ok: true,
       ...overview,
-      llm: { enabled: Boolean(process.env.DEEPSEEK_API_KEY) },
+      llm: { enabled: Boolean(process.env.LLM_API_KEY || process.env.DEEPSEEK_API_KEY) },
     });
   } catch (err) {
     console.error('Error al obtener resumen de marketing:', err.message);

@@ -2,9 +2,9 @@ import axios from 'axios';
 import { pool } from '../db.js';
 import { getShippingOptionsFromEnvia } from './envia.service.js';
 
-const API_KEY = process.env.DEEPSEEK_API_KEY || '';
-const BASE_URL = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(/\/$/, '');
-const MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+const API_KEY = process.env.LLM_API_KEY || process.env.DEEPSEEK_API_KEY || '';
+const BASE_URL = (process.env.LLM_BASE_URL || process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(/\/$/, '');
+const MODEL = process.env.LLM_MODEL || process.env.DEEPSEEK_MODEL || 'deepseek-chat';
 const TIMEOUT_MS = Number(process.env.ASSISTANT_TIMEOUT_MS) || 20000;
 
 // Límites: 3 consultas con IA por producto (por IP/día) y 300 caracteres por pregunta.
@@ -529,7 +529,7 @@ const MAX_TOOL_ROUNDS = 4;
 const MAX_HISTORY = 12;
 
 // ------------------------------------------------------------------ Fallback sin IA
-// Si DeepSeek no está disponible se responde con FAQ local basada en datos reales.
+// Si el LLM no está disponible se responde con FAQ local basada en datos reales.
 
 const fmtCOP = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')} COP`;
 

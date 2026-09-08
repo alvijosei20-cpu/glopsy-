@@ -1,9 +1,9 @@
 import axios from 'axios';
 
-const API_KEY = process.env.DEEPSEEK_API_KEY || '';
-const BASE_URL = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(/\/$/, '');
-const MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
-const TIMEOUT_MS = Number(process.env.DEEPSEEK_TIMEOUT_MS) || 8000;
+const API_KEY = process.env.LLM_API_KEY || process.env.DEEPSEEK_API_KEY || '';
+const BASE_URL = (process.env.LLM_BASE_URL || process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(/\/$/, '');
+const MODEL = process.env.LLM_MODEL || process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+const TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS || process.env.DEEPSEEK_TIMEOUT_MS) || 8000;
 
 export const llmConfigured = () => Boolean(API_KEY);
 

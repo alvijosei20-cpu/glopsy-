@@ -60,10 +60,14 @@ services:
         sync: false
       - key: NOTIFICATIONS_ADMIN_KEY
         sync: false
-      - key: DEEPSEEK_API_KEY
+      - key: LLM_API_KEY
         sync: false
-      - key: DEEPSEEK_MODEL
+      - key: LLM_BASE_URL
+        value: https://opencode.ai/zen/go/v1
+      - key: LLM_MODEL
         value: deepseek-chat
+      - key: LLM_TIMEOUT_MS
+        value: "8000"
       - key: MARKETING_WORKER
         value: "on"
       - key: MARKETING_INTERVAL_HOURS

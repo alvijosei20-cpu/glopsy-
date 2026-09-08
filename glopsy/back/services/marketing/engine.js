@@ -353,7 +353,7 @@ export const runMarketingAnalysis = async (tiendaId, { manual = false } = {}) =>
     await finishMarketingRun(runId, {
       stats: result.stats,
       totalProducts: result.totalProducts,
-      llm: { enabled: !!process.env.DEEPSEEK_API_KEY },
+      llm: { enabled: !!(process.env.LLM_API_KEY || process.env.DEEPSEEK_API_KEY) },
     });
     return { runId, ...result };
   } catch (err) {
