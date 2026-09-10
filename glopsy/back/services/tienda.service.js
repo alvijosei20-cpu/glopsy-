@@ -1,6 +1,6 @@
 import { pool } from '../db.js';
 import { redisClient } from './redis.service.js';
-import { encryptSecret, decryptSecret, maskSecret } from '../utils/crypto.js';
+import { encryptSecret, decryptSecret, maskSecret, isEncryptedSecret } from '../utils/crypto.js';
 import { registerStoreCustomDomain, removeStoreCustomDomain } from './cloudflare.service.js';
 
 const CACHE_TTL_SECONDS = 60;
@@ -294,14 +294,25 @@ export const getCheckoutIntegrationsForUser = async (userId) => {
      WHERE tienda_id = $1`,
     [userId]
   );
-  return rows.map((row) => ({
-    provider: row.provider,
-    mode: row.mode,
-    public_key: row.public_key,
-    access_token: maskSecret(decryptSecret(row.access_token)),
-    webhook_secret: row.webhook_secret ? maskSecret(decryptSecret(row.webhook_secret)) : '',
-    updated_at: row.updated_at,
-  }));
+  return rows.map((row) => {
+    const access = row.access_token ? decryptSecret(row.access_token) : null;
+    const web = row.webhook_secret ? decryptSecret(row.webhook_secret) : null;
+    const broken =
+      (isEncryptedSecret(row.access_token) && !access) ||
+      (row.webhook_secret && isEncryptedSecret(row.webhook_secret) && !web);
+    if (broken) {
+      console.error(`[checkout-integrations] credenciales sin descifrar (provider=${row.provider}, mode=${row.mode}); se debe reingresar. Puede deberse a un cambio de APP_ENC_KEY.`);
+    }
+    return {
+      provider: row.provider,
+      mode: row.mode,
+      public_key: row.public_key,
+      access_token: access ? maskSecret(access) : '',
+      webhook_secret: web ? maskSecret(web) : '',
+      broken,
+      updated_at: row.updated_at,
+    };
+  });
 };
 
 export const saveCheckoutIntegrationForUser = async (userId, provider, mode, { publicKey, accessToken, webhookSecret } = {}) => {

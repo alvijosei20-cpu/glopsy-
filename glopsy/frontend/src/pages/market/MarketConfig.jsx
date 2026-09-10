@@ -675,6 +675,9 @@ const MarketConfig = () => {
 
   if (!tienda) return null;
 
+  const mpSaved = savedCheckoutIntegrations.find(i => i.provider === 'mercadopago' && (i.mode === mpMode || (!i.mode && mpMode === 'prueba')));
+  const enviaSaved = savedCheckoutIntegrations.find(i => i.provider === 'envia' && (i.mode === enviaMode || (!i.mode && enviaMode === 'prueba')));
+
   return (
     <div className="panel" style={{ paddingBottom: '3rem', position: 'relative' }}>
       {notice && (
@@ -1508,9 +1511,9 @@ const MarketConfig = () => {
                       <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Configura tus credenciales para procesar pagos en línea.</p>
                     </div>
                   </div>
-                  {savedCheckoutIntegrations.some(i => i.provider === 'mercadopago' && (i.mode === mpMode || (!i.mode && mpMode === 'prueba'))) && (
-                    <span style={{ background: '#dcfce7', color: '#166534', padding: '0.25rem 0.75rem', borderRadius: '999px', fontSize: '0.8rem', fontWeight: 600 }}>
-                      Guardado ({mpMode === 'prueba' ? 'Prueba' : 'Producción'})
+                  {mpSaved && (
+                    <span style={{ background: mpSaved.broken ? '#fef3c7' : '#dcfce7', color: mpSaved.broken ? '#b45309' : '#166534', padding: '0.25rem 0.75rem', borderRadius: '999px', fontSize: '0.8rem', fontWeight: 600 }}>
+                      {mpSaved.broken ? '⚠ Reingresar credenciales' : `Guardado (${mpMode === 'prueba' ? 'Prueba' : 'Producción'})`}
                     </span>
                   )}
                 </div>
@@ -1642,9 +1645,9 @@ const MarketConfig = () => {
                       <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Configura el token de acceso para cotización y gestión de envíos.</p>
                     </div>
                   </div>
-                  {savedCheckoutIntegrations.some(i => i.provider === 'envia' && (i.mode === enviaMode || (!i.mode && enviaMode === 'prueba'))) && (
-                    <span style={{ background: '#dcfce7', color: '#166534', padding: '0.25rem 0.75rem', borderRadius: '999px', fontSize: '0.8rem', fontWeight: 600 }}>
-                      Guardado ({enviaMode === 'prueba' ? 'Prueba' : 'Producción'})
+                  {enviaSaved && (
+                    <span style={{ background: enviaSaved.broken ? '#fef3c7' : '#dcfce7', color: enviaSaved.broken ? '#b45309' : '#166534', padding: '0.25rem 0.75rem', borderRadius: '999px', fontSize: '0.8rem', fontWeight: 600 }}>
+                      {enviaSaved.broken ? '⚠ Reingresar credenciales' : `Guardado (${enviaMode === 'prueba' ? 'Prueba' : 'Producción'})`}
                     </span>
                   )}
                 </div>
