@@ -108,9 +108,39 @@ export default function Navbar() {
       window.removeEventListener('glopsy_notification', handleCustomNotif);
     };
   }, []);
-  const [pushPermission] = useState(() => 
+  const [pushPermission, setPushPermission] = useState(() => 
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
   );
+  const [pushRequestMsg, setPushRequestMsg] = useState('');
+
+  const needsPushPrompt = Boolean(user) && pushPermission !== 'granted';
+
+  const handleEnablePush = async () => {
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setPushRequestMsg('Tu navegador no soporta notificaciones push.');
+      return;
+    }
+    setPushRequestMsg('');
+    try {
+      if (typeof Notification.requestPermission !== 'function') {
+        setPushRequestMsg('Este navegador no soporta solicitar notificaciones. Habilítalas desde su configuración.');
+        return;
+      }
+      const perm = await Notification.requestPermission();
+      setPushPermission(perm);
+      if (perm === 'granted') {
+        const sub = await subscribeToPush();
+        setPushRequestMsg(sub ? '✅ Notificaciones activadas.' : 'Permiso otorgado, pero no se pudo registrar la suscripción.');
+      } else if (perm === 'denied') {
+        setPushRequestMsg('Permiso denegado: actívalo en la configuración de tu navegador.');
+      } else {
+        setPushRequestMsg('Permiso pendiente por confirmar.');
+      }
+    } catch (err) {
+      console.warn('[push] Error al solicitar permiso:', err.message);
+      setPushRequestMsg('No fue posible activar las notificaciones.');
+    }
+  };
 
   useEffect(() => {
     if (pushPermission !== 'granted') return;
@@ -372,6 +402,9 @@ export default function Navbar() {
                     {notifications.filter(n => !n.read).length}
                   </span>
                 )}
+                {needsPushPrompt && (
+                  <span className="absolute -top-1 -left-1 w-2.5 h-2.5 bg-amber-500 rounded-full animate-pulse border border-white dark:border-zinc-900" title="Activa las notificaciones push" />
+                )}
               </button>
             </div>
 
@@ -463,6 +496,9 @@ export default function Navbar() {
                 <span className="absolute -top-1 -right-1 bg-pink-600 text-white text-[9px] w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold animate-pulse">
                   {notifications.filter(n => !n.read).length}
                 </span>
+              )}
+              {needsPushPrompt && (
+                <span className="absolute -top-1 -left-1 w-2.5 h-2.5 bg-amber-500 rounded-full animate-pulse border border-white dark:border-zinc-900" title="Activa las notificaciones push" />
               )}
             </button>
             {user && (
@@ -648,6 +684,31 @@ export default function Navbar() {
                   </button>
                 </div>
               </div>
+
+              {needsPushPrompt && (
+                <div className="mb-2 p-2.5 rounded-xl border text-xs"
+                  style={{ backgroundColor: isDark ? '#1e1b2e' : '#fffbeb', borderColor: isDark ? '#7c3aed' : '#fcd34d', color: isDark ? '#e9d5ff' : '#92400e' }}>
+                  <div className="flex items-center gap-2 font-bold">
+                    <Bell size={14} />
+                    <span>Activa las notificaciones push</span>
+                  </div>
+                  <p className="mt-1 leading-snug opacity-90">
+                    Recibe avisos de tus pedidos y novedades aunque no tengas la app abierta.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleEnablePush}
+                    className="mt-2 bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg text-[11px] font-bold transition-opacity cursor-pointer"
+                  >
+                    Activar notificaciones
+                  </button>
+                  {pushRequestMsg && (
+                    <p className="mt-1.5 text-[11px] font-semibold" style={{ color: isDark ? '#a1a1aa' : '#78350f' }}>
+                      {pushRequestMsg}
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-2 max-h-60 md:max-h-[26rem] overflow-y-auto">
                 {notifications.length === 0 ? (
