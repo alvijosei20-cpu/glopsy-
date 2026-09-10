@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { User, MapPin, CreditCard, Save, Plus, Trash2, Shield, Calendar, Phone, FileText } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { User, MapPin, CreditCard, Save, Plus, Trash2, Shield, Calendar, Phone, FileText, CheckCircle2, AlertCircle } from 'lucide-react';
 import api from '../../services/api';
 import { SkeletonProfile } from '../../components/SkeletonLoader';
 
@@ -46,8 +46,16 @@ export default function Profile() {
   });
   const [showCardForm, setShowCardForm] = useState(false);
 
+  const toastTimer = useRef(null);
+  const showToast = useCallback((text, type = 'success') => {
+    setMessage({ text, type });
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setMessage({ text: '', type: '' }), 3500);
+  }, []);
+
   useEffect(() => {
     fetchProfileData();
+    return () => clearTimeout(toastTimer.current);
   }, []);
 
   const fetchProfileData = async () => {
@@ -82,7 +90,7 @@ export default function Profile() {
       }
     } catch (err) {
       console.error('Error al cargar datos del perfil:', err);
-      setMessage({ text: 'Error al cargar los datos del perfil.', type: 'error' });
+      showToast('Error al cargar los datos del perfil.', 'error');
     } finally {
       setLoading(false);
     }
@@ -91,17 +99,16 @@ export default function Profile() {
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
     setSaving(true);
-    setMessage({ text: '', type: '' });
     try {
       const res = await api.put('/auth/me', formData);
       if (res.data.ok) {
-        setMessage({ text: 'Perfil actualizado con éxito.', type: 'success' });
+        showToast('Perfil actualizado con éxito.', 'success');
       } else {
-        setMessage({ text: res.data.message || 'No fue posible actualizar.', type: 'error' });
+        showToast(res.data.message || 'No fue posible actualizar.', 'error');
       }
     } catch (err) {
       console.error('Error al actualizar perfil:', err);
-      setMessage({ text: 'Error al actualizar el perfil.', type: 'error' });
+      showToast('Error al actualizar el perfil.', 'error');
     } finally {
       setSaving(false);
     }
@@ -110,7 +117,7 @@ export default function Profile() {
   const handleAddAddress = async (e) => {
     e.preventDefault();
     if (newAddress.phone && !/^3\d{9}$/.test(newAddress.phone)) {
-      setMessage({ text: 'El número móvil debe tener 10 dígitos y empezar por 3 (Ej. 3001234567).', type: 'error' });
+      showToast('El número móvil debe tener 10 dígitos y empezar por 3 (Ej. 3001234567).', 'error');
       return;
     }
     try {
@@ -128,11 +135,11 @@ export default function Profile() {
           notes: '',
         });
         setShowAddressForm(false);
-        setMessage({ text: 'Dirección guardada correctamente.', type: 'success' });
+        showToast('Dirección guardada correctamente.', 'success');
       }
     } catch (err) {
       console.error('Error al guardar dirección:', err);
-      setMessage({ text: 'Error al guardar la dirección.', type: 'error' });
+      showToast('Error al guardar la dirección.', 'error');
     }
   };
 
@@ -142,7 +149,7 @@ export default function Profile() {
       const res = await api.delete(`/auth/addresses/${id}`);
       if (res.data.ok) {
         setAddresses(addresses.filter(a => a.id !== id));
-        setMessage({ text: 'Dirección eliminada.', type: 'success' });
+        showToast('Dirección eliminada.', 'success');
       }
     } catch (err) {
       console.error('Error al eliminar dirección:', err);
@@ -163,11 +170,11 @@ export default function Profile() {
           card_brand: 'Visa',
         });
         setShowCardForm(false);
-        setMessage({ text: 'Tarjeta guardada correctamente.', type: 'success' });
+        showToast('Tarjeta guardada correctamente.', 'success');
       }
     } catch (err) {
       console.error('Error al guardar tarjeta:', err);
-      setMessage({ text: 'Error al guardar la tarjeta.', type: 'error' });
+      showToast('Error al guardar la tarjeta.', 'error');
     }
   };
 
@@ -177,7 +184,7 @@ export default function Profile() {
       const res = await api.delete(`/auth/cards/${id}`);
       if (res.data.ok) {
         setCards(cards.filter(c => c.id !== id));
-        setMessage({ text: 'Tarjeta eliminada.', type: 'success' });
+        showToast('Tarjeta eliminada.', 'success');
       }
     } catch (err) {
       console.error('Error al eliminar tarjeta:', err);
@@ -212,7 +219,8 @@ export default function Profile() {
       </div>
 
       {message.text && (
-        <div className={`mb-6 p-4 rounded-xl text-sm font-medium ${message.type === 'error' ? 'bg-pink-50 text-pink-700 border border-pink-200' : 'bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200'}`}>
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[10000] flex items-center gap-2 px-5 py-3 rounded-xl shadow-2xl text-sm font-semibold text-white animate-in fade-in slide-in-from-bottom-4 duration-200 ${message.type === 'error' ? 'bg-pink-600' : 'bg-emerald-600'}`}>
+          {message.type === 'error' ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
           {message.text}
         </div>
       )}

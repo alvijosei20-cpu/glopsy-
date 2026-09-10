@@ -50,7 +50,7 @@ function ogDoc({ title, description, image, url, origin, type = 'website', price
 <html lang="es">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <meta http-equiv="refresh" content="0; url=${esc(fullUrl)}" />
 <title>${esc(name)}${name.includes('Glopsy') ? '' : ' | Glopsy'}</title>
 <meta name="description" content="${esc(desc)}" />
@@ -151,7 +151,7 @@ const PANIC_HTML = `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <title>glopsy · En mantenimiento</title>
 <style>
   :root{--bg:#1a1a1a;--surface:#000000;--text:#ffffff;--muted:#64748b;--accent:#db2777;--danger:#9d174d}

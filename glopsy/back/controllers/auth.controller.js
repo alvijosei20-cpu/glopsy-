@@ -382,8 +382,11 @@ export const getAddresses = async (req, res) => {
 export const saveAddress = async (req, res) => {
   try {
     const userId = req.auth.userId;
-    const type = cleanString(req.body.type, { maxLength: 20 }) || 'envio';
     const title = cleanString(req.body.title, { maxLength: 100 }) || 'Dirección principal';
+    let type = cleanString(req.body.type, { maxLength: 20 });
+    if (type !== 'original' && type !== 'opcional') {
+      type = /opcional/i.test(title) ? 'opcional' : 'original';
+    }
     const street = cleanString(req.body.street, { maxLength: 200 });
     const city = cleanString(req.body.city, { maxLength: 100 });
     const state = cleanString(req.body.state, { maxLength: 100 }) || '';
