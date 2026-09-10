@@ -26,4 +26,5 @@ server.listen(PORT, () => {
   if (process.env.MARKETING_WORKER !== 'off') {
     import('./services/marketing/worker.js').then(({ scheduleMarketingWorker }) => scheduleMarketingWorker());
   }
+  import('./services/stockReserve.cleaner.js').then(({ scheduleStockReserveCleaner }) => scheduleStockReserveCleaner());
 });
