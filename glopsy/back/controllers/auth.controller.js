@@ -22,6 +22,7 @@ import { setAuthCookie, clearAuthCookie } from '../utils/cookies.js';
 import {
   cleanString,
   cleanNullableString,
+  cleanText,
   cleanEmail,
   cleanPhone,
   isColombianMobile,
@@ -410,8 +411,8 @@ export const saveAddress = async (req, res) => {
 
     return res.status(201).json({ ok: true, address: rows[0] });
   } catch (error) {
-    console.error('Error al guardar dirección:', error.message, error.stack);
-    return res.status(500).json({ ok: false, message: 'No fue posible guardar la dirección.', dev: error.message, detail: error.code || error.detail || null });
+    console.error('Error al guardar dirección:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible guardar la dirección.' });
   }
 };
 
