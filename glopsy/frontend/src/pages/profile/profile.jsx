@@ -24,7 +24,8 @@ export default function Profile() {
   // Addresses
   const [addresses, setAddresses] = useState([]);
   const [newAddress, setNewAddress] = useState({
-    title: 'Casa',
+    type: 'original',
+    title: 'Principal',
     street: '',
     city: '',
     state: '',
@@ -116,6 +117,12 @@ export default function Profile() {
 
   const handleAddAddress = async (e) => {
     e.preventDefault();
+    const hasOriginal = addresses.some(a => a.type === 'original');
+    const hasOpcional = addresses.some(a => a.type === 'opcional');
+    if ((newAddress.type === 'original' && hasOriginal) || (newAddress.type === 'opcional' && hasOpcional)) {
+      showToast(`Ya tienes registrada una dirección ${newAddress.type === 'original' ? 'Principal' : 'Opcional'}.`, 'error');
+      return;
+    }
     if (newAddress.phone && !/^3\d{9}$/.test(newAddress.phone)) {
       showToast('El número móvil debe tener 10 dígitos y empezar por 3 (Ej. 3001234567).', 'error');
       return;
@@ -125,7 +132,8 @@ export default function Profile() {
       if (res.data.ok) {
         setAddresses([res.data.address, ...addresses]);
         setNewAddress({
-          title: 'Casa',
+          type: 'original',
+          title: 'Principal',
           street: '',
           city: '',
           state: '',
@@ -381,7 +389,8 @@ export default function Profile() {
             {addresses.length < 2 ? (
               <button
                 onClick={() => {
-                  setNewAddress(prev => ({ ...prev, title: addresses.length === 0 ? 'Principal' : 'Opcional' }));
+                  const freeType = addresses.some(a => a.type === 'original') ? 'opcional' : 'original';
+                  setNewAddress(prev => ({ ...prev, type: freeType, title: freeType === 'original' ? 'Principal' : 'Opcional' }));
                   setShowAddressForm(!showAddressForm);
                 }}
                 className="flex items-center gap-2 bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-md shadow-fuchsia-600/20 hover:from-fuchsia-500 hover:to-pink-500 transition-all cursor-pointer"
@@ -399,6 +408,27 @@ export default function Profile() {
           {showAddressForm && (
             <form onSubmit={handleAddAddress} className="bg-white rounded-2xl border border-fuchsia-100 shadow-sm p-6 space-y-4">
               <h3 className="font-bold text-slate-800 text-sm">Agregar Dirección</h3>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="text-xs font-semibold text-slate-700 uppercase">Tipo de dirección</label>
+                <div className="flex rounded-xl border border-slate-200 overflow-hidden">
+                  <button
+                    type="button"
+                    disabled={addresses.some(a => a.type === 'original')}
+                    onClick={() => setNewAddress(prev => ({ ...prev, type: 'original', title: 'Principal' }))}
+                    className={`px-4 py-2 text-sm font-medium transition-colors disabled:opacity-40 ${newAddress.type === 'original' ? 'bg-fuchsia-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    Principal
+                  </button>
+                  <button
+                    type="button"
+                    disabled={addresses.some(a => a.type === 'opcional')}
+                    onClick={() => setNewAddress(prev => ({ ...prev, type: 'opcional', title: 'Opcional' }))}
+                    className={`px-4 py-2 text-sm font-medium transition-colors disabled:opacity-40 ${newAddress.type === 'opcional' ? 'bg-fuchsia-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    Opcional
+                  </button>
+                </div>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <input
                   type="text"
@@ -477,7 +507,7 @@ export default function Profile() {
                     <div className="flex items-center gap-2 mb-1">
                       <span className="font-bold text-slate-900 text-sm">{addr.title}</span>
                       <span className="bg-fuchsia-50 text-fuchsia-600 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
-                        {addr.type}
+                        {addr.type === 'original' ? 'Principal' : 'Opcional'}
                       </span>
                     </div>
                     <p className="text-sm text-slate-600">{addr.street}</p>
