@@ -45,7 +45,7 @@ const DEFAULT_BANNERS = [
     highlight: 'no te quedes sin el tuyo',
     desc: 'Las ofertas más buscadas desaparecen en horas. Entra ahora y asegura tu precio antes de que se agote.',
     cta: 'Ver ofertas hoy',
-    to: '/listpr',
+    to: '/listpr?ofertas=true',
     bgFrom: '#db2777',
     bgVia: '#e11d48',
     bgTo: '#7c3aed',

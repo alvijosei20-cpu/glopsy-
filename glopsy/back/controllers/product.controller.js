@@ -190,10 +190,11 @@ export const searchProducts = async (req, res) => {
     const price_min = toNumber(req.query.price_min, { min: 0 });
     const price_max = toNumber(req.query.price_max, { min: 0 });
     const envio_gratis = cleanBoolean(req.query.envio_gratis, undefined);
+    const solo_ofertas = cleanBoolean(req.query.solo_ofertas, undefined);
     const min_rating = toNumber(req.query.min_rating, { min: 1, max: 5 });
     const tienda = cleanString(req.query.tienda, { maxLength: 63 }) || undefined;
     await autoCategorizeUncategorizedProducts().catch(() => {});
-    const data = await searchQueryProductsCached({ q, limit, offset, ciudadName: ciudad, categoriaId: categoria_id, sortBy: sort, priceMin: price_min, priceMax: price_max, envioGratis: envio_gratis, minRating: min_rating, tienda });
+    const data = await searchQueryProductsCached({ q, limit, offset, ciudadName: ciudad, categoriaId: categoria_id, sortBy: sort, priceMin: price_min, priceMax: price_max, envioGratis: envio_gratis, soloOfertas: solo_ofertas, minRating: min_rating, tienda });
     res.json({
       ok: true,
       ...data,

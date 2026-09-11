@@ -608,8 +608,29 @@ const freeShippingCostoExpr = (cityPh) => `COALESCE((
   LIMIT 1
 ), 0)`;
 
+// Existencia de una oferta activa aplicable al producto (misma semántica que oferta_activa del SELECT)
+const activeOfferExistsExpr = (cityPh) => `EXISTS (
+  SELECT 1 FROM ofertas o
+  WHERE o.tienda_id = p.tienda_id
+    AND o.estado = 'activo'
+    AND (o.fecha_inicio IS NULL OR o.fecha_inicio <= NOW())
+    AND (o.fecha_fin IS NULL OR o.fecha_fin >= NOW())
+    AND (
+      o.alcance = 'global'
+      OR (o.alcance = 'ciudad' AND EXISTS (
+        SELECT 1 FROM fullments f2
+        JOIN ciudades pc ON pc.id = f2.ciudad_id
+        WHERE f2.id = p.fullm_id
+          AND (o.ciudad_id = f2.ciudad_id OR (${cityPh}::text IS NOT NULL AND LOWER(pc.nombre) = LOWER(${cityPh}::text)))
+      ))
+      OR (o.alcance = 'productos' AND EXISTS (
+        SELECT 1 FROM oferta_productos op WHERE op.oferta_id = o.id AND op.producto_id = p.id
+      ))
+    )
+)`;
+
 const buildSearchWhere = (idx) => {
-  const { search, city, cat, pMin, pMax, minRate, freeShip } = idx;
+  const { search, city, cat, pMin, pMax, minRate, freeShip, soloOfertas } = idx;
   const freeShippingExpr = `EXISTS (
     SELECT 1 
     FROM perfiles_envio pe
@@ -640,7 +661,8 @@ const buildSearchWhere = (idx) => {
     AND ($${minRate}::int IS NULL OR (
       SELECT COALESCE(AVG(rv.rating), 0) FROM reviews rv WHERE rv.product_id = p.id
     ) >= $${minRate})
-    AND ($${freeShip}::boolean IS NOT TRUE OR ${freeShippingExpr})`;
+    AND ($${freeShip}::boolean IS NOT TRUE OR ${freeShippingExpr})
+    AND ($${soloOfertas}::boolean IS NOT TRUE OR ${activeOfferExistsExpr(`$${city}`)})`;
   return where;
 };
 
@@ -667,7 +689,7 @@ const getStoreIdBySlug = async (slug) => {
   return rows[0] ? Number(rows[0].usrid) : null;
 };
 
-export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadName, categoriaId, sortBy, priceMin, priceMax, envioGratis, minRating, tienda }) => {
+export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadName, categoriaId, sortBy, priceMin, priceMax, envioGratis, minRating, tienda, soloOfertas }) => {
   const lim = Math.max(1, parseInt(limit, 10) || 12);
   const off = Math.max(0, parseInt(offset, 10) || 0);
   const search = q ? String(q).trim() : null;
@@ -676,6 +698,7 @@ export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadNam
   const pMin = priceMin !== undefined && priceMin !== null && priceMin !== '' ? Number(priceMin) : null;
   const pMax = priceMax !== undefined && priceMax !== null && priceMax !== '' ? Number(priceMax) : null;
   const freeShip = envioGratis === 'true' || envioGratis === true;
+  const onlyDeals = soloOfertas === 'true' || soloOfertas === true;
   const minRate = minRating !== undefined && minRating !== null && minRating !== '' ? Number(minRating) : null;
   const orderBy = SORT_CLAUSES[sortBy] || SORT_CLAUSES.relevance;
 
@@ -718,8 +741,8 @@ export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadNam
       )
   )`;
 
-  const mainIdx = { search: 1, city: 2, cat: 5, pMin: 6, pMax: 7, minRate: 8, freeShip: 9 };
-  const countIdx = { search: 1, city: 2, cat: 3, pMin: 4, pMax: 5, minRate: 6, freeShip: 7 };
+  const mainIdx = { search: 1, city: 2, cat: 5, pMin: 6, pMax: 7, minRate: 8, freeShip: 9, soloOfertas: 10 };
+  const countIdx = { search: 1, city: 2, cat: 3, pMin: 4, pMax: 5, minRate: 6, freeShip: 7, soloOfertas: 8 };
 
   const queryText = `
     SELECT 
@@ -775,8 +798,8 @@ export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadNam
     WHERE ${buildSearchWhere(countIdx)}${scopeClause ? ` AND ${scopeClause}` : ''}
   `;
 
-  const values = [search, city, lim, off, catId, pMin, pMax, minRate, freeShip];
-  const countValues = [search, city, catId, pMin, pMax, minRate, freeShip];
+  const values = [search, city, lim, off, catId, pMin, pMax, minRate, freeShip, onlyDeals];
+  const countValues = [search, city, catId, pMin, pMax, minRate, freeShip, onlyDeals];
 
   const [result, countResult] = await Promise.all([
     pool.query(queryText, values),
@@ -804,6 +827,7 @@ export const searchQueryProductsCached = async (params) => {
       priceMin: params.priceMin ?? null,
       priceMax: params.priceMax ?? null,
       envioGratis: params.envioGratis ?? false,
+      soloOfertas: params.soloOfertas ?? false,
       minRating: params.minRating ?? null,
       tienda: params.tienda ?? null,
     }))

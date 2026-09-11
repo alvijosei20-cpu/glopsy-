@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Heart, ShoppingCart, Star, Truck, Filter, ChevronDown, X, Check, Share2 } from 'lucide-react';
+import { Search, Heart, ShoppingCart, Star, Truck, Filter, ChevronDown, X, Check, Share2, Flame } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
 import { isLoggedIn } from '../../utils/session';
@@ -41,6 +41,10 @@ export default function Listpr() {
   const [minRating, setMinRating] = useState(0);
   const [freeShipping, setFreeShipping] = useState(() => {
     const v = searchParams.get('envio_gratis');
+    return v === 'true' || v === '1';
+  });
+  const [onlyDeals, setOnlyDeals] = useState(() => {
+    const v = searchParams.get('ofertas');
     return v === 'true' || v === '1';
   });
   const [filtersOpen, setFiltersOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024);
@@ -175,6 +179,7 @@ export default function Listpr() {
           price_max: priceMax || undefined,
           min_rating: minRating > 0 ? minRating : undefined,
           envio_gratis: freeShipping || undefined,
+          solo_ofertas: onlyDeals || undefined,
         },
       });
 
@@ -213,14 +218,14 @@ export default function Listpr() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [limit, userCity, sortBy, priceMin, priceMax, minRating, freeShipping]);
+  }, [limit, userCity, sortBy, priceMin, priceMax, minRating, freeShipping, onlyDeals]);
 
   // Carga inicial y al cambiar búsqueda, categoría, orden o filtros
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
     setOffset(0);
     fetchProducts(submittedQuery, selectedCategory, 0, false);
-  }, [submittedQuery, selectedCategory, sortBy, priceMin, priceMax, minRating, freeShipping, fetchProducts]);
+  }, [submittedQuery, selectedCategory, sortBy, priceMin, priceMax, minRating, freeShipping, onlyDeals, fetchProducts]);
 
   // Manejo de Infinite Scroll (al llegar al final del scroll)
   useEffect(() => {
@@ -290,7 +295,7 @@ export default function Listpr() {
   // Ordenamiento ahora se aplica en el servidor (respeta paginación)
   const sortedProducts = products;
 
-  const hasActiveFilters = Boolean(submittedQuery || selectedCategory || priceMin || priceMax || minRating > 0 || freeShipping);
+  const hasActiveFilters = Boolean(submittedQuery || selectedCategory || priceMin || priceMax || minRating > 0 || freeShipping || onlyDeals);
 
   const clearFilters = () => {
     setQuery('');
@@ -300,6 +305,7 @@ export default function Listpr() {
     setPriceMax('');
     setMinRating(0);
     setFreeShipping(false);
+    setOnlyDeals(false);
     setSortBy('relevance');
   };
 
@@ -443,6 +449,23 @@ export default function Listpr() {
             {freeShipping && <Check size={14} />}
           </button>
 
+          {/* Solo ofertas */}
+          <button
+            type="button"
+            onClick={() => setOnlyDeals(!onlyDeals)}
+            className={`w-full flex items-center justify-between gap-2 h-9 px-3 rounded-lg border text-xs font-semibold transition-all ${
+              onlyDeals
+                ? 'bg-fuchsia-600 text-white border-fuchsia-600'
+                : 'bg-white text-slate-600 border-slate-200 hover:border-fuchsia-300 hover:text-fuchsia-600'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <Flame size={14} />
+              Solo ofertas
+            </span>
+            {onlyDeals && <Check size={14} />}
+          </button>
+
           {/* Ordenar */}
           <div>
             <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block mb-2">Ordenar por</label>
@@ -583,6 +606,20 @@ export default function Listpr() {
               Envío gratis
             </button>
 
+            {/* Solo ofertas */}
+            <button
+              type="button"
+              onClick={() => setOnlyDeals(!onlyDeals)}
+              className={`flex items-center gap-2 h-9 px-3 rounded-lg border text-xs font-semibold transition-all ${
+                onlyDeals
+                  ? 'bg-fuchsia-600 text-white border-fuchsia-600'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-fuchsia-300 hover:text-fuchsia-600'
+              }`}
+            >
+              <Flame size={14} />
+              Solo ofertas
+            </button>
+
             {/* Ordenar */}
             <div className="flex items-center gap-2 ml-auto">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Ordenar</span>
@@ -628,7 +665,7 @@ export default function Listpr() {
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h1 className="text-lg md:text-xl font-bold text-slate-900">
-                  {submittedQuery ? `Resultados para "${submittedQuery}"` : (selectedCategory ? categories.find(c => c.id === selectedCategory)?.nombre || 'Categoría' : 'Catálogo de Productos')}
+                  {submittedQuery ? `Resultados para "${submittedQuery}"` : (selectedCategory ? categories.find(c => c.id === selectedCategory)?.nombre || 'Categoría' : (onlyDeals ? 'Ofertas disponibles' : 'Catálogo de Productos'))}
                 </h1>
                 <p className="text-xs text-slate-500 mt-0.5">
                   {total} {total === 1 ? 'producto' : 'productos'} encontrados
@@ -636,7 +673,7 @@ export default function Listpr() {
               </div>
               {hasActiveFilters && (
                 <span className="hidden sm:inline-flex shrink-0 text-[11px] font-semibold text-fuchsia-600 bg-fuchsia-50 border border-fuchsia-100 px-2.5 py-1 rounded-full">
-                  {[selectedCategory !== null, priceMin !== '', priceMax !== '', minRating > 0, freeShipping].filter(Boolean).length} filtros activos
+                  {[selectedCategory !== null, priceMin !== '', priceMax !== '', minRating > 0, freeShipping, onlyDeals].filter(Boolean).length} filtros activos
                 </span>
               )}
               <button
