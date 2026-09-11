@@ -39,7 +39,10 @@ export default function Listpr() {
   const [priceMin, setPriceMin] = useState('');
   const [priceMax, setPriceMax] = useState('');
   const [minRating, setMinRating] = useState(0);
-  const [freeShipping, setFreeShipping] = useState(false);
+  const [freeShipping, setFreeShipping] = useState(() => {
+    const v = searchParams.get('envio_gratis');
+    return v === 'true' || v === '1';
+  });
   const [filtersOpen, setFiltersOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024);
   const [favorites, setFavorites] = useState(new Set());
   const [cartItemCount, setCartItemCount] = useState(0);
