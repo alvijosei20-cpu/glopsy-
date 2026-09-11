@@ -31,7 +31,7 @@ const absUrl = (src, origin) => {
   return `${origin}/${s}`;
 };
 
-function ogDoc({ title, description, image, url, origin, type = 'website', price, availability, jsonLd }) {
+function ogDoc({ title, description, image, url, origin, type = 'website', price, availability, jsonLd, currency = 'COP' }) {
   const name = cleanText(title, 90) || 'Glopsy';
   const desc = cleanText(description);
   const fullUrl = url.startsWith('http') ? url : origin + url;
@@ -41,7 +41,7 @@ function ogDoc({ title, description, image, url, origin, type = 'website', price
   if (type === 'product') {
     if (price !== null && price !== undefined && price !== '') {
       extra.push(`<meta property="product:price:amount" content="${esc(price)}" />
-  <meta property="product:price:currency" content="COP" />`);
+  <meta property="product:price:currency" content="${esc(currency)}" />`);
     }
     if (availability) extra.push(`<meta property="og:availability" content="${esc(availability)}" />`);
   }
@@ -110,15 +110,17 @@ async function handleCrawlerHTML(request, url, env) {
       }
       const inStock = Number(p.stock_total || 0) > 0 && p.tienda_activa !== false;
       const productUrl = `${url.origin}/product/${pid}`;
+      const currency = String(p.moneda || p.currency || 'COP').toUpperCase();
 
       return new Response(
         ogDoc({
           title: p.name,
-          description: p.description || 'Compra este producto en Glopsy con pagos seguros y envíos a todo Colombia.',
+          description: p.description || 'Compra este producto en Glopsy con pagos seguros y envíos nacionales.',
           image,
           url: productUrl,
           origin: url.origin,
           type: 'product',
+          currency,
           price: Math.max(0, Number(price || base)).toFixed(0),
           availability: inStock ? 'InStock' : 'OutOfStock',
           jsonLd: {
@@ -129,7 +131,7 @@ async function handleCrawlerHTML(request, url, env) {
             image: absUrl(image, url.origin),
             offers: {
               '@type': 'Offer',
-              priceCurrency: 'COP',
+              priceCurrency: currency,
               price: Math.max(0, Number(price || base)).toFixed(0),
               availability: inStock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
               url: productUrl,

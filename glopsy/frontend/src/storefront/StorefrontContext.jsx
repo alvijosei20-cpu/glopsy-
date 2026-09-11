@@ -12,8 +12,21 @@ export function StorefrontProvider({ children }) {
 
   useEffect(() => {
     if (!slug) {
-      setReady(true);
-      return;
+      // Sin subdominio: se carga la tienda principal para conocer su país
+      // (moneda/locale) y formatear precios correctamente en el marketplace.
+      let alive = true;
+      api
+        .get('/storefront/main')
+        .then(({ data }) => {
+          if (alive) setStore(data?.store || null);
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (alive) setReady(true);
+        });
+      return () => {
+        alive = false;
+      };
     }
     let alive = true;
     setReady(false);

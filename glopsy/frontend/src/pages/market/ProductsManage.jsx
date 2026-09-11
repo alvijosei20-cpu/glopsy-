@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, ImagePlus, Pause, Play, Search, Trash2, Package, Plus, Sparkles, AlertTriangle, Pencil } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
+import { useMoney } from '../../utils/money';
 import { SkeletonList } from '../../components/SkeletonLoader';
 
 export default function ProductsManage() {
+  const { format: formatPrice } = useMoney();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
@@ -113,8 +115,6 @@ export default function ProductsManage() {
       setBusyId(null);
     }
   };
-
-  const formatPrice = (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Number(val || 0));
 
   const getImage = (product) => {
     if (Array.isArray(product.images) && product.images.length > 0) {

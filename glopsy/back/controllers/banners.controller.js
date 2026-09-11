@@ -1,5 +1,6 @@
 import { pool } from '../db.js';
 import { cleanString } from '../utils/validation.js';
+import { formatPrice, configFromMoneda } from '../services/pais.service.js';
 
 // Carga diferida para no romper el arranque si sharp no está instalado (p.ej. dev local).
 const svc = () => import('../services/banners.service.js');
@@ -25,10 +26,13 @@ export const generateStoreBanner = async (req, res) => {
       SELECT p.id, p.public_id, p.name, p.description, p.images, p.suggested_price, p.base_price,
              cat.nombre AS categoria_nombre,
              t.nombres AS tienda_nombre,
+             COALESCE(t.moneda, pa.moneda, 'COP') AS moneda,
+             COALESCE(t.locale, pa.locale, 'es-CO') AS locale,
              (SELECT COALESCE(AVG(rv.rating),0)::numeric(3,2) FROM reviews rv WHERE rv.product_id = p.id) AS avg_rating
       FROM produc p
       LEFT JOIN categorias cat ON cat.id = p.categoria_id
       LEFT JOIN tiendas t ON t.usrid = p.tienda_id
+      LEFT JOIN paises pa ON pa.id = t.pais_id
       WHERE p.tienda_id = $1 AND COALESCE(p.status,'active') = 'active'`;
     if (publicId) {
       values.push(publicId);
@@ -41,7 +45,7 @@ export const generateStoreBanner = async (req, res) => {
     if (!p) return res.status(404).json({ ok: false, message: 'No hay un producto activo para generar el banner.' });
 
     const base = Number(p.suggested_price ?? p.base_price ?? 0);
-    const price = base > 0 ? `$${Math.round(base).toLocaleString('es-CO')} COP` : '';
+    const price = base > 0 ? formatPrice(base, configFromMoneda(p.moneda, p.locale)) : '';
     const brand = p.tienda_nombre || 'Glopsy';
     const category = p.categoria_nombre || '';
     const name = headline || p.name;

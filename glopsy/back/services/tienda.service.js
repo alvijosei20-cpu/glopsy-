@@ -14,6 +14,13 @@ const mapTienda = (row) => ({
   isActive: row.activa,
   gaId: row.ga_id || null,
   registeredAt: row.fechareg,
+  // Multicountry: país y su config (moneda/locale/dominio raíz). Si la tienda
+  // no tiene país, cae a la config por defecto (Colombia).
+  paisId: row.t_pais_id ?? null,
+  moneda: row.t_moneda || 'COP',
+  locale: row.t_locale || 'es-CO',
+  dominio_raiz: row.t_dominio || null,
+  zoomOrigenCodciudad: row.t_zoom_origen ?? null,
 });
 
 // ------------------------------------------------------------------ Subdominio (slug)
@@ -52,7 +59,19 @@ const slugFromInput = (slug) => {
   return isValidStoreSlug(normalized) ? normalized : null;
 };
 
-const STORE_COLUMNS = `hashid, nombres, slug, avatar, activa, fechareg, ga_id`;
+// Incluye la config del país (moneda/locale/dominio) vía JOIN con aliases t_*.
+// Requiere que la consulta use alias `t` para tiendas y `pa` para paises.
+const STORE_COLUMNS = `
+  t.hashid, t.nombres, t.slug, t.avatar, t.activa, t.fechareg, t.ga_id,
+  t.pais_id AS t_pais_id,
+  COALESCE(t.moneda, pa.moneda, 'COP') AS t_moneda,
+  COALESCE(t.locale, pa.locale, 'es-CO') AS t_locale,
+  COALESCE(t.dominio_raiz, pa.dominio_raiz) AS t_dominio,
+  t.zoom_origen_codciudad AS t_zoom_origen
+`;
+const STORE_JOIN = `
+  LEFT JOIN paises pa ON pa.id = t.pais_id
+`;
 
 export const getTiendaForUser = async (userId) => {
   const key = cacheKey(userId);
@@ -62,8 +81,9 @@ export const getTiendaForUser = async (userId) => {
 
   const { rows } = await pool.query(
     `SELECT ${STORE_COLUMNS}
-     FROM tiendas
-     WHERE usrid = $1
+     FROM tiendas t
+     ${STORE_JOIN}
+     WHERE t.usrid = $1
      LIMIT 1`,
     [userId]
   );
@@ -76,7 +96,7 @@ export const getTiendaForUser = async (userId) => {
 // Crea la tienda de un usuario si aún no existe (idempotente). Un mismo usuario
 // siempre tiene UNA tienda; otro usuario crea la suya sin afectar las demás.
 // name/slug/ga_id opcionales (slug = subdominio). Lanza error 409 si el slug está ocupado.
-export const ensureTiendaForUser = async (userId, { name = '', slug = null, ga_id = null } = {}) => {
+export const ensureTiendaForUser = async (userId, { name = '', slug = null, ga_id = null, pais_id = null } = {}) => {
   const uid = Number(userId);
   const storeName =
     String(name || '').trim().slice(0, 100) || `Tienda de Usuario ${uid}`;
@@ -84,6 +104,27 @@ export const ensureTiendaForUser = async (userId, { name = '', slug = null, ga_i
   const storeGa = ga_id === null || ga_id === undefined || String(ga_id).trim() === ''
     ? null
     : String(ga_id).trim().slice(0, 40);
+
+  // País de operación de la tienda (multicountry). Si no se indica, Colombia.
+  let storePais = null;
+  if (pais_id !== null && pais_id !== undefined && String(pais_id).trim() !== '') {
+    const paisId = Number(pais_id);
+    if (!Number.isInteger(paisId) || paisId <= 0) {
+      const err = new Error('País no válido.');
+      err.code = 400;
+      throw err;
+    }
+    const { rows: pr } = await pool.query(`SELECT id FROM paises WHERE id = $1 LIMIT 1`, [paisId]);
+    if (!pr[0]) {
+      const err = new Error('País no válido.');
+      err.code = 400;
+      throw err;
+    }
+    storePais = paisId;
+  } else {
+    const { rows: co } = await pool.query(`SELECT id FROM paises WHERE codigo_iso = 'CO' LIMIT 1`);
+    storePais = co[0]?.id ?? null;
+  }
 
   if (slug !== null && slug !== undefined && String(slug).trim() !== '' && !storeSlug) {
     const err = new Error('Subdominio no válido. Usa solo minúsculas, números y guiones (ej: mi-tienda).');
@@ -102,20 +143,21 @@ export const ensureTiendaForUser = async (userId, { name = '', slug = null, ga_i
 
   try {
     const { rows } = await pool.query(
-      `INSERT INTO tiendas (usrid, nombres, slug, ga_id, activa)
-       VALUES ($1, $2, $3, $4, false)
+      `INSERT INTO tiendas (usrid, nombres, slug, ga_id, pais_id, activa)
+       VALUES ($1, $2, $3, $4, $5, false)
        ON CONFLICT (usrid) DO NOTHING
-       RETURNING ${STORE_COLUMNS}`,
-      [uid, storeName, storeSlug, storeGa]
+       RETURNING hashid`,
+      [uid, storeName, storeSlug, storeGa, storePais]
     );
 
     await redisClient.del(cacheKey(uid)).catch(() => {});
 
     if (rows[0]) {
-      const tienda = mapTienda(rows[0]);
-      // Aprovisiona <slug>.glopsy.shop como dominio del worker (DNS+cert auto).
-      if (tienda.slug) {
-        registerStoreCustomDomain(tienda.slug).catch(() => {});
+      // Re-consulta para incluir la config del país (JOIN con paises).
+      const tienda = await getTiendaForUser(uid);
+      // Aprovisiona <slug>.<dominio_raiz del país> como dominio del worker (DNS+cert auto).
+      if (tienda?.slug) {
+        registerStoreCustomDomain(tienda.slug, tienda.dominio_raiz).catch(() => {});
       }
       return tienda;
     }
@@ -132,7 +174,7 @@ export const ensureTiendaForUser = async (userId, { name = '', slug = null, ga_i
 
 // Actualiza nombre/subdominio/GA de la tienda del usuario (valores null/undefined = no tocar;
 // ga_id '' o null explícito limpia el GA de la tienda).
-export const updateTiendaForUser = async (userId, { name = null, slug = null, ga_id = undefined } = {}) => {
+export const updateTiendaForUser = async (userId, { name = null, slug = null, ga_id = undefined, pais_id = undefined, zoom_origen_codciudad = undefined } = {}) => {
   const uid = Number(userId);
   const current = await getTiendaForUser(uid);
   if (!current) return null;
@@ -145,6 +187,40 @@ export const updateTiendaForUser = async (userId, { name = null, slug = null, ga
     const err = new Error('Subdominio no válido. Usa solo minúsculas, números y guiones (ej: mi-tienda).');
     err.code = 400;
     throw err;
+  }
+
+  // Cambio de país de operación (multicountry): null/undefined = no tocar.
+  let newPaisId;
+  if (pais_id === null) {
+    newPaisId = null; // limpiar => Colombia por defecto
+  } else if (pais_id !== undefined) {
+    const paisId = Number(pais_id);
+    if (!Number.isInteger(paisId) || paisId <= 0) {
+      const err = new Error('País no válido.');
+      err.code = 400;
+      throw err;
+    }
+    const { rows: pr } = await pool.query(`SELECT id FROM paises WHERE id = $1 LIMIT 1`, [paisId]);
+    if (!pr[0]) {
+      const err = new Error('País no válido.');
+      err.code = 400;
+      throw err;
+    }
+    newPaisId = paisId;
+  }
+
+  // Origen de envíos ZOOM (Venezuela): null limpia, undefined no toca.
+  let newZoomOrigen;
+  if (zoom_origen_codciudad === null) {
+    newZoomOrigen = null;
+  } else if (zoom_origen_codciudad !== undefined) {
+    const code = Number(zoom_origen_codciudad);
+    if (!Number.isInteger(code) || code <= 0) {
+      const err = new Error('Ciudad de origen ZOOM no válida.');
+      err.code = 400;
+      throw err;
+    }
+    newZoomOrigen = code;
   }
 
   if (storeSlug && storeSlug !== current.slug) {
@@ -160,18 +236,23 @@ export const updateTiendaForUser = async (userId, { name = null, slug = null, ga
     const { rows } = await pool.query(
       `UPDATE tiendas SET
          nombres = COALESCE($1, nombres),
-         slug = $2
+         slug = $2,
+         pais_id = COALESCE($4, pais_id),
+         zoom_origen_codciudad = COALESCE($5, zoom_origen_codciudad)
        WHERE usrid = $3
-       RETURNING ${STORE_COLUMNS}`,
-      [newName, wantsSlug ? storeSlug : current.slug, uid]
+       RETURNING hashid`,
+      [newName, wantsSlug ? storeSlug : current.slug, uid, newPaisId === undefined ? null : newPaisId, newZoomOrigen === undefined ? null : newZoomOrigen]
     );
     await redisClient.del(cacheKey(uid)).catch(() => {});
     if (rows[0]) {
-      const tienda = mapTienda(rows[0]);
-      // Si cambió el subdominio se libera el viejo y se registra el nuevo en Cloudflare.
-      if (tienda.slug !== current.slug) {
-        if (current.slug) removeStoreCustomDomain(current.slug).catch(() => {});
-        if (tienda.slug) registerStoreCustomDomain(tienda.slug).catch(() => {});
+      // Re-consulta para incluir config de país (JOIN con paises).
+      const tienda = await getTiendaForUser(uid);
+      // Re-registra el subdominio si cambió el slug o el dominio raíz (país).
+      const slugChanged = tienda && tienda.slug !== current.slug;
+      const rootChanged = tienda && tienda.dominio_raiz !== current.dominio_raiz;
+      if (tienda && (slugChanged || rootChanged)) {
+        if (current.slug) removeStoreCustomDomain(current.slug, current.dominio_raiz).catch(() => {});
+        if (tienda.slug) registerStoreCustomDomain(tienda.slug, tienda.dominio_raiz).catch(() => {});
       }
     }
 
@@ -218,8 +299,9 @@ export const getPublicStoreBySlug = async (slug) => {
   if (!cleanSlug) return null;
   const { rows } = await pool.query(
     `SELECT ${STORE_COLUMNS}
-     FROM tiendas
-     WHERE slug = $1 AND COALESCE(activa, true) = true
+     FROM tiendas t
+     ${STORE_JOIN}
+     WHERE t.slug = $1 AND COALESCE(t.activa, true) = true
      LIMIT 1`,
     [cleanSlug]
   );
@@ -229,14 +311,19 @@ export const getPublicStoreBySlug = async (slug) => {
 // Tienda principal (la que se sirve en app.glopsy.shop). Sin slug obligatorio.
 export const getMainStore = async () => {  const { rows } = await pool.query(
     `SELECT ${STORE_COLUMNS}
-     FROM tiendas
-     WHERE is_main = true AND COALESCE(activa, true) = true
+     FROM tiendas t
+     ${STORE_JOIN}
+     WHERE t.is_main = true AND COALESCE(t.activa, true) = true
      LIMIT 1`
   );
   if (rows[0]) return mapTienda(rows[0]);
   // Compatibilidad: si aún no hay marcada, se usa la tienda más antigua.
   const { rows: fallback } = await pool.query(
-    `SELECT ${STORE_COLUMNS} FROM tiendas WHERE COALESCE(activa, true) = true ORDER BY usrid ASC LIMIT 1`
+    `SELECT ${STORE_COLUMNS}
+     FROM tiendas t
+     ${STORE_JOIN}
+     WHERE COALESCE(t.activa, true) = true
+     ORDER BY t.usrid ASC LIMIT 1`
   );
   return fallback[0] ? mapTienda(fallback[0]) : null;
 };

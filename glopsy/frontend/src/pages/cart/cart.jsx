@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ShoppingCart, Trash2, CreditCard } from 'lucide-react';
 import { trackEvent } from '../../utils/analytics';
+import { useMoney } from '../../utils/money';
 import './cart.css';
 
 export default function Cart() {
@@ -14,7 +15,7 @@ export default function Cart() {
       setCartItems(items);
       if (items.length > 0) {
         trackEvent('view_cart', {
-          currency: 'COP',
+          currency,
           value: items.reduce((acc, item) => acc + (Number(item.price || 0) * Number(item.quantity || 1)), 0),
           items: items.map(item => ({
             item_id: String(item.external_id || item.id || ''),
@@ -44,7 +45,7 @@ export default function Cart() {
       const removed = updated.splice(index, 1);
       if (removed.length > 0) {
         trackEvent('remove_from_cart', {
-          currency: 'COP',
+          currency,
           value: Number(removed[0].price || 0) * Number(removed[0].quantity || 1),
           items: buildCartItemsPayload(removed),
         });
@@ -62,7 +63,7 @@ export default function Cart() {
     const removed = updated.splice(index, 1);
     if (removed.length > 0) {
       trackEvent('remove_from_cart', {
-        currency: 'COP',
+        currency,
         value: Number(removed[0].price || 0) * Number(removed[0].quantity || 1),
         items: buildCartItemsPayload(removed),
       });
@@ -72,10 +73,7 @@ export default function Cart() {
     window.dispatchEvent(new Event('storage'));
   };
 
-  const formatPrice = (val) => {
-    const num = Number(val || 0);
-    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(num);
-  };
+  const { format: formatPrice, currency } = useMoney();
 
   const subtotal = cartItems.reduce((acc, item) => acc + (Number(item.price || 0) * Number(item.quantity || 1)), 0);
 
@@ -197,7 +195,7 @@ export default function Cart() {
               <button
                 onClick={() => {
                   trackEvent('begin_checkout', {
-                    currency: 'COP',
+                    currency,
                     value: subtotal,
                     items: buildCartItemsPayload(cartItems),
                   });

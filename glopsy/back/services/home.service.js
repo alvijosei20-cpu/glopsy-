@@ -60,7 +60,7 @@ const DEFAULT_BANNERS = [
     badge: 'Vende sin pagar nada',
     title: 'Convierte lo que tienes',
     highlight: 'en dinero en tu bolsillo',
-    desc: 'Crea tu tienda gratis en minutos y llega a miles de compradores en Colombia. Sin costos de apertura.',
+    desc: 'Crea tu tienda gratis en minutos y llega a miles de compradores. Sin costos de apertura.',
     cta: 'Crear mi tienda gratis',
     to: '/login',
     bgFrom: '#7c3aed',

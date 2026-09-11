@@ -4,9 +4,11 @@ import { useNavigate, Link } from 'react-router-dom';
 import api from '../../services/api';
 import { SkeletonList } from '../../components/SkeletonLoader';
 import { trackEvent } from '../../utils/analytics';
+import { useMoney } from '../../utils/money';
 import { useUserCity } from '../../utils/location';
 
 export default function Favorites() {
+  const { format: formatMoney, currency } = useMoney();
   const navigate = useNavigate();
   const userCity = useUserCity();
   const [products, setProducts] = useState([]);
@@ -22,7 +24,7 @@ export default function Favorites() {
           setProducts(favs);
           if (favs.length > 0) {
             trackEvent('view_item_list', {
-              currency: 'COP',
+              currency,
               item_list_id: 'wishlist',
               item_list_name: 'Favoritos',
               items: favs.map(p => ({
@@ -77,7 +79,7 @@ export default function Favorites() {
         setTimeout(() => setToastMessage(''), 3000);
         const p = products.find(prod => Number(prod.id) === Number(productId));
         trackEvent('remove_from_wishlist', {
-          currency: 'COP',
+          currency,
           value: Number(p?.suggested_price || p?.base_price || 0),
           items: [
             {
@@ -124,7 +126,7 @@ export default function Favorites() {
       window.dispatchEvent(new Event('storage'));
 
       trackEvent('add_to_cart', {
-        currency: 'COP',
+        currency,
         value: finalPrice,
         item_list_id: 'wishlist',
         item_list_name: 'Favoritos',
@@ -225,7 +227,7 @@ export default function Favorites() {
                 key={p.id}
                 onClick={() => {
                   trackEvent('select_item', {
-                    currency: 'COP',
+                    currency,
                     item_list_id: 'wishlist',
                     item_list_name: 'Favoritos',
                     items: [
@@ -285,11 +287,11 @@ export default function Favorites() {
 
                   <div className="flex items-baseline gap-2">
                     <span className="text-sm sm:text-base font-bold text-slate-900">
-                      ${price.toLocaleString()} COP
+                      {formatMoney(price)}
                     </span>
                     {hasDiscount && (
                       <span className="text-xs text-slate-400 line-through">
-                        ${baseP.toLocaleString()}
+                        {formatMoney(baseP)}
                       </span>
                     )}
                   </div>

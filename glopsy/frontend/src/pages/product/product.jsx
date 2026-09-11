@@ -5,6 +5,7 @@ import api from '../../services/api';
 import { isLoggedIn } from '../../utils/session';
 import { useSEO } from '../../utils/seo';
 import { trackEvent } from '../../utils/analytics';
+import { useMoney } from '../../utils/money';
 import { productShareUrl, shareProduct } from '../../utils/share';
 import { useUserCity } from '../../utils/location';
 import { getStoreSlug } from '../../utils/storeHost';
@@ -93,6 +94,7 @@ function Spin360({ images, startIdx = 0, autoRotate = true, name = 'Producto' })
 }
 
 export default function ProductDetail() {
+  const { format: formatPrice, currency } = useMoney();
   const { id } = useParams();
   const navigate = useNavigate();
   const storeSlug = getStoreSlug();
@@ -199,7 +201,7 @@ export default function ProductDetail() {
       }
     }
     trackEvent('view_item', {
-      currency: 'COP',
+      currency,
       value: finalPrice,
       items: [
         {
@@ -312,13 +314,6 @@ export default function ProductDetail() {
     }
   };
 
-  const formatPrice = (val) => {
-    const num = Number(val || 0);
-    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(num);
-  };
-
-
-
   const getProductOwner = (p) => {
     try {
       if (p.product_owner) {
@@ -421,7 +416,7 @@ export default function ProductDetail() {
         brand: { '@type': 'Brand', name: product.tienda_nombre || 'Glopsy' },
         offers: {
           '@type': 'Offer',
-          priceCurrency: 'COP',
+          priceCurrency: currency,
           price: Number(offer.final || offer.base).toFixed(0),
           availability: Number(product.stock_total || 0) > 0
             ? 'https://schema.org/InStock'
@@ -435,8 +430,8 @@ export default function ProductDetail() {
   useSEO({
     title: product ? product.name : 'Tienda de Productos en Línea',
     description: product
-      ? (product.description || 'Compra este producto en Glopsy con pagos seguros y envíos a todo Colombia.').replace(/<[^>]*>/g, ' ')
-      : 'Compra productos en línea en Glopsy con pagos seguros y envíos a todo Colombia.',
+      ? (product.description || 'Compra este producto en Glopsy con pagos seguros y envíos nacionales.').replace(/<[^>]*>/g, ' ')
+      : 'Compra productos en línea en Glopsy con pagos seguros y envíos nacionales.',
     path: id ? `/product/${id}` : '/products',
     image: seoImage,
     type: 'product',
@@ -476,7 +471,7 @@ export default function ProductDetail() {
       window.dispatchEvent(new Event('storage'));
 
       trackEvent('add_to_cart', {
-        currency: 'COP',
+        currency,
         value: cartItem.price * cartItem.quantity,
         items: [
           {

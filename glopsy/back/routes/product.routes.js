@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getProductById, saveProduct, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, createPreferenceController, processMpPaymentController, processSavedCardPaymentController, getTiposEmpaqueController, getUserComprasController, searchOrdersController, getOrderByHashController, getOrderReviewsStatusController, recordPurchaseController, cancelOrderController, updateOrderAddressController, getProductReviewsController, getUserReviewController, addReviewController, updateReviewController, deleteReviewController, getMyProductsManagement, pauseProduct, activateProduct, deleteProduct, addProductImages, updateProductName } from '../controllers/product.controller.js';
+import { getProductById, saveProduct, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, createPreferenceController, processMpPaymentController, processSavedCardPaymentController, createPaypalOrderController, capturePaypalOrderController, getTiposEmpaqueController, getUserComprasController, searchOrdersController, getOrderByHashController, getOrderReviewsStatusController, recordPurchaseController, cancelOrderController, updateOrderAddressController, getProductReviewsController, getUserReviewController, addReviewController, updateReviewController, deleteReviewController, getMyProductsManagement, pauseProduct, activateProduct, deleteProduct, addProductImages, updateProductName } from '../controllers/product.controller.js';
 import { productAssistant } from '../controllers/product.assistant.controller.js';
 import { requireAuth, optionalAuth, requireSeller } from '../middlewares/auth.js';
 import { tiendaLimiter, heavyLimiter } from '../middlewares/limiters.js';
@@ -52,6 +52,8 @@ router.post('/migrate-cart', requireAuth, migrateCartController);
 router.post('/calculate-shipping', heavyLimiter, calculateShippingController);
 router.post('/create-preference', heavyLimiter, createPreferenceController);
 router.post('/process-mp-payment', heavyLimiter, optionalAuth, processMpPaymentController);
+router.post('/paypal/create-order', heavyLimiter, optionalAuth, createPaypalOrderController);
+router.post('/paypal/capture-order', heavyLimiter, optionalAuth, capturePaypalOrderController);
 router.post('/process-saved-card-payment', requireAuth, heavyLimiter, processSavedCardPaymentController);
 router.post('/record-purchase', requireAuth, recordPurchaseController);
 

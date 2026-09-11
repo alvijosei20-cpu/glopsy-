@@ -9,10 +9,7 @@ import { BarList } from '../../components/tremor/BarList';
 import { ProgressBar } from '../../components/tremor/ProgressBar';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
-
-const formatCOP = (val) => {
-  return Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Number(val || 0));
-};
+import { useMoney } from '../../utils/money';
 
 const KpiCard = ({ icon: Icon, label, value, sub, accent = 'fuchsia' }) => (
   <Card className="!rounded-2xl !border-fuchsia-100 !shadow-sm">
@@ -30,6 +27,7 @@ const KpiCard = ({ icon: Icon, label, value, sub, accent = 'fuchsia' }) => (
 );
 
 const Analytics = () => {
+  const { format: formatCOP } = useMoney();
   const navigate = useNavigate();
   const { user } = useAuth();
   const [data, setData] = useState(null);

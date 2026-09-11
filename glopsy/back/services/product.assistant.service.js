@@ -1,6 +1,9 @@
 import axios from 'axios';
 import { pool } from '../db.js';
 import { getShippingOptionsFromEnvia } from './envia.service.js';
+import { formatPrice, configFromMoneda } from './pais.service.js';
+import { findZoomCityCode, quoteZoomShipping } from './zoom.service.js';
+import { getVeUsdRate } from './rates.service.js';
 
 const API_KEY = process.env.LLM_API_KEY || process.env.DEEPSEEK_API_KEY || '';
 const BASE_URL = (process.env.LLM_BASE_URL || process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(/\/$/, '');
@@ -54,6 +57,8 @@ const catalogSelect = (cityPh) => `
   SELECT p.id, p.public_id, p.name, p.base_price, p.suggested_price, p.stock_total,
          cat.nombre AS categoria_nombre,
          t.nombres AS proveedor,
+         COALESCE(t.moneda, pa.moneda, 'COP') AS moneda,
+         COALESCE(t.locale, pa.locale, 'es-CO') AS locale,
          fc.nombre AS ciudad,
          COALESCE(p.status,'active') = 'active' AS activo,
          COALESCE(t.activa, true) AS tienda_activa,
@@ -64,6 +69,7 @@ const catalogSelect = (cityPh) => `
   FROM produc p
   LEFT JOIN categorias cat ON cat.id = p.categoria_id
   LEFT JOIN tiendas t ON t.usrid = p.tienda_id
+  LEFT JOIN paises pa ON pa.id = t.pais_id
   LEFT JOIN fullments f ON p.fullm_id = f.id
   LEFT JOIN ciudades fc ON f.ciudad_id = fc.id`;
 
@@ -79,6 +85,8 @@ const mapCatalogRow = (r) => ({
   ciudad: r.ciudad || '',
   envio_gratis: !!r.envio_gratis,
   garantia: fmtWarranty(r.warranties),
+  moneda: r.moneda || 'COP',
+  locale: r.locale || 'es-CO',
   url: `/product/${r.public_id}`,
 });
 
@@ -419,12 +427,17 @@ const quoteShippingDelivery = async (identifier, ciudad) => {
     const where = /^\d+$/.test(cleanId) ? 'p.id = $1' : 'p.public_id = $1';
     const { rows } = await pool.query(
       `SELECT p.id, p.tienda_id, p.name,
+              COALESCE(t.moneda, pa.moneda, 'COP') AS moneda,
+              pa.codigo_iso,
+              t.zoom_origen_codciudad,
               COALESCE(p.peso, e.peso, $2) AS peso,
               COALESCE(p.largo, e.largo, $3) AS largo,
               COALESCE(p.alto, e.alto, $4) AS alto,
               COALESCE(p.ancho, e.ancho, $5) AS ancho
        FROM produc p
        LEFT JOIN tipo_empaque e ON e.id = p.tipo_empaque_id
+       LEFT JOIN tiendas t ON t.usrid = p.tienda_id
+       LEFT JOIN paises pa ON pa.id = t.pais_id
        WHERE ${where} LIMIT 1`,
       [cleanId, Number(process.env.ENVIA_DEFAULT_WEIGHT || 1), Number(process.env.ENVIA_DEFAULT_LENGTH || 10), Number(process.env.ENVIA_DEFAULT_HEIGHT || 10), Number(process.env.ENVIA_DEFAULT_WIDTH || 10)]
     );
@@ -433,6 +446,57 @@ const quoteShippingDelivery = async (identifier, ciudad) => {
     console.warn('[product-assistant] sin datos para cotizar:', err.message);
   }
   if (!prod) return { error: 'Producto no encontrado para cotizar el envío.' };
+
+  // Venezuela: cotización vía ZOOM Envíos (en USD).
+  if (prod.codigo_iso === 'VE') {
+    try {
+      const { rows: cRows } = await pool.query(
+        `SELECT c.nombre AS ciudad, d.nombre AS estado
+         FROM ciudades c JOIN departamentos d ON d.id = c.departamento_id
+         WHERE c.id = $1 LIMIT 1`,
+        [destId]
+      );
+      if (!cRows[0]) return { error: 'No se reconoció la ciudad de destino para cotizar el envío.' };
+      const dest = await findZoomCityCode(cRows[0].ciudad, cRows[0].estado);
+      if (!dest?.codciudad) return { error: 'La ciudad de destino no tiene cobertura ZOOM.' };
+
+      let origin = Number(prod.zoom_origen_codciudad) || Number(process.env.ZOOM_DEFAULT_ORIGEN) || null;
+      if (!origin) {
+        origin = (await findZoomCityCode('Caracas', 'Distrito Capital').catch(() => null))?.codciudad || null;
+      }
+      if (!origin) return { error: 'La tienda aún no configuró su ciudad de origen de envíos.' };
+
+      const pesoKg = Math.max(1, Number(prod.peso) || 1);
+      const rate = await getVeUsdRate();
+      const valorMercancia = rate ? Math.round(Number(prod.peso || 1) * rate) : 0;
+      const quote = await quoteZoomShipping({
+        origenCodciudad: origin,
+        destinoCodciudad: dest.codciudad,
+        pesoKg,
+        valorMercancia,
+        valorDeclarado: 0,
+        cantidadPiezas: 1,
+        tipoTarifa: 2,
+        modalidad: 2,
+      });
+      if (!quote?.totalUsd) {
+        return { error: 'No fue posible cotizar el envío ZOOM en este momento.' };
+      }
+      return {
+        destino: String(ciudad || '').trim() || null,
+        moneda: 'USD',
+        opciones: [{
+          transportadora: 'ZOOM',
+          servicio: 'Puerta a puerta',
+          precio: quote.totalUsd,
+          dias: '',
+        }],
+      };
+    } catch (err) {
+      console.warn('[product-assistant] ZOOM no disponible:', err.message);
+      return { error: 'No fue posible cotizar el envío en este momento.' };
+    }
+  }
 
   try {
     const items = [{
@@ -481,16 +545,16 @@ const buildSystem = (product, ciudad, related = []) => {
   const relatedList = Array.isArray(related) && related.length
     ? related
         .slice(0, 6)
-        .map((r) => `- ${r.name} (public_id: ${r.public_id}, $${Math.round(r.precio).toLocaleString('es-CO')} COP, stock ${r.stock}, ${r.envio_gratis ? 'envío gratis para su ciudad' : 'envío NO gratis'})`)
+        .map((r) => `- ${r.name} (public_id: ${r.public_id}, ${formatPrice(r.precio, configFromMoneda(r.moneda, r.locale))}, stock ${r.stock}, ${r.envio_gratis ? 'envío gratis para su ciudad' : 'envío NO gratis'})`)
         .join('\n')
     : '(vacía: no hay productos relacionados en el catálogo)';
 
-  return `Eres "GlopsyBot", el asesor virtual de Glopsy (marketplace colombiano) que aparece en la ficha de un producto.
+  return `Eres "GlopsyBot", el asesor virtual de Glopsy (marketplace) que aparece en la ficha de un producto.
 
 Producto que está viendo el cliente:
 - Nombre: ${product?.name || '—'}
 - Categoría: ${product?.categoria_nombre || product?.category || 'General'}
-- Precio final: $${Math.round(precio).toLocaleString('es-CO')} COP${of ? ` (con ${of.tipo === 'porcentaje' ? `${of.valor}% de descuento` : `descuento de $${of.valor}`} aplicado)` : ''}
+- Precio final: ${formatPrice(precio, configFromMoneda(product?.moneda, product?.locale))}${of ? ` (con ${of.tipo === 'porcentaje' ? `${of.valor}% de descuento` : `descuento de ${formatPrice(of.valor, configFromMoneda(product?.moneda, product?.locale))}`} aplicado)` : ''}
 - Stock: ${stock} ${stock === 1 ? 'unidad' : 'unidades'}${stock <= 0 ? ' — AGOTADO, sugiere de la lista RELACIONADA' : ''}
 - Ciudad de envío del cliente: ${ciudad || 'no especificada'}
 - Ciudad desde donde se despacha el producto: ${ciudadDespacho}
@@ -509,7 +573,7 @@ Puedes consultar el catálogo real con las herramientas buscar_catalogo y ver_pr
 
 Cada resultado de estas herramientas incluye: nombre, precio, stock, ciudad (desde donde se despacha), envio_gratis (si el envío es gratis para la ciudad del cliente) y garantia (texto de la garantía del producto).
 
-Para saber cuánto cuesta el envío o cuántos días tardaría en llegar un producto a la ciudad del cliente usa la herramienta cotizar_envio, que cotiza en ENVIA en tiempo real.
+Para saber cuánto cuesta el envío o cuántos días tardaría en llegar un producto a la ciudad del cliente usa la herramienta cotizar_envio, que cotiza el envío en tiempo real con la transportadora de la tienda.
 
 Reglas:
 1. Responde en español con respuestas CORTAS y PRECISAS. Ve directo al dato que piden: sin rodeos ni repeticiones.
@@ -531,7 +595,7 @@ const MAX_HISTORY = 12;
 // ------------------------------------------------------------------ Fallback sin IA
 // Si el LLM no está disponible se responde con FAQ local basada en datos reales.
 
-const fmtCOP = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')} COP`;
+const fmtCOP = (n, product) => formatPrice(n, configFromMoneda(product?.moneda, product?.locale));
 
 const fallbackAnswer = async ({ product, ciudad, lastMessage, related = [] }) => {
   const base = Number(product?.suggested_price ?? product?.base_price ?? 0);
@@ -560,9 +624,9 @@ const fallbackAnswer = async ({ product, ciudad, lastMessage, related = [] }) =>
         if (quote && quote.opciones?.length) {
           const lines = quote.opciones
             .slice(0, 3)
-            .map((o) => `• ${o.transportadora}${o.servicio ? ` (${o.servicio})` : ''}: ${fmtCOP(o.precio)}${o.dias ? ` · llega en ~${o.dias}` : ''}`)
+            .map((o) => `• ${o.transportadora}${o.servicio ? ` (${o.servicio})` : ''}: ${fmtCOP(o.precio, product)}${o.dias ? ` · llega en ~${o.dias}` : ''}`)
             .join('\n');
-          return `Sobre el tiempo de llegada de "${product?.name}" a ${destino}:\n${lines}\n\nEstos son tiempos/costos estimados de ENVIA según tu ciudad y se confirman en el checkout.`;
+          return `Sobre el tiempo de llegada de "${product?.name}" a ${destino}:\n${lines}\n\nEstos son tiempos/costos estimados según tu ciudad y se confirman en el checkout.`;
         }
       } catch {
         // si ENVIA falla, cae al texto genérico de envío
@@ -587,14 +651,14 @@ const fallbackAnswer = async ({ product, ciudad, lastMessage, related = [] }) =>
     if (stock <= 0) return `Este producto está agotado ahora mismo. Prueba con "Recomiéndame algo similar" para ver alternativas.`;
     let extra = '';
     if (variants.length) extra = `\nOpciones disponibles: ${variants.map((v) => v?.name || v?.title || '').filter(Boolean).join(', ')}.`;
-    return `Disponibilidad de "${product?.name}":\n• Quedan ${stock} ${stock === 1 ? 'unidad' : 'unidades'} en stock.\n• Precio: ${fmtCOP(precio)}${extra}\n• Agrega al carrito o usa "Comprar ahora" para reservarlo.`;
+    return `Disponibilidad de "${product?.name}":\n• Quedan ${stock} ${stock === 1 ? 'unidad' : 'unidades'} en stock.\n• Precio: ${fmtCOP(precio, product)}${extra}\n• Agrega al carrito o usa "Comprar ahora" para reservarlo.`;
   }
   if (mentions('precio', 'cuanto cuesta', 'costo', 'cuanto vale', 'oferta', 'descuento', 'barato', 'caro')) {
-    const orig = of ? `\nPrecio original: ${fmtCOP(base)} (${of.tipo === 'porcentaje' ? `${of.valor}% de descuento` : `descuento de ${fmtCOP(of.valor)}`})` : '';
-    return `Precio de "${product?.name}": ${fmtCOP(precio)}${orig}\n• IVA incluido.\n• El envío se suma en el checkout según tu ciudad (${ciudad || '—'}).`;
+    const orig = of ? `\nPrecio original: ${fmtCOP(base, product)} (${of.tipo === 'porcentaje' ? `${of.valor}% de descuento` : `descuento de ${fmtCOP(of.valor, product)}`})` : '';
+    return `Precio de "${product?.name}": ${fmtCOP(precio, product)}${orig}\n• IVA incluido.\n• El envío se suma en el checkout según tu ciudad (${ciudad || '—'}).`;
   }
   if (mentions('como comprar', 'como compro', 'como lo compro', 'como pago', 'como lo pago', 'comprar ahora', 'quiero comprar', 'pagar', 'pedido', 'compra', 'comprarlo')) {
-    return `Cómo comprar "${product?.name}":\n1. Pulsa "Comprar ahora" (o agrégalo al carrito).\n2. Elige cantidad/variante y verifica tu dirección de envío.\n3. Paga con Mercado Pago (tarjeta, PSE, etc.) de forma segura.\n4. Sigue tu pedido en "Consultar pedido".`;
+    return `Cómo comprar "${product?.name}":\n1. Pulsa "Comprar ahora" (o agrégalo al carrito).\n2. Elige cantidad/variante y verifica tu dirección de envío.\n3. Paga con el medio de pago de la tienda (Mercado Pago o PayPal) de forma segura.\n4. Sigue tu pedido en "Consultar pedido".`;
   }
   if (mentions('calificacion', 'reseñas', 'opiniones', 'rating', 'bueno', 'recomendado', 'estrellas')) {
     const rc = Number(product?.review_count || 0);
@@ -611,7 +675,7 @@ const fallbackAnswer = async ({ product, ciudad, lastMessage, related = [] }) =>
           return `No hay artículos relacionados a "${product?.name}" en el catálogo por ahora. Explora más en [Catálogo](/listpr).`;
         }
         const lines = similar
-          .map((r) => `• ${fmtCOP(r.precio)} · [${r.name}](${r.url})${r.envio_gratis ? ' · 🚚 Envío gratis' : ''}${r.ciudad ? ` · desde ${r.ciudad}` : ''}${r.stock > 0 ? '' : ' · agotado'}${r.calificacion && Number(r.calificacion) > 0 ? ` · ⭐${r.calificacion}` : ''}`)
+          .map((r) => `• ${fmtCOP(r.precio, r)} · [${r.name}](${r.url})${r.envio_gratis ? ' · 🚚 Envío gratis' : ''}${r.ciudad ? ` · desde ${r.ciudad}` : ''}${r.stock > 0 ? '' : ' · agotado'}${r.calificacion && Number(r.calificacion) > 0 ? ` · ⭐${r.calificacion}` : ''}`)
           .join('\n');
         return `Alternativas parecidas a "${product?.name}":\n${lines}\n\n¿Quieres ver más opciones? [Catálogo](/listpr)`;
       }
@@ -622,7 +686,7 @@ const fallbackAnswer = async ({ product, ciudad, lastMessage, related = [] }) =>
         return `No hay más artículos del proveedor **${prov || 'de este producto'}** en el catálogo por ahora.`;
       }
       const lines = providerItems
-        .map((r) => `• ${fmtCOP(r.precio)} · [${r.name}](${r.url})${r.envio_gratis ? ' · 🚚 Envío gratis' : ''}${r.ciudad ? ` · desde ${r.ciudad}` : ''}${r.stock > 0 ? '' : ' · agotado'}${r.calificacion && Number(r.calificacion) > 0 ? ` · ⭐${r.calificacion}` : ''}`)
+        .map((r) => `• ${fmtCOP(r.precio, r)} · [${r.name}](${r.url})${r.envio_gratis ? ' · 🚚 Envío gratis' : ''}${r.ciudad ? ` · desde ${r.ciudad}` : ''}${r.stock > 0 ? '' : ' · agotado'}${r.calificacion && Number(r.calificacion) > 0 ? ` · ⭐${r.calificacion}` : ''}`)
         .join('\n');
       return `Otros artículos de **${prov || 'este proveedor'}**:\n${lines}\n\n¿Quieres ver más opciones? [Catálogo](/listpr)`;
     } catch {
@@ -633,7 +697,7 @@ const fallbackAnswer = async ({ product, ciudad, lastMessage, related = [] }) =>
     return `¡Hola! 👋 Soy el asistente de "${product?.name}".\nPuedo decirte su precio, stock, envío, garantía o recomendarte alternativas del catálogo.`;
   }
 
-  return `Puedo ayudarte con "${product?.name}" (${product?.categoria_nombre || product?.category || 'General'}): precio ${fmtCOP(precio)}, ${stock} en stock. Pregúntame por envío, garantía, reseñas o pídeme alternativas.`;
+  return `Puedo ayudarte con "${product?.name}" (${product?.categoria_nombre || product?.category || 'General'}): precio ${fmtCOP(precio, product)}, ${stock} en stock. Pregúntame por envío, garantía, reseñas o pídeme alternativas.`;
 };
 
 const callModel = async (messages) => {

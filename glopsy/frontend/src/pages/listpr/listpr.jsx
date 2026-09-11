@@ -6,18 +6,20 @@ import { isLoggedIn } from '../../utils/session';
 import { SkeletonList } from '../../components/SkeletonLoader';
 import { useSEO } from '../../utils/seo';
 import { trackEvent } from '../../utils/analytics';
+import { useMoney } from '../../utils/money';
 import { productShareUrl, shareProduct } from '../../utils/share';
 import { useUserCity } from '../../utils/location';
 import LocationPicker from '../../components/LocationPicker';
 import './listpr.css';
 
 export default function Listpr() {
+  const { format: formatPrice, currency } = useMoney();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   useSEO({
     title: 'Tienda — Compra Productos en Línea',
     description:
-      'Explora miles de productos de tiendas verificadas en Glopsy. Filtra por categoría, precio, envío gratis y calificación. Compra con pagos seguros en Colombia.',
+      'Explora miles de productos de tiendas verificadas en Glopsy. Filtra por categoría, precio, envío gratis y calificación. Compra con pagos seguros.',
     path: '/listpr',
   });
   const [query, setQuery] = useState(() => searchParams.get('q') || '');
@@ -106,7 +108,7 @@ export default function Listpr() {
       window.dispatchEvent(new Event('storage'));
 
       trackEvent('add_to_cart', {
-        currency: 'COP',
+        currency,
         value: finalPrice,
         items: [
           {
@@ -179,7 +181,7 @@ export default function Listpr() {
         setTotal(data.total || 0);
         if (newProducts.length > 0 && !isAppend) {
           trackEvent('view_item_list', {
-            currency: 'COP',
+            currency,
             item_list_id: 'catalog',
             item_list_name: 'Catálogo de productos',
             items: newProducts.map(p => ({
@@ -272,7 +274,7 @@ export default function Listpr() {
           quantity: 1,
         };
         trackEvent(res.data.favorited ? 'add_to_wishlist' : 'remove_from_wishlist', {
-          currency: 'COP',
+          currency,
           value: item.price,
           items: [item],
         });
@@ -284,11 +286,6 @@ export default function Listpr() {
 
   // Ordenamiento ahora se aplica en el servidor (respeta paginación)
   const sortedProducts = products;
-
-  const formatPrice = (val) => {
-    const num = Number(val || 0);
-    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(num);
-  };
 
   const hasActiveFilters = Boolean(submittedQuery || selectedCategory || priceMin || priceMax || minRating > 0 || freeShipping);
 
@@ -704,7 +701,7 @@ export default function Listpr() {
                   key={p.id}
                   onClick={() => {
                     trackEvent('select_item', {
-                      currency: 'COP',
+                      currency,
                       item_list_id: 'catalog',
                       item_list_name: 'Catálogo de productos',
                       items: [

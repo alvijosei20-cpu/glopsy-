@@ -2,6 +2,9 @@ import { pool } from '../db.js';
 import crypto from 'crypto';
 import axios from 'axios';
 import { getShippingOptionsFromEnvia, invalidateRatesCacheForStore } from './envia.service.js';
+import { findZoomCityCode, quoteZoomShipping } from './zoom.service.js';
+import { getVeUsdRate } from './rates.service.js';
+import { createPaypalOrder, capturePaypalOrder } from './paypal.service.js';
 import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
 import { obtenerProductoPorId } from './mastershopService.js';
 import { redisClient } from './redis.service.js';
@@ -931,6 +934,8 @@ export const getProductByPublicId = async (identifier, ciudad = null) => {
     SELECT p.*, c.nombre AS ciudad_nombre, cat.nombre AS categoria_nombre,
       t.slug AS tienda_slug, t.nombres AS tienda_nombre,
       COALESCE(t.activa, true) AS tienda_activa,
+      COALESCE(t.moneda, pa.moneda, 'COP') AS moneda,
+      COALESCE(t.locale, pa.locale, 'es-CO') AS locale,
       (COALESCE(p.suggested_price, p.base_price) + ${freeShippingCostoExpr('$2')}) AS suggested_price_efectivo,
       (
         SELECT COUNT(*) FROM reviews rv WHERE rv.product_id = p.id
@@ -965,6 +970,7 @@ export const getProductByPublicId = async (identifier, ciudad = null) => {
     LEFT JOIN ciudades c ON f.ciudad_id = c.id
     LEFT JOIN categorias cat ON p.categoria_id = cat.id
     LEFT JOIN tiendas t ON t.usrid = p.tienda_id
+    LEFT JOIN paises pa ON pa.id = t.pais_id
   `;
   let values = [];
   if (/^\d+$/.test(identifier)) {
@@ -1098,6 +1104,116 @@ export const migrateCartSession = async (guestHash, userId) => {
   return { migrated: true };
 };
 
+// Cotización de envío para tiendas de Venezuela vía ZOOM Envíos.
+// Devuelve el envío en USD (convertido desde bolívares con la tasa del día).
+const calculateZoomShippingCost = async (items, destinationCiudadId, storeRow) => {
+  const productIds = items.filter(i => i.id).map(i => Number(i.id)).filter(Boolean);
+  let prodMap = new Map();
+  if (productIds.length > 0) {
+    const { rows } = await pool.query(
+      `SELECT id, peso, base_price, suggested_price FROM produc WHERE id = ANY($1::int[])`,
+      [productIds]
+    );
+    prodMap = new Map(rows.map(r => [r.id, r]));
+  }
+
+  let productsTotal = 0;
+  let totalWeight = 0;
+  for (const it of items) {
+    const price = Number(it.price || 0) || 0;
+    const qty = Number(it.quantity || 1) || 1;
+    productsTotal += price * qty;
+    const p = prodMap.get(Number(it.id));
+    const peso = Number(p?.peso) > 0 ? Number(p.peso) : 1;
+    totalWeight += peso * qty;
+  }
+  productsTotal = Math.round(productsTotal * 100) / 100;
+  const pesoKg = Math.max(1, Math.round(totalWeight * 100) / 100);
+
+  // Destino: nombre de ciudad + estado (departamento) de nuestra geografía.
+  let destCode = null;
+  if (destinationCiudadId) {
+    const { rows } = await pool.query(`
+      SELECT c.nombre AS ciudad, d.nombre AS estado
+      FROM ciudades c JOIN departamentos d ON d.id = c.departamento_id
+      WHERE c.id = $1 LIMIT 1
+    `, [destinationCiudadId]);
+    if (rows[0]) destCode = await findZoomCityCode(rows[0].ciudad, rows[0].estado).catch(() => null);
+  }
+
+  // Origen: configurado por la tienda o, por defecto, Caracas.
+  let originCode = Number(storeRow?.zoom_origen_codciudad) || null;
+  if (!originCode) {
+    const defaultOrigin = Number(process.env.ZOOM_DEFAULT_ORIGEN);
+    originCode = Number.isFinite(defaultOrigin) && defaultOrigin > 0
+      ? defaultOrigin
+      : (await findZoomCityCode('Caracas', 'Distrito Capital').catch(() => null))?.codciudad || null;
+  }
+
+  const modalidad = Number(storeRow?.zoom_modalidad) === 1 ? 1 : 2;
+
+  const perItem = items.map(it => ({ itemId: it.id, price: Number(it.price || 0), shippingCost: 0, isFree: false }));
+
+  if (!originCode || !destCode?.codciudad) {
+    return {
+      shipping_cost: 0,
+      shipments_count: 1,
+      shipments_message: 'No se pudo determinar la ruta de envío ZOOM. Revisa la ciudad de destino.',
+      grouped: [],
+      per_item: perItem,
+      products_total: productsTotal,
+      grand_total: productsTotal,
+      free_shipping: false,
+      shipping_error: true,
+      currency: 'USD',
+    };
+  }
+
+  try {
+    const rate = await getVeUsdRate();
+    const valorMercanciaBs = rate ? Math.round(productsTotal * rate) : Math.round(productsTotal);
+    const quote = await quoteZoomShipping({
+      origenCodciudad: originCode,
+      destinoCodciudad: destCode.codciudad,
+      pesoKg,
+      valorMercancia: valorMercanciaBs,
+      valorDeclarado: 0,
+      cantidadPiezas: 1,
+      tipoTarifa: 2,
+      modalidad,
+    });
+    const shippingUsd = quote?.totalUsd ?? 0;
+    return {
+      shipping_cost: shippingUsd,
+      shipments_count: 1,
+      shipments_message: `Envío ZOOM (${destCode.nombre})`,
+      grouped: [],
+      per_item: perItem,
+      products_total: productsTotal,
+      grand_total: Math.round((productsTotal + shippingUsd) * 100) / 100,
+      free_shipping: false,
+      currency: 'USD',
+      shipping_carrier: 'zoom',
+      shipping_bs: quote?.totalBs ?? 0,
+      rate,
+    };
+  } catch (error) {
+    console.warn('[zoom] no se pudo cotizar el envío:', error.message);
+    return {
+      shipping_cost: 0,
+      shipments_count: 1,
+      shipments_message: 'No se pudo cotizar el envío ZOOM en este momento.',
+      grouped: [],
+      per_item: perItem,
+      products_total: productsTotal,
+      grand_total: productsTotal,
+      free_shipping: false,
+      shipping_error: true,
+      currency: 'USD',
+    };
+  }
+};
+
 export const calculateShippingCost = async (items, destinationCiudadId) => {
   if (!Array.isArray(items) || items.length === 0) {
     return { shipping_cost: 0, free_shipping: false };
@@ -1137,6 +1253,18 @@ export const calculateShippingCost = async (items, destinationCiudadId) => {
       grand_total: productsTotal,
       free_shipping: true
     };
+  }
+
+  // Venezuela: cotización vía ZOOM Envíos (público) convertida a USD.
+  if (tiendaId) {
+    const { rows: storeRows } = await pool.query(`
+      SELECT p.codigo_iso, t.zoom_origen_codciudad, t.zoom_modalidad
+      FROM tiendas t LEFT JOIN paises p ON p.id = t.pais_id
+      WHERE t.usrid = $1 LIMIT 1
+    `, [tiendaId]);
+    if (storeRows[0]?.codigo_iso === 'VE') {
+      return calculateZoomShippingCost(items, destinationCiudadId, storeRows[0]);
+    }
   }
 
   // We'll produce grouped quotes and per-item quotes.
@@ -1443,6 +1571,93 @@ const getMpIntegrationForCart = async (items) => {
   return tiendaId ? getMpIntegrationForStore(tiendaId) : null;
 };
 
+// Integración de checkout genérica por proveedor (mercadopago, paypal, ...).
+const getCheckoutIntegrationForStore = async (tiendaId, provider) => {
+  if (!tiendaId) return null;
+  const { rows } = await pool.query(
+    `SELECT access_token, public_key, mode
+     FROM checkout_integrations
+     WHERE tienda_id = $1 AND provider = $2
+     ORDER BY (mode = 'produccion') DESC LIMIT 1`,
+    [Number(tiendaId), provider]
+  );
+  const it = rows[0];
+  if (!it?.access_token) return null;
+  it.access_token = decryptSecret(it.access_token);
+  return { tienda_id: Number(tiendaId), ...it };
+};
+
+// ---------------------------------------------------------------- PayPal (USD)
+export const createPaypalOrderForCart = async (userId, items, shippingCost, customerInfo, guestHash) => {
+  const { items: resolvedItems } = await resolveCartItems(items, userId, guestHash);
+  await ensureSingleStoreCart(resolvedItems);
+  const tiendaId = await resolveCartTiendaId(resolvedItems);
+  const pp = await getCheckoutIntegrationForStore(tiendaId, 'paypal');
+  if (!pp?.public_key || !pp?.access_token) {
+    throw new Error('La tienda no tiene configurada la integración de PayPal.');
+  }
+
+  const total = resolvedItems.reduce(
+    (acc, i) => acc + Number(i.price || 0) * Number(i.quantity || 1),
+    0
+  ) + Number(shippingCost || 0);
+  const amount = Math.round(total * 100) / 100;
+
+  const order = await createPaypalOrder({
+    clientId: pp.public_key,
+    secret: pp.access_token,
+    mode: pp.mode,
+    amount,
+    currency: 'USD',
+    referenceId: guestHash || `user_${userId}`,
+    description: 'Compra en Glopsy',
+  });
+
+  return {
+    paypalOrderId: order.id,
+    status: order.status,
+    total: amount,
+    currency: 'USD',
+    mode: pp.mode,
+    clientId: pp.public_key,
+  };
+};
+
+export const capturePaypalOrderForCart = async (userId, paypalOrderId, customerInfo, guestHash, shippingCost, shippingPayload, inputItems) => {
+  const { items: resolvedItems, foundKey } = await resolveCartItems(inputItems, userId, guestHash);
+  await ensureSingleStoreCart(resolvedItems);
+  const tiendaId = await resolveCartTiendaId(resolvedItems);
+  const pp = await getCheckoutIntegrationForStore(tiendaId, 'paypal');
+  if (!pp?.public_key || !pp?.access_token) {
+    throw new Error('La tienda no tiene configurada la integración de PayPal.');
+  }
+
+  const capture = await capturePaypalOrder({
+    clientId: pp.public_key,
+    secret: pp.access_token,
+    mode: pp.mode,
+    orderId: paypalOrderId,
+  });
+
+  const completed = capture?.status === 'COMPLETED';
+  if (completed && resolvedItems.length > 0) {
+    await recordPurchaseForUser(userId, resolvedItems, {
+      preferenceId: paypalOrderId,
+      // Se normaliza a la forma que espera recordPurchaseForUser.
+      paymentResponse: { id: capture?.id || paypalOrderId, status: 'approved', provider: 'paypal', raw: capture },
+      customerInfo,
+      guestHash,
+      shippingCost,
+      shippingPayload,
+    });
+    if (foundKey) {
+      await redisClient.del(foundKey).catch(() => {});
+    }
+  }
+
+  return { status: capture?.status, id: capture?.id || paypalOrderId, completed, capture };
+};
+
 // Una orden pertenece a UNA sola tienda (orders.tienda_id único). Si el carrito mezcla
 // productos de varias tiendas se le pide comprar por separado para no cobrar/atribuir mal.
 const ensureSingleStoreCart = async (items) => {
@@ -1474,6 +1689,15 @@ export const createMercadoPagoPreferenceForCart = async (userId, items, shipping
   const client = new MercadoPagoConfig({ accessToken: mpInt.access_token });
   const preference = new Preference(client);
 
+  // Moneda de la tienda (multicountry): MP solo se usa en tiendas que la configuran.
+  const { rows: monRows } = await pool.query(
+    `SELECT COALESCE(t.moneda, pa.moneda, 'COP') AS moneda
+     FROM tiendas t LEFT JOIN paises pa ON pa.id = t.pais_id
+     WHERE t.usrid = $1 LIMIT 1`,
+    [mpInt.tienda_id]
+  );
+  const currency = monRows[0]?.moneda || 'COP';
+
   const prefResponse = await preference.create({
     body: {
       items: [
@@ -1481,13 +1705,13 @@ export const createMercadoPagoPreferenceForCart = async (userId, items, shipping
           title: String(i.name || 'Producto'),
           quantity: Number(i.quantity) || 1,
           unit_price: Number(i.price) || 0,
-          currency_id: 'COP'
+          currency_id: currency
         })),
         ...(shippingCost > 0 ? [{
-          title: 'Envío (ENVIA)',
+          title: 'Envío',
           quantity: 1,
           unit_price: Number(shippingCost),
-          currency_id: 'COP'
+          currency_id: currency
         }] : [])
       ],
       payer: {

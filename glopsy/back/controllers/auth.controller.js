@@ -398,7 +398,8 @@ export const saveAddress = async (req, res) => {
     if (!street || !city) {
       return res.status(400).json({ ok: false, message: 'Calle y ciudad son obligatorias.' });
     }
-    if (phone && !isColombianMobile(phone)) {
+    // La validación de móvil colombiano solo aplica para direcciones de Colombia.
+    if (phone && /colombia/i.test(country) && !isColombianMobile(phone)) {
       return res.status(400).json({ ok: false, message: 'El número móvil debe tener 10 dígitos y empezar por 3 (Ej: 3001234567).' });
     }
 

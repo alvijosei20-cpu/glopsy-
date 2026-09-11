@@ -7,6 +7,7 @@ import { SkeletonList } from '../../components/SkeletonLoader';
 import Footer from '../../components/footer';
 import { useSEO } from '../../utils/seo';
 import { trackEvent } from '../../utils/analytics';
+import { useMoney } from '../../utils/money';
 import { useUserCity } from '../../utils/location';
 import LocationPicker from '../../components/LocationPicker';
 import './home.css';
@@ -82,7 +83,7 @@ const DEFAULT_BANNERS = [
     badge: 'Vende sin pagar nada',
     title: 'Convierte lo que tienes',
     highlight: 'en dinero en tu bolsillo',
-    desc: 'Crea tu tienda gratis en minutos y llega a miles de compradores en Colombia. Sin costos de apertura.',
+    desc: 'Crea tu tienda gratis en minutos y llega a miles de compradores. Sin costos de apertura.',
     cta: 'Crear mi tienda gratis',
     to: '/login',
     bgFrom: '#7c3aed',
@@ -104,7 +105,7 @@ const BENEFITS = [
   },
   {
     icon: Truck,
-    title: 'Envíos a todo Colombia',
+    title: 'Envíos nacionales',
     desc: 'Coordinamos el envío de tus productos a cualquier ciudad del país con opciones de envío gratis.',
     gradient: 'from-fuchsia-600 to-pink-600',
   },
@@ -134,7 +135,7 @@ const ProductCard = ({ p, favorites, onToggleFavorite, onAddToCart, formatPrice,
 
   const handleClick = () => {
     trackEvent('select_item', {
-      currency: 'COP',
+      currency,
       item_list_id: p._list_id,
       item_list_name: p._list_name,
       items: [{
@@ -338,11 +339,12 @@ const SegmentDivider = () => (
 );
 
 export default function Home() {
+  const { format: formatPrice, currency } = useMoney();
   const navigate = useNavigate();
   useSEO({
     title: 'Compra y Vende Productos en Línea',
     description:
-      'Glopsy es el marketplace donde compras y vendes productos en línea con pagos seguros, envíos a todo Colombia y autenticación biométrica. Crea tu tienda gratis.',
+      'Glopsy es el marketplace donde compras y vendes productos en línea con pagos seguros, envíos nacionales y autenticación biométrica. Crea tu tienda gratis.',
     path: '/',
     jsonLd: {
       '@context': 'https://schema.org',
@@ -412,7 +414,7 @@ export default function Home() {
   const trackList = (listId, listName, items) => {
     if (!items.length) return;
     trackEvent('view_item_list', {
-      currency: 'COP',
+      currency,
       item_list_id: listId,
       item_list_name: listName,
       items: items.map(p => ({
@@ -517,11 +519,6 @@ export default function Home() {
     return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60';
   };
 
-  const formatPrice = (val) => {
-    const num = Number(val || 0);
-    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(num);
-  };
-
   const getFinalPrice = (p) => {
     const baseP = Number(p.suggested_price || p.base_price || 0);
     if (p.oferta_activa) {
@@ -553,7 +550,7 @@ export default function Home() {
       window.dispatchEvent(new Event('storage'));
 
       trackEvent('add_to_cart', {
-        currency: 'COP',
+        currency,
         value: finalPrice,
         item_list_id: p._list_id || 'home',
         item_list_name: p._list_name || 'Home',
@@ -590,7 +587,7 @@ export default function Home() {
           return next;
         });
         trackEvent(res.data.favorited ? 'add_to_wishlist' : 'remove_from_wishlist', {
-          currency: 'COP',
+          currency,
           value: 0,
           items: [{ item_id: String(productId), quantity: 1 }],
         });

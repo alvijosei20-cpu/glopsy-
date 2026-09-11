@@ -30,14 +30,21 @@ export const productAssistant = async (req, res) => {
     }
 
     // El detalle no trae el proveedor; se adjunta para sugerencias del mismo vendedor.
+    // También la moneda/locale de la tienda para formatear precios (multicountry).
     try {
       const { rows } = await pool.query(
-        `SELECT t.nombres AS proveedor
-         FROM produc p JOIN tiendas t ON t.usrid = p.tienda_id
+        `SELECT t.nombres AS proveedor,
+                COALESCE(t.moneda, pa.moneda, 'COP') AS moneda,
+                COALESCE(t.locale, pa.locale, 'es-CO') AS locale
+         FROM produc p
+         JOIN tiendas t ON t.usrid = p.tienda_id
+         LEFT JOIN paises pa ON pa.id = t.pais_id
          WHERE p.public_id = $1 LIMIT 1`,
         [pid]
       );
       if (rows[0]?.proveedor) product.proveedor = rows[0].proveedor;
+      if (rows[0]?.moneda) product.moneda = rows[0].moneda;
+      if (rows[0]?.locale) product.locale = rows[0].locale;
     } catch {}
 
     const result = await productAssistantChat({ product, ciudad, messages, budgetKey });

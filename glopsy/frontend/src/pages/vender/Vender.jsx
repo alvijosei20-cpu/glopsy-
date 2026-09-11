@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Store, Loader2, Globe } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -11,8 +11,30 @@ export default function Vender() {
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [gaId, setGaId] = useState('');
+  const [paises, setPaises] = useState([]);
+  const [paisId, setPaisId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .get('/geo/paises')
+      .then(({ data }) => {
+        if (!alive) return;
+        const list = Array.isArray(data?.paises) ? data.paises : [];
+        setPaises(list);
+        const co = list.find((p) => p.codigo_iso === 'CO') || list[0];
+        if (co) setPaisId(String(co.id));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const selectedPais = paises.find((p) => String(p.id) === String(paisId)) || null;
+  const raiz = selectedPais?.dominio_raiz || getRootDomain();
 
   if (!tiendaLoading && !user?.can_sell && !tienda) {
     return (
@@ -67,7 +89,12 @@ export default function Vender() {
     setBusy(true);
     setError('');
     try {
-      await api.post('/tienda', { name: name.trim(), slug: slug.trim().toLowerCase(), ga_id: gaId.trim() || null });
+      await api.post('/tienda', {
+        name: name.trim(),
+        slug: slug.trim().toLowerCase(),
+        ga_id: gaId.trim() || null,
+        pais_id: paisId ? Number(paisId) : undefined,
+      });
       await refreshTienda();
       navigate('/market/config', { replace: true });
     } catch (err) {
@@ -123,7 +150,29 @@ export default function Vender() {
                 className="w-full py-2.5 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
               />
             </div>
-            {slug && <p className="mt-1 text-[11px] text-slate-400">Tu vitrina quedará en: {slug}.{getRootDomain()}</p>}
+            {slug && <p className="mt-1 text-[11px] text-slate-400">Tu vitrina quedará en: {slug}.{raiz}</p>}
+          </div>
+
+          <div>
+            <label htmlFor="store-pais" className="block text-xs font-bold text-slate-600 mb-1.5">
+              País donde vas a operar
+            </label>
+            <select
+              id="store-pais"
+              value={paisId}
+              onChange={(e) => setPaisId(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-800 outline-none focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-100"
+            >
+              {paises.length === 0 && <option value="">Cargando…</option>}
+              {paises.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.nombre} ({p.moneda})
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-[11px] text-slate-400">
+              Define la moneda de tu catálogo y tu zona de envíos. No se puede cambiar en cualquier momento.
+            </p>
           </div>
 
           <div>

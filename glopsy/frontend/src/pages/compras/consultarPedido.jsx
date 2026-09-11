@@ -4,13 +4,15 @@ import { useNavigate, Link } from 'react-router-dom';
 import api from '../../services/api';
 import { useSEO } from '../../utils/seo';
 import { trackEvent } from '../../utils/analytics';
+import { useMoney } from '../../utils/money';
 
 export default function ConsultarPedido() {
+  const { format: formatPrice } = useMoney();
   const navigate = useNavigate();
   useSEO({
     title: 'Consultar Pedido — Seguimiento de Compras',
     description:
-      'Consulta el estado de tu pedido en Glopsy con tu número de pedido o documento de identidad. Seguimiento de compras en tiempo real en todo Colombia.',
+      'Consulta el estado de tu pedido en Glopsy con tu número de pedido o documento de identidad. Seguimiento de compras en tiempo real.',
     path: '/consultar-pedido',
   });
   const [query, setQuery] = useState('');
@@ -71,8 +73,6 @@ export default function ConsultarPedido() {
     } catch {}
     return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60';
   };
-
-  const formatPrice = (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Number(val || 0));
 
   const getStatusBadge = (st) => {
     const s = (st || '').toLowerCase();

@@ -5,33 +5,23 @@ import api from '../../services/api';
 import { isLoggedIn } from '../../utils/session';
 import { requireBiometricPayment } from '../../utils/webauthn';
 import { trackEvent } from '../../utils/analytics';
+import { useMoney } from '../../utils/money';
+import { useStorefront } from '../../storefront/StorefrontContext';
 import './cart.css';
 
-const fallbackDepartamentos = [
-  { id: 1, nombre: 'Bogotá D.C.' },
-  { id: 2, nombre: 'Antioquia' },
-  { id: 3, nombre: 'Valle del Cauca' },
-  { id: 4, nombre: 'Cundinamarca' },
-  { id: 5, nombre: 'Atlántico' }
-];
-
-const fallbackCiudades = [
-  { id: 11001, departamento_id: 1, nombre: 'Bogotá' },
-  { id: 5001, departamento_id: 2, nombre: 'Medellín' },
-  { id: 76001, departamento_id: 3, nombre: 'Cali' },
-  { id: 25001, departamento_id: 4, nombre: 'Chía' },
-  { id: 8001, departamento_id: 5, nombre: 'Barranquilla' }
-];
-
 export default function Checkout() {
+  const { format: formatPrice, currency, locale } = useMoney();
+  const { store } = useStorefront();
+  const paisId = store?.paisId || null;
+  const isPaypal = String(currency || '').toUpperCase() === 'USD';
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [cartItems, setCartItems] = useState([]);
   const [guestHash, setGuestHash] = useState('');
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
 
-  const [departamentos, setDepartamentos] = useState(fallbackDepartamentos);
-  const [ciudades, setCiudades] = useState(fallbackCiudades);
+  const [departamentos, setDepartamentos] = useState([]);
+  const [ciudades, setCiudades] = useState([]);
   const [selectedDepartamentoId, setSelectedDepartamentoId] = useState('');
   const [selectedCiudadId, setSelectedCiudadId] = useState('');
   const [direccion, setDireccion] = useState('');
@@ -48,6 +38,7 @@ export default function Checkout() {
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [showBricks, setShowBricks] = useState(false);
   const [preferenceData, setPreferenceData] = useState(null);
+  const [paypalOrder, setPaypalOrder] = useState(null);
   const [savedCards, setSavedCards] = useState([]);
   const [selectedCardId, setSelectedCardId] = useState('');
   const [loadingSavedCard, setLoadingSavedCard] = useState(false);
@@ -97,7 +88,7 @@ export default function Checkout() {
       if (!window.MercadoPago) return;
       try {
         const isDark = document.documentElement.classList.contains('dark');
-        const mp = new window.MercadoPago(preferenceData.publicKey, { locale: 'es-CO' });
+        const mp = new window.MercadoPago(preferenceData.publicKey, { locale });
         const bricksBuilder = mp.bricks();
         await bricksBuilder.create('payment', 'paymentBrick_container', {
           initialization: {
@@ -123,7 +114,7 @@ export default function Checkout() {
                   return;
                 }
                 trackEvent('add_payment_info', {
-                  currency: 'COP',
+                  currency,
                   value: total,
                   items: cartItemsConPrecio.map(item => ({
                     item_id: String(item.external_id || item.id || ''),
@@ -189,6 +180,83 @@ export default function Checkout() {
     }
   }, [showBricks, preferenceData]);
 
+  // PayPal (Venezuela / USD): carga el SDK y renderiza los botones.
+  useEffect(() => {
+    if (!paypalOrder?.clientId) return;
+    let cancelled = false;
+
+    const renderButtons = () => {
+      if (cancelled || !window.paypal) return;
+      const el = document.getElementById('paypal_button_container');
+      if (!el) return;
+      el.innerHTML = '';
+      window.paypal.Buttons({
+        style: { layout: 'vertical', shape: 'pill', label: 'paypal' },
+        createOrder: () => paypalOrder.id,
+        onApprove: async () => {
+          setLoadingCheckout(true);
+          try {
+            const res = await api.post('/product/paypal/capture-order', {
+              paypalOrderId: paypalOrder.id,
+              items: cartItemsConPrecio,
+              shipping_cost: shippingCost,
+              shipping_payload: { grouped: shipmentsGrouped },
+              customer_info: {
+                departamento_id: selectedDepartamentoId,
+                ciudad_id: selectedCiudadId,
+                direccion,
+                telefono,
+              },
+              guestHash,
+            });
+            if (res.data.ok && res.data.payment?.completed) {
+              trackEvent('add_payment_info', {
+                currency,
+                value: total,
+                payment_type: 'paypal',
+                items: cartItemsConPrecio.map((item) => ({
+                  item_id: String(item.external_id || item.id || ''),
+                  item_name: item.name || '',
+                  price: Number(item.price || 0),
+                  quantity: Number(item.quantity || 1),
+                })),
+              });
+              setCheckoutSuccess(true);
+              localStorage.removeItem('glopsy_cart');
+              window.dispatchEvent(new Event('storage'));
+              firePurchase(res.data.payment?.id, null, total);
+            } else {
+              alert(res.data.message || 'No se pudo completar el pago con PayPal.');
+            }
+          } catch (err) {
+            console.error('Error al capturar PayPal:', err);
+            alert(err.response?.data?.message || 'Error al procesar el pago con PayPal.');
+          } finally {
+            setLoadingCheckout(false);
+          }
+        },
+        onError: (err) => {
+          console.error('PayPal error:', err);
+          alert('Ocurrió un error con PayPal. Intenta de nuevo.');
+        },
+      }).render('#paypal_button_container');
+    };
+
+    const existing = document.getElementById('paypal-sdk');
+    if (existing) {
+      renderButtons();
+    } else {
+      const s = document.createElement('script');
+      s.id = 'paypal-sdk';
+      s.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(paypalOrder.clientId)}&currency=USD&intent=capture`;
+      s.onload = renderButtons;
+      document.body.appendChild(s);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [paypalOrder]);
+
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     const status = searchParams.get('status');
@@ -220,9 +288,10 @@ export default function Checkout() {
 
     const fetchGeo = async () => {
       try {
+        const geoParams = paisId ? { pais_id: paisId } : {};
         const [resDeps, resCius] = await Promise.all([
-          api.get('/geo/departamentos').catch(() => ({ data: { departamentos: [] } })),
-          api.get('/geo/ciudades').catch(() => ({ data: { ciudades: [] } }))
+          api.get('/geo/departamentos', { params: geoParams }).catch(() => ({ data: { departamentos: [] } })),
+          api.get('/geo/ciudades', { params: geoParams }).catch(() => ({ data: { ciudades: [] } }))
         ]);
         if (resDeps.data?.departamentos?.length > 0) {
           setDepartamentos(resDeps.data.departamentos);
@@ -231,11 +300,11 @@ export default function Checkout() {
           setCiudades(resCius.data.ciudades);
         }
       } catch {
-        // Fallbacks already set as initial state
+        // Sin datos geográficos no se puede cotizar; el usuario reintenta.
       }
     };
     fetchGeo();
-  }, [searchParams]);
+  }, [searchParams, paisId]);
 
   useEffect(() => {
     const calculateShipping = async () => {
@@ -274,11 +343,6 @@ export default function Checkout() {
     calculateShipping();
   }, [selectedCiudadId, cartItems]);
 
-  const formatPrice = (val) => {
-    const num = Number(val || 0);
-    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(num);
-  };
-
   const backendPriceOf = (item) => {
     const pi = perItem.find(x => String(x.itemId) === String(item.id));
     return pi && pi.price != null ? Number(pi.price) : null;
@@ -302,7 +366,7 @@ export default function Checkout() {
     const txnId = String(transactionId || `glopsy_${Date.now()}`);
     trackEvent('purchase', {
       transaction_id: txnId,
-      currency: 'COP',
+      currency,
       value,
       shipping: Number(shippingCost || 0),
       items: items || checkoutItemsForGA(),
@@ -316,7 +380,7 @@ export default function Checkout() {
       alert('Por favor completa todos los datos de envío (Departamento, Ciudad, Dirección y Número Móvil).');
       return;
     }
-    if (!/^3\d{9}$/.test(telefono)) {
+    if (!/^3\d{9}$/.test(telefono) && !isPaypal) {
       alert('El número móvil debe tener 10 dígitos y empezar por 3 (Ej. 3001234567).');
       return;
     }
@@ -330,6 +394,32 @@ export default function Checkout() {
 
     setLoadingCheckout(true);
     try {
+      if (isPaypal) {
+        const ppRes = await api.post('/product/paypal/create-order', {
+          items: cartItemsConPrecio,
+          shipping_cost: shippingCost,
+          customer_info: {
+            departamento_id: selectedDepartamentoId,
+            ciudad_id: selectedCiudadId,
+            direccion,
+            telefono,
+          },
+          guestHash,
+        });
+        if (ppRes.data.ok && ppRes.data.paypalOrderId) {
+          setPaypalOrder({ id: ppRes.data.paypalOrderId, clientId: ppRes.data.clientId });
+          trackEvent('begin_checkout', {
+            currency,
+            value: total,
+            items: checkoutItems,
+            payment_type: 'paypal',
+          });
+        } else {
+          alert(ppRes.data.message || 'No se pudo iniciar el pago con PayPal.');
+        }
+        return;
+      }
+
       const res = await api.post('/product/create-preference', {
                   items: cartItemsConPrecio,
         shipping_cost: shippingCost,
@@ -354,7 +444,7 @@ export default function Checkout() {
           shipping: shippingCost,
         }));
         trackEvent('begin_checkout', {
-          currency: 'COP',
+          currency,
           value: total,
           items: checkoutItems,
         });
@@ -404,7 +494,7 @@ export default function Checkout() {
 
       if (res.data.ok) {
         trackEvent('add_payment_info', {
-          currency: 'COP',
+          currency,
           value: total,
           payment_type: 'saved_card',
           items: cartItemsConPrecio.map(item => ({
@@ -486,7 +576,24 @@ export default function Checkout() {
         </div>
 
         <div className="bg-white rounded-3xl p-6 sm:p-10 border border-slate-200 shadow-sm">
-          {showBricks ? (
+          {isPaypal && paypalOrder ? (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-200">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Pago con PayPal</h2>
+                  <p className="text-xs text-slate-500">Completa tu compra en USD con PayPal.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPaypalOrder(null)}
+                  className="text-xs font-bold text-fuchsia-600 hover:underline cursor-pointer"
+                >
+                  ← Volver
+                </button>
+              </div>
+              <div id="paypal_button_container" className="min-h-[200px]"></div>
+            </div>
+          ) : showBricks ? (
             <div className="space-y-6">
               <div className="flex items-center justify-between pb-4 border-b border-slate-200">
                 <div>
@@ -787,7 +894,9 @@ export default function Checkout() {
               className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-600/30 text-base transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
             >
               <ShieldCheck size={20} />
-              {loadingCheckout ? 'Procesando pago con Mercado Pago...' : 'Pagar con Mercado Pago'}
+              {loadingCheckout
+                ? (isPaypal ? 'Preparando PayPal...' : 'Procesando pago con Mercado Pago...')
+                : (isPaypal ? 'Continuar con PayPal' : 'Pagar con Mercado Pago')}
             </button>
           </form>
           )}

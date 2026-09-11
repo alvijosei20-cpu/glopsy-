@@ -3,8 +3,10 @@ import { ShoppingBag, ArrowLeft, Package, MapPin, Sparkles, CheckCircle, Clock, 
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../../services/api';
 import { SkeletonList } from '../../components/SkeletonLoader';
+import { useMoney } from '../../utils/money';
 
 export default function Compras() {
+  const { format: formatPrice } = useMoney();
   const navigate = useNavigate();
   const [products, setProducts] = useState([]);
   const [returns, setReturns] = useState([]);
@@ -232,7 +234,6 @@ export default function Compras() {
         <div className="space-y-4">
           {products.map((order, index) => {
             const dateStr = order.created_at ? new Date(order.created_at).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Reciente';
-            const formatPrice = (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Number(val || 0));
 
             const getStatusBadge = (st) => {
               const s = (st || '').toLowerCase();

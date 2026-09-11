@@ -8,6 +8,7 @@ import {
   sanitizeCampaignUrl,
 } from '../marketing.service.js';
 import { askJson } from './llm.js';
+import { formatPrice, configFromMoneda } from '../pais.service.js';
 
 const STOPWORDS = new Set([
   'con', 'para', 'marca', 'color', 'modelo', 'nuevo', 'nueva', 'original', 'ideal',
@@ -62,7 +63,9 @@ const ruleSeoDescription = (product) => {
 
 const socialPost = (product) => {
   const name = String(product.name || '').slice(0, 60);
-  const price = product.price > 0 ? `$${Math.round(product.price).toLocaleString('es-CO')}` : '';
+  const price = product.price > 0
+    ? formatPrice(product.price, configFromMoneda(product.moneda, product.locale))
+    : '';
   const rating = product.review_count > 0 ? ` ⭐ ${product.avg_rating.toFixed(1)} (${product.review_count} reseñas)` : '';
   const stock = product.stock_total > 0 ? ' 📦 Disponible' : '';
   const tags = ruleKeywords(product)
@@ -182,16 +185,32 @@ const suggestedPromo = (product) => {
   return null;
 };
 
-const getStoreName = async (tiendaId) => {
+const getStoreMeta = async (tiendaId) => {
   const { rows } = await pool.query(
-    `SELECT nombres FROM tiendas WHERE usrid = $1 LIMIT 1`,
+    `SELECT t.nombres,
+            COALESCE(t.moneda, pa.moneda, 'COP') AS moneda,
+            COALESCE(t.locale, pa.locale, 'es-CO') AS locale
+     FROM tiendas t LEFT JOIN paises pa ON pa.id = t.pais_id
+     WHERE t.usrid = $1 LIMIT 1`,
     [tiendaId]
   );
-  return rows[0]?.nombres || 'Mi tienda';
+  return {
+    nombre: rows[0]?.nombres || 'Mi tienda',
+    moneda: rows[0]?.moneda || 'COP',
+    locale: rows[0]?.locale || 'es-CO',
+  };
 };
 
 const ruleBasedSuggestions = async (tiendaId) => {
-  const [products, buyers] = await Promise.all([catalogSnapshot(tiendaId), storeBuyerCount(tiendaId)]);
+  const [products, buyers, storeMeta] = await Promise.all([
+    catalogSnapshot(tiendaId),
+    storeBuyerCount(tiendaId),
+    getStoreMeta(tiendaId),
+  ]);
+  for (const p of products) {
+    p.moneda = storeMeta.moneda;
+    p.locale = storeMeta.locale;
+  }
   if (products.length === 0) {
     return { stats: { seo: 0, promo: 0, stock: 0, social: 0, email: 0, skips: 0 }, totalProducts: 0 };
   }
@@ -308,7 +327,7 @@ const ruleBasedSuggestions = async (tiendaId) => {
     if (inserted) stats.stock += 1;
   }
 
-  const storeName = await getStoreName(tiendaId);
+  const storeName = storeMeta.nombre;
   const topForCampaign = orderedByValue.filter((p) => p.units_30d > 0).slice(0, 3);
   const campaignProducts = topForCampaign.length
     ? topForCampaign

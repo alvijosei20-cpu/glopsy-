@@ -4,6 +4,7 @@ import { Search, Loader2, PackageX } from 'lucide-react';
 import api from '../services/api';
 import { useStorefront } from './StorefrontContext';
 import { useUserCity } from '../utils/location';
+import { formatMoney } from '../utils/money';
 
 const productImg = (p) => {
   try {
@@ -17,8 +18,6 @@ const productImg = (p) => {
   } catch {}
   return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60';
 };
-
-const fmtCOP = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
 
 export default function StorefrontHome() {
   const { slug, store } = useStorefront();
@@ -119,7 +118,7 @@ export default function StorefrontHome() {
                   </div>
                   <div className="p-3">
                     <p className="text-xs text-slate-500 line-clamp-2 min-h-[2rem]">{p.name}</p>
-                    <p className="mt-1.5 font-extrabold text-slate-800 text-sm">{fmtCOP(p.price)}</p>
+                    <p className="mt-1.5 font-extrabold text-slate-800 text-sm">{formatMoney(p.price, { currency: store?.moneda, locale: store?.locale })}</p>
                     {p.review_count > 0 && (
                       <p className="mt-0.5 text-[10px] text-amber-500 font-semibold">
                         ★ {Number(p.avg_rating).toFixed(1)} ({p.review_count})

@@ -9,6 +9,7 @@ import {
   sanitizeCampaignUrl,
 } from '../services/marketing.service.js';
 import { runMarketingAnalysis } from '../services/marketing/engine.js';
+import { formatPrice, configFromMoneda } from '../services/pais.service.js';
 import { sendPushToUser } from '../services/push.service.js';
 import {
   listFacebookAccounts,
@@ -256,9 +257,13 @@ export const publishFacebook = async (req, res) => {
     }
 
     const { rows } = await pool.query(
-      `SELECT s.payload, p.images, p.suggested_price, p.base_price, p.name
+      `SELECT s.payload, p.images, p.suggested_price, p.base_price, p.name,
+              COALESCE(t.moneda, pa.moneda, 'COP') AS moneda,
+              COALESCE(t.locale, pa.locale, 'es-CO') AS locale
        FROM marketing_suggestions s
        LEFT JOIN produc p ON p.id = s.product_id
+       LEFT JOIN tiendas t ON t.usrid = s.tienda_id
+       LEFT JOIN paises pa ON pa.id = t.pais_id
        WHERE s.id = $1 AND s.tienda_id = $2
        LIMIT 1`,
       [id, tiendaId]
@@ -280,7 +285,7 @@ export const publishFacebook = async (req, res) => {
       const buf = await bannerSvc.generateBanner({
         name: rows[0]?.name || suggestion.titulo || 'Descubre este producto',
         category: '',
-        price: base > 0 ? `$${Math.round(base).toLocaleString('es-CO')} COP` : '',
+        price: base > 0 ? formatPrice(base, configFromMoneda(rows[0]?.moneda, rows[0]?.locale)) : '',
         badge: payload.badge || '',
         brand: 'Glopsy',
         images,

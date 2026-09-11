@@ -22,15 +22,17 @@ const getConfig = () => {
   return { token, account, service, suffix };
 };
 
-const enabled = () => {
+const enabled = (suffix) => {
   const c = getConfig();
-  return Boolean(c.token && c.account && c.suffix && c.suffix !== 'localhost' && c.suffix.includes('.'));
+  const suf = (suffix || c.suffix || '').trim().toLowerCase();
+  return Boolean(c.token && c.account && suf && suf !== 'localhost' && suf.includes('.'));
 };
 
-export const storeDomainHost = (slug) => {
+export const storeDomainHost = (slug, suffix) => {
   const c = getConfig();
+  const suf = ((suffix || c.suffix) || '').trim().toLowerCase().replace(/^\./, '');
   const clean = String(slug || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
-  return clean && c.suffix ? `${clean}.${c.suffix}` : null;
+  return clean && suf ? `${clean}.${suf}` : null;
 };
 
 const headers = (token) => ({
@@ -38,17 +40,29 @@ const headers = (token) => ({
   'Content-Type': 'application/json',
 });
 
-export const registerStoreCustomDomain = async (slug) => {
-  if (!enabled()) return { ok: false, reason: 'no_config' };
+export const registerStoreCustomDomain = async (slug, suffix) => {
+  if (!enabled(suffix)) return { ok: false, reason: 'no_config' };
   const c = getConfig();
-  const hostname = storeDomainHost(slug);
+  const hostname = storeDomainHost(slug, suffix);
   if (!hostname) return { ok: false, reason: 'no_hostname' };
 
   try {
+    const existing = await findCustomDomainId(hostname);
+    if (existing) return { ok: true, hostname, reason: 'already_exists' };
+
+    const body = {
+      hostname,
+      service: c.service,
+      environment: 'production',
+      // Attach Domain (PUT) exige una zona a la que pertenece el hostname.
+      // Si el token no tiene permiso para buscar la zona por nombre, se
+      // omite zone_id/zone_name y Cloudflare intenta resolver el hostname.
+      zone_name: ((suffix || c.suffix) || '').trim().toLowerCase().replace(/^\./, ''),
+    };
     const res = await fetch(`${CF_API}/accounts/${c.account}/workers/domains`, {
-      method: 'POST',
+      method: 'PUT',
       headers: headers(c.token),
-      body: JSON.stringify({ hostname, service: c.service, environment: 'production' }),
+      body: JSON.stringify(body),
     });
     const data = await res.json();
     // "already exists" y "duplicate" se tratan como éxito (idempotente).
@@ -74,10 +88,10 @@ const findCustomDomainId = async (hostname) => {
   return found?.id || null;
 };
 
-export const removeStoreCustomDomain = async (slug) => {
-  if (!enabled()) return { ok: false, reason: 'no_config' };
+export const removeStoreCustomDomain = async (slug, suffix) => {
+  if (!enabled(suffix)) return { ok: false, reason: 'no_config' };
   const c = getConfig();
-  const hostname = storeDomainHost(slug);
+  const hostname = storeDomainHost(slug, suffix);
   if (!hostname) return { ok: false, reason: 'no_hostname' };
   try {
     const id = await findCustomDomainId(hostname);

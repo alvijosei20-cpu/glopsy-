@@ -2,6 +2,7 @@ import { query } from '../db.js';
 import { getProductsByFullment, assignProductsToFullment } from '../services/product.service.js';
 import { invalidateRatesCacheForStore } from '../services/envia.service.js';
 import { redisClient } from '../services/redis.service.js';
+import { getZoomCities } from '../services/zoom.service.js';
 import { toInt, cleanString } from '../utils/validation.js';
 
 const getCached = async (key, ttl, fetcher) => {
@@ -72,14 +73,62 @@ export const getMyFullments = async (req, res) => {
   }
 };
 
-export const getDepartamentos = async (req, res) => {
+export const getPaises = async (req, res) => {
   try {
-    const rows = await getCached('geo:departamentos', 3600, async () => {
+    const rows = await getCached('geo:paises', 3600, async () => {
       const { rows } = await query(`
-        SELECT id, nombre, pais_id
-        FROM departamentos
+        SELECT id, nombre, codigo_iso, moneda, locale, dominio_raiz
+        FROM paises
         ORDER BY nombre
       `);
+      return rows;
+    });
+    res.json({ ok: true, paises: rows });
+  } catch (error) {
+    console.error('Error al obtener países:', error.message);
+    res.status(500).json({ ok: false, message: 'Error al obtener países' });
+  }
+};
+
+export const getZoomCiudades = async (req, res) => {
+  try {
+    const list = await getZoomCities('origen');
+    const ciudades = list.map((c) => ({
+      codigo: Number(c.codciudad),
+      nombre: c.nombre_ciudad,
+      estado: c.nombre_estado,
+    }));
+    res.json({ ok: true, ciudades });
+  } catch (error) {
+    console.error('Error al obtener ciudades ZOOM:', error.message);
+    res.status(500).json({ ok: false, message: 'Error al obtener ciudades ZOOM' });
+  }
+};
+
+export const getDepartamentos = async (req, res) => {
+  try {
+    // Multicountry: filtrar por país (pais_id o codigo_iso). Sin filtro => todos.
+    const paisId = toInt(req.query.pais_id, { min: 1, fallback: null });
+    const codigoIso = cleanString(req.query.codigo_iso, { maxLength: 10 }) || null;
+    const cacheKey = `geo:departamentos:${paisId || codigoIso || 'all'}`;
+    const rows = await getCached(cacheKey, 3600, async () => {
+      const params = [];
+      const where = [];
+      if (paisId) {
+        params.push(paisId);
+        where.push(`d.pais_id = $${params.length}`);
+      }
+      if (codigoIso) {
+        params.push(codigoIso.toUpperCase());
+        where.push(`p.codigo_iso = $${params.length}`);
+      }
+      const { rows } = await query(`
+        SELECT d.id, d.nombre, d.pais_id
+        FROM departamentos d
+        ${codigoIso ? 'JOIN paises p ON p.id = d.pais_id' : ''}
+        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        ORDER BY d.nombre
+      `, params);
       return rows;
     });
     res.json({ ok: true, departamentos: rows });
@@ -91,12 +140,34 @@ export const getDepartamentos = async (req, res) => {
 
 export const getCiudades = async (req, res) => {
   try {
-    const rows = await getCached('geo:ciudades', 3600, async () => {
+    // Multicountry: filtrar por país y/u departamento. Sin filtro => todas.
+    const paisId = toInt(req.query.pais_id, { min: 1, fallback: null });
+    const codigoIso = cleanString(req.query.codigo_iso, { maxLength: 10 }) || null;
+    const departamentoId = toInt(req.query.departamento_id, { min: 1, fallback: null });
+    const cacheKey = `geo:ciudades:${paisId || codigoIso || 'all'}:${departamentoId || 'all'}`;
+    const rows = await getCached(cacheKey, 3600, async () => {
+      const params = [];
+      const where = [];
+      if (departamentoId) {
+        params.push(departamentoId);
+        where.push(`c.departamento_id = $${params.length}`);
+      }
+      if (paisId) {
+        params.push(paisId);
+        where.push(`d.pais_id = $${params.length}`);
+      }
+      if (codigoIso) {
+        params.push(codigoIso.toUpperCase());
+        where.push(`p.codigo_iso = $${params.length}`);
+      }
       const { rows } = await query(`
-        SELECT id, nombre, departamento_id, codigo_postal
-        FROM ciudades
-        ORDER BY nombre
-      `);
+        SELECT c.id, c.nombre, c.departamento_id, c.codigo_postal
+        FROM ciudades c
+        JOIN departamentos d ON d.id = c.departamento_id
+        ${codigoIso ? 'JOIN paises p ON p.id = d.pais_id' : ''}
+        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        ORDER BY c.nombre
+      `, params);
       return rows;
     });
     res.json({ ok: true, ciudades: rows });

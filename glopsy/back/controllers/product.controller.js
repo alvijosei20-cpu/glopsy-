@@ -1,5 +1,5 @@
 import { obtenerProductoPorId } from '../services/mastershopService.js';
-import { saveProductForUser, getProductsForUser, getProductsForUserManagement, setProductStatusForUser, deleteProductForUser, addProductImagesForUser, updateProductNameForUser, searchQueryProductsCached, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, getMainStoreId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, cancelOrderForUser, updateOrderAddressForUser, getProductReviews, getUserReviewStatus, getOrderReviewsStatus, addProductReview, updateProductReview, deleteProductReview } from '../services/product.service.js';
+import { saveProductForUser, getProductsForUser, getProductsForUserManagement, setProductStatusForUser, deleteProductForUser, addProductImagesForUser, updateProductNameForUser, searchQueryProductsCached, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, getMainStoreId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, createPaypalOrderForCart, capturePaypalOrderForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, cancelOrderForUser, updateOrderAddressForUser, getProductReviews, getUserReviewStatus, getOrderReviewsStatus, addProductReview, updateProductReview, deleteProductReview } from '../services/product.service.js';
 import { validatePaymentBiometricNonce } from '../services/auth.service.js';
 import { pool } from '../db.js';
 import {
@@ -363,6 +363,45 @@ export const processMpPaymentController = async (req, res) => {
   } catch (error) {
     console.error('Error al procesar pago con Mercado Pago Bricks:', error.message);
     res.status(400).json({ ok: false, message: error.message || 'Error al procesar el pago.' });
+  }
+};
+
+export const createPaypalOrderController = async (req, res) => {
+  try {
+    const items = sanitizeCartItems(req.body.items);
+    const shipping_cost = toNumber(req.body.shipping_cost, { min: 0, fallback: 0 });
+    const customer_info = sanitizeObject(req.body.customer_info || {}, { maxSize: 30 });
+    const guestHash = cleanString(req.body.guestHash, { maxLength: 64 });
+    if (items.length === 0) {
+      return res.status(400).json({ ok: false, message: 'No hay productos en el carrito.' });
+    }
+    const userId = req.auth?.userId || 1;
+    const result = await createPaypalOrderForCart(userId, items, shipping_cost, customer_info, guestHash);
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    console.error('Error al crear orden de PayPal:', error.message);
+    res.status(400).json({ ok: false, message: error.message || 'Error al iniciar el pago con PayPal.' });
+  }
+};
+
+export const capturePaypalOrderController = async (req, res) => {
+  try {
+    const paypalOrderId = cleanString(req.body.paypalOrderId, { maxLength: 100 });
+    if (!paypalOrderId) {
+      return res.status(400).json({ ok: false, message: 'Orden de PayPal inválida.' });
+    }
+    const items = sanitizeCartItems(req.body.items);
+    const customer_info = sanitizeObject(req.body.customer_info || {}, { maxSize: 30 });
+    const guestHash = cleanString(req.body.guestHash, { maxLength: 64 });
+    const shipping_cost = toNumber(req.body.shipping_cost, { min: 0, fallback: 0 });
+    const shipping_payload = sanitizeObject(req.body.shipping_payload || {}, { maxSize: 200 });
+    const userId = req.auth?.userId || 1;
+    await requirePaymentBiometric(req.auth?.userId, req.body.biometric_nonce);
+    const result = await capturePaypalOrderForCart(userId, paypalOrderId, customer_info, guestHash, shipping_cost, shipping_payload, items);
+    res.json({ ok: true, payment: result });
+  } catch (error) {
+    console.error('Error al capturar pago de PayPal:', error.message);
+    res.status(400).json({ ok: false, message: error.message || 'Error al procesar el pago con PayPal.' });
   }
 };
 

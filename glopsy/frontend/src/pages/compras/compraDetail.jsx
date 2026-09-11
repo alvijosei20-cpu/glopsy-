@@ -3,8 +3,10 @@ import { Package, ArrowLeft, MapPin, Clock, CheckCircle, Truck, Phone, XCircle, 
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useMoney } from '../../utils/money';
 
 export default function CompraDetail() {
+  const { format: formatPrice } = useMoney();
   const { hash } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -332,8 +334,6 @@ export default function CompraDetail() {
     } catch {}
     return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60';
   };
-
-  const formatPrice = (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Number(val || 0));
 
   const getStatusBadge = (st) => {
     const s = (st || '').toLowerCase();

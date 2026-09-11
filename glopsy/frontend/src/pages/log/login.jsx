@@ -295,7 +295,7 @@ const LoginForm = ({ mode, onSwitch }) => {
 
 const BENEFICIOS = [
   { icon: ShieldCheck, title: 'Pagos 100% seguros', desc: 'Mercado Pago y métodos protegidos', delay: '0s' },
-  { icon: Truck, title: 'Envíos a todo Colombia', desc: 'Con seguimiento en tiempo real', delay: '0.5s' },
+  { icon: Truck, title: 'Envíos nacionales', desc: 'Con seguimiento en tiempo real', delay: '0.5s' },
   { icon: BadgePercent, title: 'Ofertas exclusivas', desc: 'Descuentos y promociones diarias', delay: '1s' },
   { icon: Store, title: 'Tu tienda gratis', desc: 'Vende sin comisiones ocultas', delay: '1.5s' },
 ];
