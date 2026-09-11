@@ -128,6 +128,7 @@ const RECENT_VIEWS_KEY = 'glopsy_recent_views';
 
 const ProductCard = ({ p, favorites, onToggleFavorite, onAddToCart, formatPrice, getFinalPrice, getProductImage, baseP }) => {
   const navigate = useNavigate();
+  const { currency } = useMoney();
   const finalPrice = getFinalPrice(p);
   const hasDiscount = Boolean(p.oferta_activa && finalPrice < baseP);
   const isFavorite = favorites.has(p.id);
