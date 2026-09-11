@@ -20,5 +20,10 @@ dump.rdb
 # Proyecto personal (local)
 personal/
 
+# Datos locales de trading / predicciones
+preds.json
+trades.json
+eurusd_daily.csv
+
 # Monitor local (solo uso local, no se sube)
 glopsy/back/monitor/
