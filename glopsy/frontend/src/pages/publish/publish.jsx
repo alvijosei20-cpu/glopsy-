@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Search, AlertCircle, Save, CheckCircle2, DollarSign, Tag, Layers, Image as ImageIcon, MapPin, Package } from 'lucide-react';
+import { Search, AlertCircle, Save, CheckCircle2, DollarSign, Tag, Layers, Image as ImageIcon, MapPin, Package, PackagePlus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { ApiLoadingModal } from '../../components/LoadingScreen';
+import ManualProductForm from '../../components/ManualProductForm';
 import api from '../../services/api';
 import '../panel/panel.css';
+
+const MANUAL_PROVIDER = { id: 'manual', name: 'Nuevo Producto' };
 
 export default function Publish() {
   const navigate = useNavigate();
@@ -15,6 +18,12 @@ export default function Publish() {
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [publishError, setPublishError] = useState('');
+  const [manualError, setManualError] = useState('');
+  const [publishingManual, setPublishingManual] = useState(false);
+  const [tienda, setTienda] = useState(null);
+  const [categories, setCategories] = useState([]);
+
+  const isManual = selectedProvider === MANUAL_PROVIDER.id;
 
   // Estados para Centros de Distribución (Fullments) y Perfiles de Envío de la tienda
   const [fullments, setFullments] = useState([]);
@@ -47,11 +56,20 @@ export default function Publish() {
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
-        const [intRes, fullRes, perfilesRes] = await Promise.all([
+        const [intRes, fullRes, perfilesRes, tiendaRes, catRes] = await Promise.all([
           api.get('/tienda/integraciones'),
           api.get('/geo/fullments/mine'),
-          api.get('/tienda/perfiles-envio').catch(() => ({ data: { perfiles: [] } }))
+          api.get('/tienda/perfiles-envio').catch(() => ({ data: { perfiles: [] } })),
+          api.get('/tienda').catch(() => ({ data: {} })),
+          api.get('/product/categories').catch(() => ({ data: { categories: [] } }))
         ]);
+
+        if (tiendaRes.data?.tienda) {
+          setTienda(tiendaRes.data.tienda);
+        }
+        if (catRes.data?.categories) {
+          setCategories(catRes.data.categories);
+        }
 
         if (intRes.data && intRes.data.integraciones) {
           const configured = Object.entries(intRes.data.integraciones)
@@ -61,9 +79,7 @@ export default function Publish() {
               name: provider === 'mastershop' ? 'Mastershop' : provider.charAt(0).toUpperCase() + provider.slice(1)
             }));
           setIntegrations(configured);
-          if (configured.length > 0) {
-            setSelectedProvider(configured[0].id);
-          }
+          setSelectedProvider(configured.length > 0 ? configured[0].id : MANUAL_PROVIDER.id);
         }
 
         if (fullRes.data && fullRes.data.fullments) {
@@ -235,6 +251,29 @@ export default function Publish() {
     }
   };
 
+  const handleManualPublish = async (payload) => {
+    setManualError('');
+    setNotice('');
+    setApiStatus('loading');
+    setPublishingManual(true);
+    try {
+      await api.post('/product', payload);
+      setApiStatus('idle');
+      setNotice('¡Publicado con éxito!');
+      setTimeout(() => setNotice(''), 3500);
+      return true;
+    } catch (err) {
+      setApiStatus('idle');
+      console.error('Error al publicar producto:', err);
+      setManualError(err.response?.data?.message || err.message || 'Error al guardar el producto.');
+      return false;
+    } finally {
+      setPublishingManual(false);
+    }
+  };
+
+  const providerOptions = [MANUAL_PROVIDER, ...integrations];
+
   return (
     <section className="panel" aria-labelledby="publish-title">
       <ApiLoadingModal
@@ -248,7 +287,7 @@ export default function Publish() {
         <div>
           <p className="panel__eyebrow">Sincronización y Publicación</p>
           <h1 id="publish-title">Publicar Producto</h1>
-          <p>Consulta productos, selecciona el centro de distribución guardado, edita y publica.</p>
+          <p>Consulta productos de una integración o crea uno nuevo con la plantilla, elige el centro de distribución y publica.</p>
         </div>
       </div>
 
@@ -268,67 +307,94 @@ export default function Publish() {
       <form onSubmit={handleQuery} style={{ background: '#ffffff', color: '#18181b', padding: '1.8rem', borderRadius: '12px', border: '1px solid #e4e4e7', boxShadow: '0 4px 12px #DCDBDA', marginBottom: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.2rem', width: '100%', boxSizing: 'border-box' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
           <label htmlFor="provider-select" style={{ color: '#27272a', fontWeight: 600, fontSize: '0.95rem' }}>
-            Selecciona la Integración
+            Selecciona la Integración o Nuevo Producto
           </label>
           <select
             id="provider-select"
             value={selectedProvider}
-            onChange={(e) => setSelectedProvider(e.target.value)}
+            onChange={(e) => {
+              setSelectedProvider(e.target.value);
+              setError('');
+              setPublishError('');
+              setManualError('');
+            }}
             style={{ width: '100%', padding: '0.75rem 1rem', borderRadius: '8px', background: '#f4f4f5', color: '#18181b', border: '1px solid #d4d4d8', fontSize: '1rem', outline: 'none', boxSizing: 'border-box' }}
           >
-            {integrations.length === 0 ? (
-              <option value="">No hay integraciones configuradas</option>
-            ) : (
-              integrations.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))
-            )}
+            {providerOptions.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
           </select>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-          <label htmlFor="product-id-input" style={{ color: '#27272a', fontWeight: 600, fontSize: '0.95rem' }}>
-            ID del Producto
-          </label>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', width: '100%', boxSizing: 'border-box' }}>
-            <input
-              id="product-id-input"
-              type="text"
-              value={productId}
-              onChange={(e) => setProductId(e.target.value)}
-              placeholder="Ej. 12345 o prod_abc"
-              style={{ flex: '1 1 220px', minWidth: '0', padding: '0.75rem 1rem', borderRadius: '8px', background: '#f4f4f5', color: '#18181b', border: '1px solid #d4d4d8', fontSize: '1rem', outline: 'none', boxSizing: 'border-box' }}
-              autoComplete="off"
-            />
-            <button
-              type="submit"
-              disabled={integrations.length === 0 || !productId.trim()}
-              style={{
-                flex: '0 0 auto',
-                padding: '0.75rem 1.5rem',
-                borderRadius: '8px',
-                border: 'none',
-                background: 'linear-gradient(90deg, #db2777 0%, #9333ea 100%)',
-                color: '#fff',
-                fontWeight: 700,
-                fontSize: '1rem',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                boxShadow: '0 4px 12px rgba(219, 39, 119, 0.3)',
-              }}
-            >
-              <Search size={18} /> Consultar
-            </button>
+        {!isManual && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+            <label htmlFor="product-id-input" style={{ color: '#27272a', fontWeight: 600, fontSize: '0.95rem' }}>
+              ID del Producto
+            </label>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', width: '100%', boxSizing: 'border-box' }}>
+              <input
+                id="product-id-input"
+                type="text"
+                value={productId}
+                onChange={(e) => setProductId(e.target.value)}
+                placeholder="Ej. 12345 o prod_abc"
+                style={{ flex: '1 1 220px', minWidth: '0', padding: '0.75rem 1rem', borderRadius: '8px', background: '#f4f4f5', color: '#18181b', border: '1px solid #d4d4d8', fontSize: '1rem', outline: 'none', boxSizing: 'border-box' }}
+                autoComplete="off"
+              />
+              <button
+                type="submit"
+                disabled={integrations.length === 0 || !productId.trim()}
+                style={{
+                  flex: '0 0 auto',
+                  padding: '0.75rem 1.5rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'linear-gradient(90deg, #db2777 0%, #9333ea 100%)',
+                  color: '#fff',
+                  fontWeight: 700,
+                  fontSize: '1rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 12px rgba(219, 39, 119, 0.3)',
+                }}
+              >
+                <Search size={18} /> Consultar
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </form>
 
+      {isManual && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#7e22ce', background: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: '10px', padding: '0.9rem 1.1rem', fontSize: '0.9rem', fontWeight: 600 }}>
+            <PackagePlus size={18} /> Completa la plantilla para publicar tu propio producto (sin integración externa). Máximo 3 imágenes en webp.
+          </div>
+          <ManualProductForm
+            tienda={tienda}
+            fullments={fullments}
+            selectedFullmentId={selectedFullmentId}
+            onFullmentChange={(val) => {
+              setSelectedFullmentId(val);
+              setSelectedPerfilEnvioId('');
+            }}
+            perfilesEnvio={perfilesEnvio}
+            selectedPerfilEnvioId={selectedPerfilEnvioId}
+            onPerfilChange={setSelectedPerfilEnvioId}
+            categories={categories}
+            publishing={publishingManual || apiStatus === 'loading'}
+            publishError={manualError}
+            onPublish={handleManualPublish}
+          />
+        </div>
+      )}
+
       {/* Formulario Procesado y Editable del Producto con Centro de Distribución en los resultados */}
-      {productData && (
+      {!isManual && productData && (
         <form onSubmit={handleSaveOrPublish} style={{ background: '#ffffff', color: '#18181b', padding: '1.8rem', borderRadius: '12px', border: '1px solid #e4e4e7', boxShadow: '0 4px 12px #DCDBDA', width: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #e4e4e7', paddingBottom: '1rem', flexWrap: 'wrap', gap: '10px' }}>
             <h3 style={{ color: '#18181b', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.2rem' }}>

@@ -1,6 +1,8 @@
 import { obtenerProductoPorId } from '../services/mastershopService.js';
-import { saveProductForUser, getProductsForUser, getProductsForUserManagement, setProductStatusForUser, deleteProductForUser, addProductImagesForUser, updateProductNameForUser, searchQueryProductsCached, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, getMainStoreId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, createPaypalOrderForCart, capturePaypalOrderForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, cancelOrderForUser, updateOrderAddressForUser, getProductReviews, getUserReviewStatus, getOrderReviewsStatus, addProductReview, updateProductReview, deleteProductReview } from '../services/product.service.js';
+import { uploadProductImage, isR2Configured } from '../services/r2.service.js';
+import { saveProductForUser, getProductsForUser, getProductsForUserManagement, setProductStatusForUser, deleteProductForUser, addProductImagesForUser, updateProductNameForUser, searchQueryProductsCached, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, getMainStoreId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, cancelOrderForUser, updateOrderAddressForUser, getProductReviews, getUserReviewStatus, getOrderReviewsStatus, addProductReview, updateProductReview, deleteProductReview } from '../services/product.service.js';
 import { validatePaymentBiometricNonce } from '../services/auth.service.js';
+import { getInternationalShippingOptions } from '../services/internationalShipping.service.js';
 import { pool } from '../db.js';
 import {
   cleanString,
@@ -168,6 +170,46 @@ export const addProductImages = async (req, res) => {
   }
 };
 
+const DATA_URL_WEBP = /^data:image\/webp;base64,([A-Za-z0-9+/=]+)$/;
+const MAX_UPLOAD_IMAGES = 3;
+const MAX_DATA_URL_BYTES = 1200000;
+
+// Sube las imágenes (webp base64 comprimidas en el cliente) a Cloudflare R2 y
+// devuelve las URLs públicas servidas por el CDN.
+export const uploadProductImages = async (req, res) => {
+  try {
+    if (!isR2Configured()) {
+      return res.status(503).json({ ok: false, message: 'El almacenamiento de imágenes no está configurado.' });
+    }
+    // sharp es opcional (el cliente ya comprime a webp); se usa si está disponible.
+    const { default: sharp } = await import('sharp').catch(() => ({ default: null }));
+    const incoming = Array.isArray(req.body?.images) ? req.body.images : [];
+    if (incoming.length === 0) {
+      return res.status(400).json({ ok: false, message: 'No se recibieron imágenes.' });
+    }
+
+    const urls = [];
+    for (const item of incoming.slice(0, MAX_UPLOAD_IMAGES)) {
+      const str = typeof item === 'string' ? item : (item?.dataUrl || item?.src || '');
+      const match = DATA_URL_WEBP.exec(String(str).trim());
+      if (!match) {
+        throw new Error('Formato de imagen no válido. Sube imágenes en webp.');
+      }
+      if (String(str).length > MAX_DATA_URL_BYTES) {
+        throw new Error('Una de las imágenes supera el tamaño permitido.');
+      }
+      const buffer = Buffer.from(match[1], 'base64');
+      const webp = sharp ? await sharp(buffer).rotate().webp({ quality: 72 }).toBuffer() : buffer;
+      urls.push(await uploadProductImage(webp, { contentType: 'image/webp' }));
+    }
+
+    res.json({ ok: true, images: urls });
+  } catch (error) {
+    console.error('Error al subir imágenes de producto:', error.message);
+    res.status(400).json({ ok: false, message: error.message || 'No se pudieron subir las imágenes.' });
+  }
+};
+
 export const getMyProducts = async (req, res) => {
   try {
     const userId = req.auth?.userId;
@@ -327,6 +369,31 @@ export const calculateShippingController = async (req, res) => {
   }
 };
 
+export const internationalShippingController = async (req, res) => {
+  try {
+    const items = sanitizeCartItems(req.body.items);
+    const destination = sanitizeObject(req.body.destination || {}, { maxSize: 30 });
+    if (items.length === 0) {
+      return res.status(400).json({ ok: false, message: 'No hay productos en el carrito.' });
+    }
+    if (!destination?.country) {
+      return res.status(400).json({ ok: false, message: 'Selecciona el país de destino.' });
+    }
+
+    let tiendaId = items[0]?.tienda_id ? Number(items[0].tienda_id) : null;
+    if (!tiendaId && items[0]?.id) {
+      const { rows } = await pool.query(`SELECT tienda_id FROM produc WHERE id = $1 LIMIT 1`, [items[0].id]);
+      tiendaId = rows[0]?.tienda_id ? Number(rows[0].tienda_id) : null;
+    }
+
+    const result = await getInternationalShippingOptions({ tiendaId, items, destination });
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    console.error('Error al cotizar envío internacional:', error.message);
+    res.status(400).json({ ok: false, message: error.message || 'No fue posible cotizar el envío internacional.' });
+  }
+};
+
 export const createPreferenceController = async (req, res) => {
   try {
     const items = sanitizeCartItems(req.body.items);
@@ -364,45 +431,6 @@ export const processMpPaymentController = async (req, res) => {
   } catch (error) {
     console.error('Error al procesar pago con Mercado Pago Bricks:', error.message);
     res.status(400).json({ ok: false, message: error.message || 'Error al procesar el pago.' });
-  }
-};
-
-export const createPaypalOrderController = async (req, res) => {
-  try {
-    const items = sanitizeCartItems(req.body.items);
-    const shipping_cost = toNumber(req.body.shipping_cost, { min: 0, fallback: 0 });
-    const customer_info = sanitizeObject(req.body.customer_info || {}, { maxSize: 30 });
-    const guestHash = cleanString(req.body.guestHash, { maxLength: 64 });
-    if (items.length === 0) {
-      return res.status(400).json({ ok: false, message: 'No hay productos en el carrito.' });
-    }
-    const userId = req.auth?.userId || 1;
-    const result = await createPaypalOrderForCart(userId, items, shipping_cost, customer_info, guestHash);
-    res.json({ ok: true, ...result });
-  } catch (error) {
-    console.error('Error al crear orden de PayPal:', error.message);
-    res.status(400).json({ ok: false, message: error.message || 'Error al iniciar el pago con PayPal.' });
-  }
-};
-
-export const capturePaypalOrderController = async (req, res) => {
-  try {
-    const paypalOrderId = cleanString(req.body.paypalOrderId, { maxLength: 100 });
-    if (!paypalOrderId) {
-      return res.status(400).json({ ok: false, message: 'Orden de PayPal inválida.' });
-    }
-    const items = sanitizeCartItems(req.body.items);
-    const customer_info = sanitizeObject(req.body.customer_info || {}, { maxSize: 30 });
-    const guestHash = cleanString(req.body.guestHash, { maxLength: 64 });
-    const shipping_cost = toNumber(req.body.shipping_cost, { min: 0, fallback: 0 });
-    const shipping_payload = sanitizeObject(req.body.shipping_payload || {}, { maxSize: 200 });
-    const userId = req.auth?.userId || 1;
-    await requirePaymentBiometric(req.auth?.userId, req.body.biometric_nonce);
-    const result = await capturePaypalOrderForCart(userId, paypalOrderId, customer_info, guestHash, shipping_cost, shipping_payload, items);
-    res.json({ ok: true, payment: result });
-  } catch (error) {
-    console.error('Error al capturar pago de PayPal:', error.message);
-    res.status(400).json({ ok: false, message: error.message || 'Error al procesar el pago con PayPal.' });
   }
 };
 

@@ -658,7 +658,7 @@ const fallbackAnswer = async ({ product, ciudad, lastMessage, related = [] }) =>
     return `Precio de "${product?.name}": ${fmtCOP(precio, product)}${orig}\n• IVA incluido.\n• El envío se suma en el checkout según tu ciudad (${ciudad || '—'}).`;
   }
   if (mentions('como comprar', 'como compro', 'como lo compro', 'como pago', 'como lo pago', 'comprar ahora', 'quiero comprar', 'pagar', 'pedido', 'compra', 'comprarlo')) {
-    return `Cómo comprar "${product?.name}":\n1. Pulsa "Comprar ahora" (o agrégalo al carrito).\n2. Elige cantidad/variante y verifica tu dirección de envío.\n3. Paga con el medio de pago de la tienda (Mercado Pago o PayPal) de forma segura.\n4. Sigue tu pedido en "Consultar pedido".`;
+    return `Cómo comprar "${product?.name}":\n1. Pulsa "Comprar ahora" (o agrégalo al carrito).\n2. Elige cantidad/variante y verifica tu dirección de envío.\n3. Paga con Mercado Pago de forma segura.\n4. Sigue tu pedido en "Consultar pedido".`;
   }
   if (mentions('calificacion', 'reseñas', 'opiniones', 'rating', 'bueno', 'recomendado', 'estrellas')) {
     const rc = Number(product?.review_count || 0);

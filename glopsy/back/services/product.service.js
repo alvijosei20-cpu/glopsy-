@@ -4,9 +4,9 @@ import axios from 'axios';
 import { getShippingOptionsFromEnvia, invalidateRatesCacheForStore } from './envia.service.js';
 import { findZoomCityCode, quoteZoomShipping } from './zoom.service.js';
 import { getVeUsdRate } from './rates.service.js';
-import { createPaypalOrder, capturePaypalOrder } from './paypal.service.js';
 import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
 import { obtenerProductoPorId } from './mastershopService.js';
+import { dispatchInternationalOrder } from './internationalShipping.service.js';
 import { redisClient } from './redis.service.js';
 import { sendPushToUser } from './push.service.js';
 import { decryptSecret } from '../utils/crypto.js';
@@ -82,6 +82,19 @@ export const invalidateProductDetailCachesForStore = async (tiendaId) => {
   } catch {}
 };
 
+// Imágenes de producto cargadas por el vendedor: data URL webp (comprimida en el
+// cliente) o URL http(s). Se limita el tamaño para no reventar el payload JSON.
+const PRODUCT_IMAGE_MAX_BYTES = 900000;
+const sanitizeProductImage = (value) => {
+  if (typeof value !== 'string') return null;
+  const str = value.trim();
+  if (!str) return null;
+  if (/^data:image\/webp;base64,[A-Za-z0-9+/=]+$/i.test(str)) {
+    return str.length <= PRODUCT_IMAGE_MAX_BYTES ? str : null;
+  }
+  return cleanUrl(str, { maxLength: 2048 });
+};
+
 export const saveProductForUser = async (userId, productData) => {
   const {
     idProduct,
@@ -122,9 +135,23 @@ export const saveProductForUser = async (userId, productData) => {
   const stockTotal = Math.round(toNumber(parseNumeric(productData.stockTotal), { min: 0, fallback: 0 }));
   const currency = cleanString(baseCurrencyPrice, { maxLength: 10 }) || 'USD';
   const cleanProvider = cleanString(provider, { maxLength: 30 });
+  const isManual = String(cleanProvider || '').toLowerCase() === 'manual';
+  const rawCategoriaId = productData.categoria_id !== undefined ? productData.categoria_id : productData.categoriaId;
+  const categoriaId = toNumber(parseNumeric(rawCategoriaId), { min: 1 });
 
   if (!name) {
     throw new Error('El nombre del producto es obligatorio.');
+  }
+  if (isManual) {
+    if (!description) {
+      throw new Error('La descripción del producto es obligatoria.');
+    }
+    if (!(suggestedPrice > 0) && !(basePrice > 0)) {
+      throw new Error('El precio de venta debe ser mayor a 0.');
+    }
+    if (!cleanString(baseCurrencyPrice, { maxLength: 10 })) {
+      throw new Error('La moneda es obligatoria.');
+    }
   }
 
   // 1. Asegurar que la tienda exista para el usuario (Upsert).
@@ -180,8 +207,19 @@ export const saveProductForUser = async (userId, productData) => {
     }
   }
 
-  const imageUrl = cleanUrl(urlImageProduct, { maxLength: 2048 });
-  const images = imageUrl ? [{ src: imageUrl }] : [];
+  const rawImages = Array.isArray(productData.images) ? productData.images : [];
+  const sanitizedImages = rawImages
+    .map((img) => sanitizeProductImage(typeof img === 'string' ? img : img?.src))
+    .filter(Boolean)
+    .slice(0, 3);
+  if (sanitizedImages.length === 0) {
+    const imageUrl = cleanUrl(urlImageProduct, { maxLength: 2048 });
+    if (imageUrl) sanitizedImages.push(imageUrl);
+  }
+  if (isManual && sanitizedImages.length === 0) {
+    throw new Error('Sube al menos una imagen del producto (máximo 3).');
+  }
+  const images = sanitizedImages.map((src) => ({ src }));
   const variants = sanitizeArray(variation, (v) => sanitizeObject(v, { maxSize: 50 }), { maxLength: 200 });
   const warranties = {
     period: cleanString(warrantyPeriod, { maxLength: 500 }) || '',
@@ -256,8 +294,9 @@ export const saveProductForUser = async (userId, productData) => {
         fullm_id = $17,
         tipo_empaque_id = $18,
         perfil_envio_id = $19,
+        categoria_id = $20,
         updated_at = NOW()
-      WHERE id = $20 AND tienda_id = $1
+      WHERE id = $21 AND tienda_id = $1
       RETURNING id, name, external_product_id, selected_variant_id, suggested_price, fullm_id, tipo_empaque_id, perfil_envio_id, integracion_id, created_at
     `;
     const updateValues = [
@@ -280,6 +319,7 @@ export const saveProductForUser = async (userId, productData) => {
       resolvedFullmId ? Number(resolvedFullmId) : null,
       resolvedTipoEmpaqueId ? Number(resolvedTipoEmpaqueId) : null,
       resolvedPerfilEnvioId ? Number(resolvedPerfilEnvioId) : null,
+      categoriaId ? Number(categoriaId) : null,
       existingId,
     ];
     const { rows } = await pool.query(updateQuery, updateValues);
@@ -308,8 +348,9 @@ export const saveProductForUser = async (userId, productData) => {
         fullm_id,
         tipo_empaque_id,
         perfil_envio_id,
+        categoria_id,
         updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, NOW())
       RETURNING id, public_id, name, external_product_id, selected_variant_id, suggested_price, fullm_id, tipo_empaque_id, perfil_envio_id, integracion_id, created_at
     `;
     const insertValues = [
@@ -333,6 +374,7 @@ export const saveProductForUser = async (userId, productData) => {
       resolvedFullmId ? Number(resolvedFullmId) : null,
       resolvedTipoEmpaqueId ? Number(resolvedTipoEmpaqueId) : null,
       resolvedPerfilEnvioId ? Number(resolvedPerfilEnvioId) : null,
+      categoriaId ? Number(categoriaId) : null,
     ];
     const { rows } = await pool.query(insertQuery, insertValues);
     resultRow = rows[0];
@@ -1595,93 +1637,6 @@ const getMpIntegrationForCart = async (items) => {
   return tiendaId ? getMpIntegrationForStore(tiendaId) : null;
 };
 
-// Integración de checkout genérica por proveedor (mercadopago, paypal, ...).
-const getCheckoutIntegrationForStore = async (tiendaId, provider) => {
-  if (!tiendaId) return null;
-  const { rows } = await pool.query(
-    `SELECT access_token, public_key, mode
-     FROM checkout_integrations
-     WHERE tienda_id = $1 AND provider = $2
-     ORDER BY (mode = 'produccion') DESC LIMIT 1`,
-    [Number(tiendaId), provider]
-  );
-  const it = rows[0];
-  if (!it?.access_token) return null;
-  it.access_token = decryptSecret(it.access_token);
-  return { tienda_id: Number(tiendaId), ...it };
-};
-
-// ---------------------------------------------------------------- PayPal (USD)
-export const createPaypalOrderForCart = async (userId, items, shippingCost, customerInfo, guestHash) => {
-  const { items: resolvedItems } = await resolveCartItems(items, userId, guestHash);
-  await ensureSingleStoreCart(resolvedItems);
-  const tiendaId = await resolveCartTiendaId(resolvedItems);
-  const pp = await getCheckoutIntegrationForStore(tiendaId, 'paypal');
-  if (!pp?.public_key || !pp?.access_token) {
-    throw new Error('La tienda no tiene configurada la integración de PayPal.');
-  }
-
-  const total = resolvedItems.reduce(
-    (acc, i) => acc + Number(i.price || 0) * Number(i.quantity || 1),
-    0
-  ) + Number(shippingCost || 0);
-  const amount = Math.round(total * 100) / 100;
-
-  const order = await createPaypalOrder({
-    clientId: pp.public_key,
-    secret: pp.access_token,
-    mode: pp.mode,
-    amount,
-    currency: 'USD',
-    referenceId: guestHash || `user_${userId}`,
-    description: 'Compra en Glopsy',
-  });
-
-  return {
-    paypalOrderId: order.id,
-    status: order.status,
-    total: amount,
-    currency: 'USD',
-    mode: pp.mode,
-    clientId: pp.public_key,
-  };
-};
-
-export const capturePaypalOrderForCart = async (userId, paypalOrderId, customerInfo, guestHash, shippingCost, shippingPayload, inputItems) => {
-  const { items: resolvedItems, foundKey } = await resolveCartItems(inputItems, userId, guestHash);
-  await ensureSingleStoreCart(resolvedItems);
-  const tiendaId = await resolveCartTiendaId(resolvedItems);
-  const pp = await getCheckoutIntegrationForStore(tiendaId, 'paypal');
-  if (!pp?.public_key || !pp?.access_token) {
-    throw new Error('La tienda no tiene configurada la integración de PayPal.');
-  }
-
-  const capture = await capturePaypalOrder({
-    clientId: pp.public_key,
-    secret: pp.access_token,
-    mode: pp.mode,
-    orderId: paypalOrderId,
-  });
-
-  const completed = capture?.status === 'COMPLETED';
-  if (completed && resolvedItems.length > 0) {
-    await recordPurchaseForUser(userId, resolvedItems, {
-      preferenceId: paypalOrderId,
-      // Se normaliza a la forma que espera recordPurchaseForUser.
-      paymentResponse: { id: capture?.id || paypalOrderId, status: 'approved', provider: 'paypal', raw: capture },
-      customerInfo,
-      guestHash,
-      shippingCost,
-      shippingPayload,
-    });
-    if (foundKey) {
-      await redisClient.del(foundKey).catch(() => {});
-    }
-  }
-
-  return { status: capture?.status, id: capture?.id || paypalOrderId, completed, capture };
-};
-
 // Una orden pertenece a UNA sola tienda (orders.tienda_id único). Si el carrito mezcla
 // productos de varias tiendas se le pide comprar por separado para no cobrar/atribuir mal.
 const ensureSingleStoreCart = async (items) => {
@@ -2116,6 +2071,16 @@ export const recordPurchaseForUser = async (userId, items, options = {}) => {
       );
     }
   }
+
+  // Envíos internacionales (Venezuela + MasterShop): despacha a la oficina de ENVIA
+  // y genera la guía de última milla sin bloquear la confirmación de compra.
+  if (shippingPayload && typeof shippingPayload === 'object' && shippingPayload.international) {
+    dispatchInternationalOrder(orderId).catch((e) =>
+      console.error('[dispatch] Error en despacho internacional:', e.message)
+    );
+  }
+
+  return { orderId, orderNumber, orderHash };
 };
 
 export const getUserPurchasesDetails = async (userId, guestHash) => {

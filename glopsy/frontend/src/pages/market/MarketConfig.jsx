@@ -19,6 +19,10 @@ const MarketConfig = () => {
   const [activating, setActivating] = useState(false);
   const [activationMsg, setActivationMsg] = useState('');
   const [ciudades, setCiudades] = useState([]);
+  const [originPaisId, setOriginPaisId] = useState('');
+  const [originCiudades, setOriginCiudades] = useState([]);
+  const [loadingOriginCiudades, setLoadingOriginCiudades] = useState(false);
+  const [savingDispatch, setSavingDispatch] = useState(false);
   const [fullments, setFullments] = useState([]);
   const [selectedCiudadId, setSelectedCiudadId] = useState('');
   const [dianConfig, setDianConfig] = useState({
@@ -48,29 +52,10 @@ const MarketConfig = () => {
     prueba: { access_token: '' },
     produccion: { access_token: '' }
   });
-  const [paypalMode, setPaypalMode] = useState('prueba');
-  const [paypalConfigs, setPaypalConfigs] = useState({
-    prueba: { client_id: '', secret: '' },
-    produccion: { client_id: '', secret: '' }
-  });
-  const [initialPaypalConfigs, setInitialPaypalConfigs] = useState({
-    prueba: { client_id: '', secret: '' },
-    produccion: { client_id: '', secret: '' }
-  });
-
   const mercadoPagoConfig = mercadoPagoConfigs[mpMode];
   const initialMercadoPagoConfig = initialMercadoPagoConfigs[mpMode];
   const enviaConfig = enviaConfigs[enviaMode];
   const initialEnviaConfig = initialEnviaConfigs[enviaMode];
-  const paypalConfig = paypalConfigs[paypalMode];
-  const initialPaypalConfig = initialPaypalConfigs[paypalMode];
-
-  const setPaypalConfig = (updater) => {
-    setPaypalConfigs(prev => ({
-      ...prev,
-      [paypalMode]: typeof updater === 'function' ? updater(prev[paypalMode]) : updater
-    }));
-  };
 
   const setMercadoPagoConfig = (updater) => {
     setMercadoPagoConfigs(prev => ({
@@ -138,6 +123,46 @@ const MarketConfig = () => {
     if (tienda?.paisId) setPaisId(String(tienda.paisId));
   }, [tienda?.paisId]);
 
+  const loadOriginCiudades = async (paisId) => {
+    if (!paisId) {
+      setOriginCiudades([]);
+      return;
+    }
+    setLoadingOriginCiudades(true);
+    try {
+      const { data } = await api.get('/geo/ciudades', { params: { pais_id: Number(paisId) } });
+      setOriginCiudades(data?.ciudades || []);
+    } catch {
+      setOriginCiudades([]);
+    } finally {
+      setLoadingOriginCiudades(false);
+    }
+  };
+
+  useEffect(() => {
+    if (tienda?.paisId) setOriginPaisId(String(tienda.paisId));
+  }, [tienda?.paisId]);
+
+  useEffect(() => {
+    if (originPaisId) loadOriginCiudades(originPaisId);
+    else setOriginCiudades([]);
+  }, [originPaisId]);
+
+  const saveInternationalDispatch = async (provider) => {
+    setSavingDispatch(true);
+    try {
+      await api.patch('/tienda', { international_dispatch_provider: provider });
+      await refreshTienda();
+      setNotice('Proveedor de despacho internacional actualizado.');
+      setTimeout(() => setNotice(''), 3000);
+    } catch (err) {
+      setNotice(err.response?.data?.message || 'No se pudo actualizar el despacho internacional.');
+      setTimeout(() => setNotice(''), 4000);
+    } finally {
+      setSavingDispatch(false);
+    }
+  };
+
   const savePais = async () => {
     if (!paisId) return;
     setSavingPais(true);
@@ -202,15 +227,6 @@ const MarketConfig = () => {
           };
           setEnviaConfigs(newEnvia);
           setInitialEnviaConfigs(JSON.parse(JSON.stringify(newEnvia)));
-
-          const ppPrueba = integrations.find(i => i.provider === 'paypal' && (i.mode === 'prueba' || !i.mode));
-          const ppProd = integrations.find(i => i.provider === 'paypal' && i.mode === 'produccion');
-          const newPp = {
-            prueba: { client_id: ppPrueba?.public_key || '', secret: ppPrueba?.access_token || '' },
-            produccion: { client_id: ppProd?.public_key || '', secret: ppProd?.access_token || '' }
-          };
-          setPaypalConfigs(newPp);
-          setInitialPaypalConfigs(JSON.parse(JSON.stringify(newPp)));
         }
         // fetch shipping profiles
         const resPerfiles = await api.get('/tienda/perfiles-envio').catch(() => ({ data: { perfiles: [] } }));
@@ -325,42 +341,10 @@ const MarketConfig = () => {
     }
   };
 
-  const handleSavePaypal = async (e) => {
-    e.preventDefault();
-    if (!paypalConfig.client_id || !paypalConfig.client_id.trim() || !paypalConfig.secret || !paypalConfig.secret.trim()) {
-      setNotice('Error: El Client ID y el Secret de PayPal son obligatorios.');
-      setTimeout(() => setNotice(''), 4000);
-      return;
-    }
-    try {
-      const secretChanged = paypalConfig.secret !== initialPaypalConfig.secret && paypalConfig.secret.trim() !== '';
-      const res = await api.post('/tienda/checkout-integrations', {
-        provider: 'paypal',
-        mode: paypalMode,
-        public_key: paypalConfig.client_id,
-        ...(secretChanged ? { access_token: paypalConfig.secret } : {}),
-      });
-      setNotice(res.data.message || 'Configuración de PayPal guardada con éxito.');
-      setTimeout(() => setNotice(''), 3000);
-      setInitialPaypalConfigs({
-        ...initialPaypalConfigs,
-        [paypalMode]: { ...paypalConfig }
-      });
-      const resCheckout = await api.get('/tienda/checkout-integrations');
-      if (resCheckout.data && resCheckout.data.integrations) {
-        setSavedCheckoutIntegrations(resCheckout.data.integrations);
-      }
-    } catch (err) {
-      console.error('Error al guardar PayPal:', err);
-      setNotice(err.response?.data?.message || 'Error al guardar la configuración de PayPal.');
-      setTimeout(() => setNotice(''), 4000);
-    }
-  };
-
   const handleDeleteCheckoutIntegration = async (provider) => {
-    const currentMode = provider === 'mercadopago' ? mpMode : provider === 'paypal' ? paypalMode : enviaMode;
+    const currentMode = provider === 'mercadopago' ? mpMode : enviaMode;
     const modeName = currentMode === 'prueba' ? 'Prueba' : 'Producción';
-    const provName = provider === 'mercadopago' ? 'Mercado Pago' : provider === 'paypal' ? 'PayPal' : 'ENVIA';
+    const provName = provider === 'mercadopago' ? 'Mercado Pago' : 'ENVIA';
     if (!window.confirm(`¿Estás seguro de eliminar la configuración de ${provName} (${modeName})?`)) {
       return;
     }
@@ -376,10 +360,6 @@ const MarketConfig = () => {
           ...initialMercadoPagoConfigs,
           [currentMode]: cleared
         });
-      } else if (provider === 'paypal') {
-        const cleared = { client_id: '', secret: '' };
-        setPaypalConfigs({ ...paypalConfigs, [currentMode]: cleared });
-        setInitialPaypalConfigs({ ...initialPaypalConfigs, [currentMode]: cleared });
       } else {
         setEnviaConfigs({
           ...enviaConfigs,
@@ -810,7 +790,9 @@ const MarketConfig = () => {
   if (!tienda) return null;
 
   const mpSaved = savedCheckoutIntegrations.find(i => i.provider === 'mercadopago' && (i.mode === mpMode || (!i.mode && mpMode === 'prueba')));
-  const paypalSaved = savedCheckoutIntegrations.find(i => i.provider === 'paypal' && (i.mode === paypalMode || (!i.mode && paypalMode === 'prueba')));
+  const storePaisIso = paises.find((p) => Number(p.id) === Number(tienda?.paisId))?.codigo_iso || null;
+  const isVenezuela = storePaisIso === 'VE';
+  const internationalDispatch = tienda?.internationalDispatchProvider || '';
   const enviaSaved = savedCheckoutIntegrations.find(i => i.provider === 'envia' && (i.mode === enviaMode || (!i.mode && enviaMode === 'prueba')));
 
   return (
@@ -1613,16 +1595,61 @@ const MarketConfig = () => {
                 </div>
               </div>
 
+              {isVenezuela && (
+                <div style={{ background: '#ffffff', padding: '1.25rem', borderRadius: '1rem', border: '1px solid #cbd5e1', marginBottom: '1.5rem' }}>
+                  <h4 style={{ margin: '0 0 0.5rem 0', color: '#1e293b', fontSize: '1rem' }}>Despacho internacional (MasterShop)</h4>
+                  <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.85rem', color: '#64748b' }}>
+                    Usa tu cuenta de MasterShop para despachar pedidos al exterior. La logística internacional se cotiza y gestiona con envia.com.
+                  </p>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      disabled={savingDispatch}
+                      onClick={() => saveInternationalDispatch(internationalDispatch === 'mastershop' ? '' : 'mastershop')}
+                      style={{
+                        padding: '0.55rem 1.1rem', borderRadius: '0.5rem', border: '1px solid #111827',
+                        background: internationalDispatch === 'mastershop' ? '#111827' : 'white',
+                        color: internationalDispatch === 'mastershop' ? 'white' : '#111827',
+                        fontWeight: 600, cursor: savingDispatch ? 'wait' : 'pointer', fontSize: '0.9rem',
+                      }}
+                    >
+                      {internationalDispatch === 'mastershop' ? 'MasterShop activado' : 'Activar MasterShop'}
+                    </button>
+                    {internationalDispatch === 'mastershop' && (
+                      <span style={{ fontSize: '0.8rem', color: '#64748b', alignSelf: 'center' }}>
+                        Recuerda tener tu API key de MasterShop configurada en Integraciones.
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <form onSubmit={handleAddFullment} style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: '1rem', border: '1px solid #e2e8f0', marginBottom: '1.5rem' }}>
                 <h4 style={{ margin: '0 0 1rem 0', color: '#1e293b', fontSize: '1rem' }}>Añadir centro de distribución</h4>
+                <div className="config-form-group">
+                  <label>País de origen</label>
+                  <select
+                    value={originPaisId}
+                    onChange={(e) => {
+                      setOriginPaisId(e.target.value);
+                      setSelectedCiudadId('');
+                    }}
+                  >
+                    <option value="">Selecciona un país</option>
+                    {paises.map((p) => (
+                      <option key={p.id} value={p.id}>{p.nombre}</option>
+                    ))}
+                  </select>
+                </div>
                 <div className="config-form-group">
                   <label>Seleccionar Ciudad</label>
                   <select
                     value={selectedCiudadId}
                     onChange={(e) => setSelectedCiudadId(e.target.value)}
+                    disabled={loadingOriginCiudades}
                   >
-                    <option value="">Selecciona una ciudad de la base de datos</option>
-                    {ciudades.filter((c) => !fullments.some((f) => f.ciudad_id === c.id)).map((c) => (
+                    <option value="">{loadingOriginCiudades ? 'Cargando ciudades…' : 'Selecciona una ciudad de la base de datos'}</option>
+                    {originCiudades.filter((c) => !fullments.some((f) => f.ciudad_id === c.id)).map((c) => (
                       <option key={c.id} value={c.id}>{c.nombre}</option>
                     ))}
                   </select>
@@ -1678,63 +1705,6 @@ const MarketConfig = () => {
                   <h3>Payments y Checkout</h3>
                   <p>Configura la pasarela de pago de Mercado Pago y el servicio de envío ENVIA para tu tienda.</p>
                 </div>
-              </div>
-
-              {/* PayPal Section (Venezuela / USD) */}
-              <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginBottom: '2rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <div style={{ background: '#003087', color: 'white', fontWeight: 900, padding: '0.5rem 0.9rem', borderRadius: '0.5rem', fontSize: '1.1rem', letterSpacing: '1px' }}>
-                      PP
-                    </div>
-                    <div>
-                      <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>PayPal</h4>
-                      <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Cobra en USD a compradores de Venezuela.</p>
-                    </div>
-                  </div>
-                  {paypalSaved && (
-                    <span style={{ background: paypalSaved.broken ? '#fef3c7' : '#dcfce7', color: paypalSaved.broken ? '#b45309' : '#166534', padding: '0.25rem 0.75rem', borderRadius: '999px', fontSize: '0.8rem', fontWeight: 600 }}>
-                      {paypalSaved.broken ? '⚠ Reingresar credenciales' : `Guardado (${paypalMode === 'prueba' ? 'Prueba' : 'Producción'})`}
-                    </span>
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.25rem', background: '#f8fafc', padding: '0.75rem 1rem', borderRadius: '0.75rem', border: '1px solid #e2e8f0', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#475569' }}>Modo de credenciales:</span>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button type="button" onClick={() => setPaypalMode('prueba')} style={{ padding: '0.4rem 1rem', borderRadius: '0.5rem', border: '1px solid #003087', background: paypalMode === 'prueba' ? '#003087' : 'white', color: paypalMode === 'prueba' ? 'white' : '#003087', fontWeight: 600, cursor: 'pointer', fontSize: '0.85rem' }}>Prueba</button>
-                    <button type="button" onClick={() => setPaypalMode('produccion')} style={{ padding: '0.4rem 1rem', borderRadius: '0.5rem', border: '1px solid #003087', background: paypalMode === 'produccion' ? '#003087' : 'white', color: paypalMode === 'produccion' ? 'white' : '#003087', fontWeight: 600, cursor: 'pointer', fontSize: '0.85rem' }}>Producción</button>
-                  </div>
-                </div>
-
-                <form onSubmit={handleSavePaypal} style={{ display: 'grid', gap: '1rem' }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '0.35rem' }}>Client ID</label>
-                    <input
-                      type="text"
-                      value={paypalConfig.client_id}
-                      onChange={(e) => setPaypalConfig({ ...paypalConfig, client_id: e.target.value })}
-                      placeholder="AYxxxxxxxxxxxxxxxx"
-                      style={{ width: '100%', padding: '0.65rem 0.9rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', fontSize: '0.9rem' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '0.35rem' }}>Secret</label>
-                    <input
-                      type="password"
-                      value={paypalConfig.secret}
-                      onChange={(e) => setPaypalConfig({ ...paypalConfig, secret: e.target.value })}
-                      placeholder="••••••••••••••••"
-                      style={{ width: '100%', padding: '0.65rem 0.9rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', fontSize: '0.9rem' }}
-                    />
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                    <button type="submit" className="btn-primary">Guardar PayPal</button>
-                    {paypalSaved && (
-                      <button type="button" className="btn-secondary" onClick={() => handleDeleteCheckoutIntegration('paypal')}>Eliminar</button>
-                    )}
-                  </div>
-                </form>
               </div>
 
               {/* Mercado Pago Section */}

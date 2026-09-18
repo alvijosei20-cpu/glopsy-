@@ -1,6 +1,6 @@
 // Configuración de país -> moneda/locale/dominio raíz.
 // Cada tienda tiene pais_id; de él se hereda la moneda y el locale de cobro.
-// Venezuela opera en USD (pagos PayPal) → su divisa es USD, no Bs.
+// Venezuela opera en USD → su divisa es USD, no Bs.
 
 const DEFAULTS = {
   unidad: 'COP',

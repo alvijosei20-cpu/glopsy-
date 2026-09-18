@@ -12,7 +12,7 @@ const maskToken = (t) => {
   return `${t.substring(0, 4)}****${t.substring(t.length - 4)}`;
 };
 
-const getStateCode = (stateName) => {
+export const getStateCode = (stateName) => {
   if (!stateName) return 'DC';
   const name = String(stateName).toLowerCase();
   if (name.includes('bogotá') || name.includes('dc') || name.includes('d.c.')) return 'DC';
@@ -25,7 +25,7 @@ const getStateCode = (stateName) => {
   return String(stateName).substring(0, 3).toUpperCase();
 };
 
-const ensure8DigitDane = (daneCode) => {
+export const ensure8DigitDane = (daneCode) => {
   if (daneCode && String(daneCode).length >= 8) return String(daneCode);
   if (daneCode && String(daneCode).length === 5) {
     return String(daneCode) + '000';
@@ -394,6 +394,230 @@ export const invalidateRatesCacheForStore = async (tiendaId) => {
   } catch (e) {
     console.error('Error invalidando cache de ENVIA para tienda', tiendaId, e.message);
   }
+};
+
+// Token y modo de ENVIA configurados por una tienda (checkout_integrations).
+export const getStoreEnviaCredentials = async (tiendaId) => {
+  if (!tiendaId) {
+    const token = process.env.ENVIA_API_TOKEN || process.env.ENVIA_TOKEN || null;
+    return token ? { accessToken: token, mode: 'produccion' } : null;
+  }
+  try {
+    const { rows } = await pool.query(
+      `SELECT access_token, mode FROM checkout_integrations
+       WHERE tienda_id = $1 AND provider = 'envia'
+       ORDER BY (mode = 'produccion') DESC LIMIT 1`,
+      [Number(tiendaId)]
+    );
+    const row = rows[0];
+    if (!row?.access_token) return null;
+    const accessToken = decryptSecret(row.access_token);
+    return accessToken ? { accessToken, mode: row.mode || 'prueba' } : null;
+  } catch {
+    return null;
+  }
+};
+
+// Cotización de envíos internacionales (envia.com /ship/rate).
+// origin/destination: { name, phone, phone_code, street, number, district, city, state, country, postalCode, reference }
+// packages: [{ content, amount, type, weight, weightUnit, lengthUnit, dimensions:{length,width,height}, declaredValue, items:[...] }]
+export const getInternationalShippingRates = async ({
+  accessToken,
+  mode = 'prueba',
+  origin,
+  destination,
+  packages = [],
+  currency = 'USD',
+  carrier = null,
+} = {}) => {
+  if (!accessToken) throw new Error('Falta el token de ENVIA para cotizar envíos internacionales.');
+  if (!origin?.country || !destination?.country) {
+    throw new Error('La cotización internacional requiere país de origen y destino.');
+  }
+  if (!Array.isArray(packages) || packages.length === 0) {
+    throw new Error('La cotización internacional requiere al menos un paquete.');
+  }
+
+  const isProd = String(mode).toLowerCase() === 'produccion';
+  const apiUrl = `${getBaseEnviaUrl(isProd).replace(/\/$/, '')}/ship/rate`;
+
+  const normPackages = packages.map((p) => ({
+    type: p.type || 'box',
+    content: String(p.content || 'Mercancía General').replace(/[^\w\s\+\-\.]/gi, '').trim() || 'Mercancia General',
+    amount: Number(p.amount) || 1,
+    weight: Number(p.weight) || Number(process.env.ENVIA_DEFAULT_WEIGHT) || 1,
+    weightUnit: p.weightUnit || 'KG',
+    lengthUnit: p.lengthUnit || 'CM',
+    declaredValue: Number(p.declaredValue) || 0,
+    dimensions: {
+      length: Number(p.dimensions?.length) || Number(process.env.ENVIA_DEFAULT_LENGTH) || 10,
+      width: Number(p.dimensions?.width) || Number(process.env.ENVIA_DEFAULT_WIDTH) || 10,
+      height: Number(p.dimensions?.height) || Number(process.env.ENVIA_DEFAULT_HEIGHT) || 10,
+    },
+    ...(Array.isArray(p.items) && p.items.length > 0 ? { items: p.items } : {}),
+  }));
+
+  const payload = {
+    origin,
+    destination,
+    packages: normPackages,
+    shipment: carrier ? { type: 1, carrier } : { type: 1 },
+    settings: { currency },
+  };
+
+  const res = await axios.post(apiUrl, payload, {
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    timeout: Number(process.env.ENVIA_REQUEST_TIMEOUT || 8000),
+  });
+
+  const data = res.data?.data || res.data?.rates || res.data?.response || res.data || [];
+  return Array.isArray(data) ? data : [];
+};
+
+const getQueriesEnviaUrl = (isProd) => {
+  return isProd
+    ? (process.env.ENVIA_QUERIES_API_PROD || 'https://queries.envia.com')
+    : (process.env.ENVIA_QUERIES_API_TEST || 'https://queries.test.envia.com');
+};
+
+// Carriers disponibles para un país (Queries API: GET /carrier?country_code=XX).
+export const getEnviaCarriers = async ({ accessToken, mode = 'prueba', countryCode }) => {
+  if (!accessToken) throw new Error('Falta el token de ENVIA.');
+  if (!countryCode) throw new Error('Falta el país para listar transportadoras.');
+  const isProd = String(mode).toLowerCase() === 'produccion';
+  const url = `${getQueriesEnviaUrl(isProd).replace(/\/$/, '')}/carrier`;
+  const res = await axios.get(url, {
+    params: { country_code: countryCode },
+    headers: { Authorization: `Bearer ${accessToken}` },
+    timeout: Number(process.env.ENVIA_REQUEST_TIMEOUT || 8000),
+  });
+  const data = res.data;
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.data)) return data.data;
+  return [];
+};
+
+// Oficinas/sucursales de una transportadora en un país (Queries API).
+// Devuelve un array de { branch_id, branch_code, branch_type, reference, address }.
+export const getEnviaBranches = async ({
+  accessToken,
+  mode = 'prueba',
+  carrier,
+  countryCode,
+  state = null,
+  locality = null,
+  zipcode = null,
+  type = 2,
+  packages = null,
+  limitBranches = 10,
+} = {}) => {
+  if (!accessToken) throw new Error('Falta el token de ENVIA.');
+  if (!carrier || !countryCode) throw new Error('Se requiere transportadora y país para buscar oficinas.');
+  const isProd = String(mode).toLowerCase() === 'produccion';
+  const url = `${getQueriesEnviaUrl(isProd).replace(/\/$/, '')}/branches/${encodeURIComponent(carrier)}/${encodeURIComponent(countryCode)}`;
+  const body = { type, limitBranches };
+  if (zipcode) body.zipcode = zipcode;
+  if (state) body.state = state;
+  if (locality) body.locality = locality;
+  if (Array.isArray(packages) && packages.length > 0) {
+    body.packages = packages.map((p) => ({
+      weight: Number(p.weight) || 1,
+      length: Number(p.dimensions?.length) || 10,
+      height: Number(p.dimensions?.height) || 10,
+      width: Number(p.dimensions?.width) || 10,
+      amount: Number(p.amount) || 1,
+    }));
+  }
+  const res = await axios.post(url, body, {
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    timeout: Number(process.env.ENVIA_REQUEST_TIMEOUT || 8000),
+  });
+  const data = res.data;
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.data)) return data.data;
+  return [];
+};
+
+// Genera la guía (label) de un envío. Devuelve { trackingNumber, label, ... }.
+export const generateEnviaLabel = async ({
+  accessToken,
+  mode = 'prueba',
+  origin,
+  destination,
+  packages = [],
+  carrier,
+  service,
+  currency = 'USD',
+  printFormat = 'PDF',
+  printSize = 'STOCK_4X6',
+  customsSettings = null,
+  orderReference = null,
+} = {}) => {
+  if (!accessToken) throw new Error('Falta el token de ENVIA.');
+  if (!carrier || !service) throw new Error('Se requiere transportadora y servicio para generar la guía.');
+  const isProd = String(mode).toLowerCase() === 'produccion';
+  const apiUrl = `${getBaseEnviaUrl(isProd).replace(/\/$/, '')}/ship/generate/`;
+  const body = {
+    origin,
+    destination,
+    packages,
+    shipment: { type: 1, carrier, service, ...(orderReference ? { orderReference } : {}) },
+    settings: { currency, printFormat, printSize },
+    ...(customsSettings ? { customsSettings } : {}),
+  };
+  const res = await axios.post(apiUrl, body, {
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    timeout: Number(process.env.ENVIA_REQUEST_TIMEOUT || 12000),
+  });
+  const data = res.data?.data || res.data?.response || res.data || [];
+  return Array.isArray(data) ? data[0] : data;
+};
+
+// Agenda una recogida con la transportadora (requiere guías ya generadas).
+export const scheduleEnviaPickup = async ({
+  accessToken,
+  mode = 'prueba',
+  origin,
+  carrier,
+  trackingNumbers = [],
+  date,
+  timeFrom = 9,
+  timeTo = 18,
+  totalWeight = 1,
+  totalPackages = 1,
+  instructions = '',
+} = {}) => {
+  if (!accessToken) throw new Error('Falta el token de ENVIA.');
+  if (!carrier || trackingNumbers.length === 0) {
+    throw new Error('La recogida requiere transportadora y al menos una guía.');
+  }
+  const isProd = String(mode).toLowerCase() === 'produccion';
+  const apiUrl = `${getBaseEnviaUrl(isProd).replace(/\/$/, '')}/ship/pickup/`;
+  const pickupDate = date || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const body = {
+    origin,
+    shipment: {
+      type: 1,
+      carrier,
+      pickup: {
+        weightUnit: 'KG',
+        totalWeight: Number(totalWeight) || 1,
+        totalPackages: Number(totalPackages) || 1,
+        date: pickupDate,
+        timeFrom,
+        timeTo,
+        carrier,
+        instructions,
+        trackingNumbers,
+      },
+    },
+  };
+  const res = await axios.post(apiUrl, body, {
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    timeout: Number(process.env.ENVIA_REQUEST_TIMEOUT || 12000),
+  });
+  const data = res.data?.data || res.data?.response || res.data || [];
+  return Array.isArray(data) ? data[0] : data;
 };
 
 export default { getShippingOptionsFromEnvia };

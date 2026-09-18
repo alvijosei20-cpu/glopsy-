@@ -21,6 +21,7 @@ const mapTienda = (row) => ({
   locale: row.t_locale || 'es-CO',
   dominio_raiz: row.t_dominio || null,
   zoomOrigenCodciudad: row.t_zoom_origen ?? null,
+  internationalDispatchProvider: row.t_international_dispatch_provider || null,
 });
 
 // ------------------------------------------------------------------ Subdominio (slug)
@@ -67,7 +68,8 @@ const STORE_COLUMNS = `
   COALESCE(t.moneda, pa.moneda, 'COP') AS t_moneda,
   COALESCE(t.locale, pa.locale, 'es-CO') AS t_locale,
   COALESCE(t.dominio_raiz, pa.dominio_raiz) AS t_dominio,
-  t.zoom_origen_codciudad AS t_zoom_origen
+  t.zoom_origen_codciudad AS t_zoom_origen,
+  t.international_dispatch_provider AS t_international_dispatch_provider
 `;
 const STORE_JOIN = `
   LEFT JOIN paises pa ON pa.id = t.pais_id
@@ -174,7 +176,7 @@ export const ensureTiendaForUser = async (userId, { name = '', slug = null, ga_i
 
 // Actualiza nombre/subdominio/GA de la tienda del usuario (valores null/undefined = no tocar;
 // ga_id '' o null explícito limpia el GA de la tienda).
-export const updateTiendaForUser = async (userId, { name = null, slug = null, ga_id = undefined, pais_id = undefined, zoom_origen_codciudad = undefined } = {}) => {
+export const updateTiendaForUser = async (userId, { name = null, slug = null, ga_id = undefined, pais_id = undefined, zoom_origen_codciudad = undefined, international_dispatch_provider = undefined } = {}) => {
   const uid = Number(userId);
   const current = await getTiendaForUser(uid);
   if (!current) return null;
@@ -263,6 +265,15 @@ export const updateTiendaForUser = async (userId, { name = null, slug = null, ga
       await redisClient.del(cacheKey(uid)).catch(() => {});
     }
 
+    // Proveedor de despacho internacional (Venezuela). null lo limpia; undefined no toca.
+    if (international_dispatch_provider !== undefined) {
+      const cleanDispatch = international_dispatch_provider === null
+        ? null
+        : (['mastershop'].includes(international_dispatch_provider) ? international_dispatch_provider : null);
+      await pool.query(`UPDATE tiendas SET international_dispatch_provider = $1 WHERE usrid = $2`, [cleanDispatch, uid]);
+      await redisClient.del(cacheKey(uid)).catch(() => {});
+    }
+
     return getTiendaForUser(uid);
   } catch (error) {
     if (error.code === '23505') {
@@ -309,7 +320,8 @@ export const getPublicStoreBySlug = async (slug) => {
 };
 
 // Tienda principal (la que se sirve en app.glopsy.shop). Sin slug obligatorio.
-export const getMainStore = async () => {  const { rows } = await pool.query(
+export const getMainStore = async () => {
+  const { rows } = await pool.query(
     `SELECT ${STORE_COLUMNS}
      FROM tiendas t
      ${STORE_JOIN}

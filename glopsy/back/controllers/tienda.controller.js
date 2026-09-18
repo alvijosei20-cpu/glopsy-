@@ -125,12 +125,14 @@ export const createTiendaController = ({
       const gaRaw = req.body?.ga_id;
       const paisRaw = req.body?.pais_id;
       const zoomOrigenRaw = req.body?.zoom_origen_codciudad;
+      const internationalDispatchRaw = req.body?.international_dispatch_provider;
       const hasName = name !== undefined && name !== null && String(name).trim() !== '';
       const hasSlug = slug !== undefined && slug !== null && String(slug).trim() !== '';
       const hasGa = gaRaw !== undefined && gaRaw !== null;
       const hasPais = paisRaw !== undefined && paisRaw !== null && String(paisRaw).trim() !== '';
       const hasZoomOrigen = zoomOrigenRaw !== undefined && zoomOrigenRaw !== null && String(zoomOrigenRaw).trim() !== '';
-      if (!hasName && !hasSlug && !hasGa && !hasPais && !hasZoomOrigen) {
+      const hasInternationalDispatch = internationalDispatchRaw !== undefined;
+      if (!hasName && !hasSlug && !hasGa && !hasPais && !hasZoomOrigen && !hasInternationalDispatch) {
         return res.status(400).json({ ok: false, message: 'No hay cambios que aplicar.' });
       }
       const tienda = await updateTienda(req.auth.userId, {
@@ -139,6 +141,9 @@ export const createTiendaController = ({
         ga_id: hasGa ? String(gaRaw).trim() : undefined,
         pais_id: hasPais ? Number(paisRaw) : undefined,
         zoom_origen_codciudad: hasZoomOrigen ? Number(zoomOrigenRaw) : undefined,
+        international_dispatch_provider: internationalDispatchRaw === null || internationalDispatchRaw === ''
+          ? null
+          : (['mastershop'].includes(internationalDispatchRaw) ? internationalDispatchRaw : undefined),
       });
       if (!tienda) {
         return res.status(404).json({ ok: false, message: 'No tienes una tienda registrada.' });
@@ -251,7 +256,7 @@ export const createTiendaController = ({
     const access_token = cleanString(req.body.access_token, { maxLength: 2048 });
     const webhook_secret = cleanString(req.body.webhook_secret, { maxLength: 2048 });
 
-    if (!provider || !isAllowedEnum(provider, ['mercadopago', 'envia', 'paypal'])) {
+    if (!provider || !isAllowedEnum(provider, ['mercadopago', 'envia'])) {
       return res.status(400).json({ ok: false, message: 'Proveedor no válido.' });
     }
 
@@ -267,8 +272,8 @@ export const createTiendaController = ({
       ? String(webhook_secret).trim().replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
       : '';
 
-    if ((provider === 'mercadopago' || provider === 'paypal') && !cleanPublicKey) {
-      return res.status(400).json({ ok: false, message: provider === 'paypal' ? 'El Client ID es obligatorio para PayPal.' : 'La Public Key is obligatoria para Mercado Pago.' });
+    if (provider === 'mercadopago' && !cleanPublicKey) {
+      return res.status(400).json({ ok: false, message: 'La Public Key es obligatoria para Mercado Pago.' });
     }
 
     // Permitir explícitamente guiones (-), underscores, puntos y caracteres válidos de credenciales (ej. Mercado Pago APP_USR-)
@@ -286,7 +291,7 @@ export const createTiendaController = ({
         accessToken: cleanAccessToken || undefined,
         webhookSecret: cleanWebhookSecret || undefined,
       });
-      const provName = provider === 'mercadopago' ? 'Mercado Pago' : provider === 'paypal' ? 'PayPal' : 'ENVIA';
+      const provName = provider === 'mercadopago' ? 'Mercado Pago' : 'ENVIA';
       const modeName = integrationMode === 'prueba' ? 'Prueba' : 'Producción';
       return res.json({ ok: true, integration: saved, message: `Configuración de ${provName} (${modeName}) guardada con éxito.` });
     } catch (error) {
@@ -298,7 +303,7 @@ export const createTiendaController = ({
   deleteCheckoutIntegration: async (req, res) => {
     const provider = cleanString(req.params.provider, { maxLength: 50 });
     const mode = cleanString(req.query.mode || req.body?.mode, { maxLength: 20 });
-    if (!provider || !isAllowedEnum(provider, ['mercadopago', 'envia', 'paypal'])) {
+    if (!provider || !isAllowedEnum(provider, ['mercadopago', 'envia'])) {
       return res.status(400).json({ ok: false, message: 'Proveedor no válido.' });
     }
 
@@ -309,7 +314,7 @@ export const createTiendaController = ({
       if (!deleted) {
         return res.status(404).json({ ok: false, message: 'No se encontró la configuración para eliminar.' });
       }
-      const provName = provider === 'mercadopago' ? 'Mercado Pago' : provider === 'paypal' ? 'PayPal' : 'ENVIA';
+      const provName = provider === 'mercadopago' ? 'Mercado Pago' : 'ENVIA';
       const modeName = integrationMode === 'prueba' ? 'Prueba' : 'Producción';
       return res.json({ ok: true, message: `Configuración de ${provName} (${modeName}) eliminada con éxito.` });
     } catch (error) {

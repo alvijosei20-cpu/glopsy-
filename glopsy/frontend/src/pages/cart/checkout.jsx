@@ -1,24 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { ShoppingCart, ArrowLeft, ShieldCheck, Phone, Home, Check, ChevronDown, ChevronUp, Truck, Package, DollarSign, CreditCard } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, Phone, Home, Check, ChevronDown, ChevronUp, Truck, Package, DollarSign } from 'lucide-react';
 import api from '../../services/api';
 import { isLoggedIn } from '../../utils/session';
 import { requireBiometricPayment } from '../../utils/webauthn';
 import { trackEvent } from '../../utils/analytics';
 import { useMoney } from '../../utils/money';
 import { useStorefront } from '../../storefront/StorefrontContext';
+import { useAuth } from '../../context/AuthContext';
 import './cart.css';
 
 export default function Checkout() {
   const { format: formatPrice, currency, locale } = useMoney();
   const { store } = useStorefront();
+  const { user } = useAuth();
   const paisId = store?.paisId || null;
-  const isPaypal = String(currency || '').toUpperCase() === 'USD';
+  const isCOP = String(currency || '').toUpperCase() === 'COP';
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [cartItems, setCartItems] = useState([]);
   const [guestHash, setGuestHash] = useState('');
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
+
+  const isInternationalStore = String(currency || '').toUpperCase() === 'USD'
+    && String(store?.internationalDispatchProvider || '').toLowerCase() === 'mastershop';
+  const [shippingMode, setShippingMode] = useState('national');
+  const [paises, setPaises] = useState([]);
+  const [intlDestination, setIntlDestination] = useState({ country: '', state: '', city: '', postalCode: '', address: '' });
+  const [intlOptions, setIntlOptions] = useState([]);
+  const [selectedIntlOptionId, setSelectedIntlOptionId] = useState('');
+  const [loadingIntl, setLoadingIntl] = useState(false);
+  const [intlError, setIntlError] = useState('');
 
   const [departamentos, setDepartamentos] = useState([]);
   const [ciudades, setCiudades] = useState([]);
@@ -38,22 +50,6 @@ export default function Checkout() {
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [showBricks, setShowBricks] = useState(false);
   const [preferenceData, setPreferenceData] = useState(null);
-  const [paypalOrder, setPaypalOrder] = useState(null);
-  const [savedCards, setSavedCards] = useState([]);
-  const [selectedCardId, setSelectedCardId] = useState('');
-  const [loadingSavedCard, setLoadingSavedCard] = useState(false);
-
-  useEffect(() => {
-    if (isLoggedIn()) {
-      api.get('/auth/cards')
-        .then(res => {
-          if (res.data.ok && Array.isArray(res.data.cards)) {
-            setSavedCards(res.data.cards);
-          }
-        })
-        .catch(() => {});
-    }
-  }, []);
 
   useEffect(() => {
     if (!isLoggedIn()) return;
@@ -128,15 +124,10 @@ export default function Checkout() {
                   preferenceId: preferenceData.preferenceId,
                   guestHash,
                   shipping_cost: shippingCost,
-                  shipping_payload: { grouped: shipmentsGrouped },
+                  shipping_payload: shippingPayloadForOrder(),
                   items: cartItemsConPrecio,
                   biometric_nonce: biometricNonce,
-                  customer_info: {
-                    departamento_id: selectedDepartamentoId,
-                    ciudad_id: selectedCiudadId,
-                    direccion,
-                    telefono
-                  }
+                  customer_info: customerInfoForOrder()
                 })
                 .then(res => {
                   if (res.data.ok) {
@@ -180,83 +171,6 @@ export default function Checkout() {
     }
   }, [showBricks, preferenceData]);
 
-  // PayPal (Venezuela / USD): carga el SDK y renderiza los botones.
-  useEffect(() => {
-    if (!paypalOrder?.clientId) return;
-    let cancelled = false;
-
-    const renderButtons = () => {
-      if (cancelled || !window.paypal) return;
-      const el = document.getElementById('paypal_button_container');
-      if (!el) return;
-      el.innerHTML = '';
-      window.paypal.Buttons({
-        style: { layout: 'vertical', shape: 'pill', label: 'paypal' },
-        createOrder: () => paypalOrder.id,
-        onApprove: async () => {
-          setLoadingCheckout(true);
-          try {
-            const res = await api.post('/product/paypal/capture-order', {
-              paypalOrderId: paypalOrder.id,
-              items: cartItemsConPrecio,
-              shipping_cost: shippingCost,
-              shipping_payload: { grouped: shipmentsGrouped },
-              customer_info: {
-                departamento_id: selectedDepartamentoId,
-                ciudad_id: selectedCiudadId,
-                direccion,
-                telefono,
-              },
-              guestHash,
-            });
-            if (res.data.ok && res.data.payment?.completed) {
-              trackEvent('add_payment_info', {
-                currency,
-                value: total,
-                payment_type: 'paypal',
-                items: cartItemsConPrecio.map((item) => ({
-                  item_id: String(item.external_id || item.id || ''),
-                  item_name: item.name || '',
-                  price: Number(item.price || 0),
-                  quantity: Number(item.quantity || 1),
-                })),
-              });
-              setCheckoutSuccess(true);
-              localStorage.removeItem('glopsy_cart');
-              window.dispatchEvent(new Event('storage'));
-              firePurchase(res.data.payment?.id, null, total);
-            } else {
-              alert(res.data.message || 'No se pudo completar el pago con PayPal.');
-            }
-          } catch (err) {
-            console.error('Error al capturar PayPal:', err);
-            alert(err.response?.data?.message || 'Error al procesar el pago con PayPal.');
-          } finally {
-            setLoadingCheckout(false);
-          }
-        },
-        onError: (err) => {
-          console.error('PayPal error:', err);
-          alert('Ocurrió un error con PayPal. Intenta de nuevo.');
-        },
-      }).render('#paypal_button_container');
-    };
-
-    const existing = document.getElementById('paypal-sdk');
-    if (existing) {
-      renderButtons();
-    } else {
-      const s = document.createElement('script');
-      s.id = 'paypal-sdk';
-      s.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(paypalOrder.clientId)}&currency=USD&intent=capture`;
-      s.onload = renderButtons;
-      document.body.appendChild(s);
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [paypalOrder]);
-
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     const status = searchParams.get('status');
@@ -289,15 +203,19 @@ export default function Checkout() {
     const fetchGeo = async () => {
       try {
         const geoParams = paisId ? { pais_id: paisId } : {};
-        const [resDeps, resCius] = await Promise.all([
+        const [resDeps, resCius, resPaises] = await Promise.all([
           api.get('/geo/departamentos', { params: geoParams }).catch(() => ({ data: { departamentos: [] } })),
-          api.get('/geo/ciudades', { params: geoParams }).catch(() => ({ data: { ciudades: [] } }))
+          api.get('/geo/ciudades', { params: geoParams }).catch(() => ({ data: { ciudades: [] } })),
+          api.get('/geo/paises').catch(() => ({ data: { paises: [] } }))
         ]);
         if (resDeps.data?.departamentos?.length > 0) {
           setDepartamentos(resDeps.data.departamentos);
         }
         if (resCius.data?.ciudades?.length > 0) {
           setCiudades(resCius.data.ciudades);
+        }
+        if (resPaises.data?.paises?.length > 0) {
+          setPaises(resPaises.data.paises);
         }
       } catch {
         // Sin datos geográficos no se puede cotizar; el usuario reintenta.
@@ -308,6 +226,9 @@ export default function Checkout() {
 
   useEffect(() => {
     const calculateShipping = async () => {
+      if (isInternationalStore && shippingMode === 'international') {
+        return;
+      }
       if (!selectedCiudadId || cartItems.length === 0) {
         setShippingCost(0);
         setShippingMessage('');
@@ -341,7 +262,57 @@ export default function Checkout() {
       }
     };
     calculateShipping();
-  }, [selectedCiudadId, cartItems]);
+  }, [selectedCiudadId, cartItems, shippingMode, isInternationalStore]);
+
+  useEffect(() => {
+    if (isInternationalStore && shippingMode === 'international') {
+      const opt = intlOptions.find((o) => o.id === selectedIntlOptionId);
+      setShippingCost(opt ? Number(opt.total || 0) : 0);
+      setShippingMessage(opt ? `Envío internacional (${opt.carrier})` : 'Selecciona una opción de envío internacional');
+    }
+  }, [selectedIntlOptionId, intlOptions, shippingMode, isInternationalStore]);
+
+  const quoteInternational = async () => {
+    if (!intlDestination.country || !intlDestination.state || !intlDestination.city || !intlDestination.address) {
+      setIntlError('Completa país, estado/región, ciudad y dirección de destino.');
+      return;
+    }
+    setIntlError('');
+    setLoadingIntl(true);
+    setIntlOptions([]);
+    setSelectedIntlOptionId('');
+    try {
+      const country = paises.find((p) => String(p.codigo_iso).toUpperCase() === String(intlDestination.country).toUpperCase());
+      const res = await api.post('/product/international-shipping', {
+        items: cartItemsConPrecio,
+        destination: {
+          name: user?.name || 'Cliente',
+          email: user?.email || undefined,
+          phone: telefono || undefined,
+          country: intlDestination.country,
+          state: intlDestination.state,
+          city: intlDestination.city,
+          postalCode: intlDestination.postalCode,
+          street: intlDestination.address,
+          number: '',
+          reference: '',
+          countryName: country?.nombre || undefined,
+        },
+      });
+      if (res.data?.ok) {
+        setIntlOptions(res.data.options || []);
+        if ((res.data.options || []).length === 0) {
+          setIntlError('No hay opciones de envío disponibles para ese destino.');
+        }
+      } else {
+        setIntlError(res.data?.message || 'No fue posible cotizar el envío internacional.');
+      }
+    } catch (err) {
+      setIntlError(err.response?.data?.message || 'No fue posible cotizar el envío internacional.');
+    } finally {
+      setLoadingIntl(false);
+    }
+  };
 
   const backendPriceOf = (item) => {
     const pi = perItem.find(x => String(x.itemId) === String(item.id));
@@ -353,6 +324,7 @@ export default function Checkout() {
   });
   const subtotal = cartItemsConPrecio.reduce((acc, item) => acc + (Number(item.price || 0) * Number(item.quantity || 1)), 0);
   const total = subtotal + Number(shippingCost || 0);
+  const isIntlUI = isInternationalStore && shippingMode === 'international';
 
   const checkoutItemsForGA = () =>
     cartItemsConPrecio.map(item => ({
@@ -374,15 +346,55 @@ export default function Checkout() {
     sessionStorage.removeItem('glopsy_checkout_snapshot');
   };
 
+  const customerInfoForOrder = () => (
+    isIntlUI
+      ? {
+          direccion: intlDestination.address,
+          telefono,
+          email: user?.email || undefined,
+          customer_name: user?.name || undefined,
+          country: intlDestination.country,
+          state: intlDestination.state,
+          city: intlDestination.city,
+          postalCode: intlDestination.postalCode,
+        }
+      : {
+          departamento_id: selectedDepartamentoId,
+          ciudad_id: selectedCiudadId,
+          direccion,
+          telefono,
+        }
+  );
+
+  const shippingPayloadForOrder = () => (
+    isIntlUI
+      ? {
+          international: true,
+          destination: intlDestination,
+          option: intlOptions.find((o) => o.id === selectedIntlOptionId) || null,
+        }
+      : { grouped: shipmentsGrouped }
+  );
+
   const handleCheckout = async (e) => {
     e.preventDefault();
-    if (!selectedDepartamentoId || !selectedCiudadId || !direccion.trim() || !telefono.trim()) {
-      alert('Por favor completa todos los datos de envío (Departamento, Ciudad, Dirección y Número Móvil).');
-      return;
-    }
-    if (!/^3\d{9}$/.test(telefono) && !isPaypal) {
-      alert('El número móvil debe tener 10 dígitos y empezar por 3 (Ej. 3001234567).');
-      return;
+    if (isIntlUI) {
+      if (
+        !intlDestination.country || !intlDestination.state.trim() || !intlDestination.city.trim() ||
+        !intlDestination.address.trim() || !telefono.trim() || !selectedIntlOptionId
+      ) {
+        alert('Completa el destino internacional y selecciona una opción de envío.');
+        return;
+      }
+    } else {
+      if (!selectedDepartamentoId || !selectedCiudadId || !direccion.trim() || !telefono.trim()) {
+        alert('Por favor completa todos los datos de envío (Departamento, Ciudad, Dirección y Número Móvil).');
+        return;
+      }
+      if (!/^3\d{9}$/.test(telefono) && isCOP) {
+        alert('El número móvil debe tener 10 dígitos y empezar por 3 (Ej. 3001234567).');
+        return;
+      }
     }
 
     const checkoutItems = cartItemsConPrecio.map(item => ({
@@ -394,41 +406,10 @@ export default function Checkout() {
 
     setLoadingCheckout(true);
     try {
-      if (isPaypal) {
-        const ppRes = await api.post('/product/paypal/create-order', {
-          items: cartItemsConPrecio,
-          shipping_cost: shippingCost,
-          customer_info: {
-            departamento_id: selectedDepartamentoId,
-            ciudad_id: selectedCiudadId,
-            direccion,
-            telefono,
-          },
-          guestHash,
-        });
-        if (ppRes.data.ok && ppRes.data.paypalOrderId) {
-          setPaypalOrder({ id: ppRes.data.paypalOrderId, clientId: ppRes.data.clientId });
-          trackEvent('begin_checkout', {
-            currency,
-            value: total,
-            items: checkoutItems,
-            payment_type: 'paypal',
-          });
-        } else {
-          alert(ppRes.data.message || 'No se pudo iniciar el pago con PayPal.');
-        }
-        return;
-      }
-
       const res = await api.post('/product/create-preference', {
                   items: cartItemsConPrecio,
         shipping_cost: shippingCost,
-        customer_info: {
-          departamento_id: selectedDepartamentoId,
-          ciudad_id: selectedCiudadId,
-          direccion,
-          telefono
-        },
+        customer_info: customerInfoForOrder(),
         guestHash
       });
 
@@ -456,66 +437,6 @@ export default function Checkout() {
       alert(err.response?.data?.message || 'Error al procesar el pago o apartar el stock.');
     } finally {
       setLoadingCheckout(false);
-    }
-  };
-
-  const handleSavedCardCheckout = async (cardId) => {
-    if (!selectedDepartamentoId || !selectedCiudadId || !direccion.trim() || !telefono.trim()) {
-      alert('Por favor completa todos los datos de envío (Departamento, Ciudad, Dirección y Número Móvil).');
-      return;
-    }
-    if (!/^3\d{9}$/.test(telefono)) {
-      alert('El número móvil debe tener 10 dígitos y empezar por 3 (Ej. 3001234567).');
-      return;
-    }
-
-    setLoadingSavedCard(true);
-    try {
-      const bio = await requireBiometricPayment();
-      if (bio.cancelled) {
-        alert('Validación biométrica cancelada. El pago no fue procesado.');
-        setLoadingSavedCard(false);
-        return;
-      }
-      const res = await api.post('/product/process-saved-card-payment', {
-        card_id: cardId,
-                  items: cartItemsConPrecio,
-        shipping_cost: shippingCost,
-        shipping_payload: { grouped: shipmentsGrouped },
-        biometric_nonce: bio.nonce || null,
-        customer_info: {
-          departamento_id: selectedDepartamentoId,
-          ciudad_id: selectedCiudadId,
-          direccion,
-          telefono
-        },
-        guestHash
-      });
-
-      if (res.data.ok) {
-        trackEvent('add_payment_info', {
-          currency,
-          value: total,
-          payment_type: 'saved_card',
-          items: cartItemsConPrecio.map(item => ({
-            item_id: String(item.external_id || item.id || ''),
-            item_name: item.name || '',
-            price: Number(item.price || 0),
-            quantity: Number(item.quantity || 1),
-          })),
-        });
-        setCheckoutSuccess(true);
-        localStorage.removeItem('glopsy_cart');
-        window.dispatchEvent(new Event('storage'));
-        firePurchase(res.data.payment?.id, null, total);
-      } else {
-        alert(res.data.message || 'Error en el pago 1-clic');
-      }
-    } catch (err) {
-      console.error('Error al procesar pago 1-clic:', err);
-      alert(err.response?.data?.message || 'Error al procesar el pago con la tarjeta guardada.');
-    } finally {
-      setLoadingSavedCard(false);
     }
   };
 
@@ -576,24 +497,7 @@ export default function Checkout() {
         </div>
 
         <div className="bg-white rounded-3xl p-6 sm:p-10 border border-slate-200 shadow-sm">
-          {isPaypal && paypalOrder ? (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between pb-4 border-b border-slate-200">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900">Pago con PayPal</h2>
-                  <p className="text-xs text-slate-500">Completa tu compra en USD con PayPal.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setPaypalOrder(null)}
-                  className="text-xs font-bold text-fuchsia-600 hover:underline cursor-pointer"
-                >
-                  ← Volver
-                </button>
-              </div>
-              <div id="paypal_button_container" className="min-h-[200px]"></div>
-            </div>
-          ) : showBricks ? (
+          {showBricks ? (
             <div className="space-y-6">
               <div className="flex items-center justify-between pb-4 border-b border-slate-200">
                 <div>
@@ -612,7 +516,136 @@ export default function Checkout() {
             </div>
           ) : (
             <form onSubmit={handleCheckout} className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            {isInternationalStore && (
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-slate-700">Tipo de envío</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => { setShippingMode('national'); setIntlOptions([]); setSelectedIntlOptionId(''); }}
+                    className={`p-3 rounded-xl border text-sm font-bold transition-all cursor-pointer ${shippingMode === 'national' ? 'border-fuchsia-600 bg-fuchsia-50 text-fuchsia-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    Nacional (Venezuela)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShippingMode('international'); setShippingCost(0); }}
+                    className={`p-3 rounded-xl border text-sm font-bold transition-all cursor-pointer ${shippingMode === 'international' ? 'border-slate-900 bg-slate-100 text-slate-900' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    Internacional
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {isIntlUI ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">País de destino</label>
+                    <select
+                      value={intlDestination.country}
+                      onChange={(e) => setIntlDestination({ ...intlDestination, country: e.target.value })}
+                      className="w-full p-3 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none focus:border-slate-500"
+                    >
+                      <option value="">Selecciona un país</option>
+                      {paises.map((p) => (
+                        <option key={p.id} value={p.codigo_iso}>{p.nombre}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Estado / Región</label>
+                    <input
+                      type="text"
+                      value={intlDestination.state}
+                      onChange={(e) => setIntlDestination({ ...intlDestination, state: e.target.value })}
+                      placeholder="Ej. Florida"
+                      className="w-full p-3 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none focus:border-slate-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Ciudad</label>
+                    <input
+                      type="text"
+                      value={intlDestination.city}
+                      onChange={(e) => setIntlDestination({ ...intlDestination, city: e.target.value })}
+                      placeholder="Ej. Miami"
+                      className="w-full p-3 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none focus:border-slate-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Código postal</label>
+                    <input
+                      type="text"
+                      value={intlDestination.postalCode}
+                      onChange={(e) => setIntlDestination({ ...intlDestination, postalCode: e.target.value })}
+                      placeholder="Ej. 33125"
+                      className="w-full p-3 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none focus:border-slate-500"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Dirección</label>
+                    <input
+                      type="text"
+                      value={intlDestination.address}
+                      onChange={(e) => setIntlDestination({ ...intlDestination, address: e.target.value })}
+                      placeholder="Calle, número, apartamento"
+                      className="w-full p-3 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none focus:border-slate-500"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Teléfono de contacto</label>
+                    <input
+                      type="tel"
+                      value={telefono}
+                      onChange={(e) => setTelefono(e.target.value)}
+                      placeholder="Teléfono del destinatario"
+                      className="w-full p-3 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none focus:border-slate-500"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={quoteInternational}
+                    disabled={loadingIntl}
+                    className="bg-slate-900 text-white font-bold px-4 py-2.5 rounded-xl text-sm cursor-pointer disabled:opacity-50"
+                  >
+                    {loadingIntl ? 'Cotizando…' : 'Cotizar envío internacional'}
+                  </button>
+                  {intlError && <span className="text-xs text-rose-600">{intlError}</span>}
+                </div>
+                {intlOptions.length > 0 && (
+                  <div className="space-y-2">
+                    <label className="block text-xs font-bold text-slate-700">Selecciona el envío</label>
+                    {intlOptions.map((opt) => (
+                      <label
+                        key={opt.id}
+                        className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl border cursor-pointer text-sm transition-all ${selectedIntlOptionId === opt.id ? 'border-slate-900 bg-slate-100' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="radio"
+                            name="intl_option"
+                            checked={selectedIntlOptionId === opt.id}
+                            onChange={() => setSelectedIntlOptionId(opt.id)}
+                            className="text-slate-900 focus:ring-slate-500"
+                          />
+                          <div>
+                            <p className="font-bold text-slate-800 uppercase">{opt.carrier}{opt.branch?.reference ? ` · ${opt.branch.reference}` : ''}</p>
+                            <p className="text-[11px] text-slate-500">{opt.leg1?.service || 'Internacional'} + última milla</p>
+                          </div>
+                        </div>
+                        <span className="font-extrabold text-slate-900">{formatPrice(opt.total)}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Departamento</label>
                 <select
@@ -683,6 +716,8 @@ export default function Checkout() {
                 </div>
               </div>
             </div>
+            </>
+            )}
 
             {shippingOptions.length > 0 && (
               <div className="border-t border-slate-100 pt-6 space-y-2">
@@ -844,59 +879,13 @@ export default function Checkout() {
               </div>
             </div>
 
-            {savedCards.length > 0 && (
-              <div className="bg-gradient-to-r from-fuchsia-900/10 to-blue-900/10 p-5 rounded-2xl border border-fuchsia-200 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
-                    <div className="p-2 bg-fuchsia-600 text-white rounded-xl">
-                      <CreditCard size={18} />
-                    </div>
-                    <span>Pagar con 1 Clic (Tarjetas Guardadas)</span>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {savedCards.map(card => (
-                    <div key={card.id} className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border cursor-pointer text-sm transition-all bg-white shadow-sm ${selectedCardId === card.id ? 'border-fuchsia-600 ring-2 ring-fuchsia-600/20' : 'border-slate-200 hover:border-slate-300'}`} onClick={() => setSelectedCardId(card.id)}>
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="radio"
-                          name="saved_card_selection"
-                          checked={selectedCardId === card.id}
-                          onChange={() => setSelectedCardId(card.id)}
-                          className="text-fuchsia-600 focus:ring-fuchsia-500"
-                        />
-                        <div>
-                          <p className="font-bold text-slate-800">{card.card_brand || 'Tarjeta'} •••• {card.last_four}</p>
-                          <p className="text-xs text-slate-500">Titular: {card.card_holder} • Exp: {card.expiry_month}/{card.expiry_year}</p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        disabled={loadingSavedCard}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedCardId(card.id);
-                          handleSavedCardCheckout(card.id);
-                        }}
-                        className="bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-700 hover:to-pink-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs shadow-md transition-all cursor-pointer disabled:opacity-50"
-                      >
-                        {loadingSavedCard && selectedCardId === card.id ? 'Pagando...' : 'Pagar'}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             <button
               type="submit"
               disabled={loadingCheckout || loadingShipping}
-              className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-600/30 text-base transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              className="w-full text-white font-bold py-4 rounded-2xl shadow-lg text-base transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 shadow-blue-600/30"
             >
               <ShieldCheck size={20} />
-              {loadingCheckout
-                ? (isPaypal ? 'Preparando PayPal...' : 'Procesando pago con Mercado Pago...')
-                : (isPaypal ? 'Continuar con PayPal' : 'Pagar con Mercado Pago')}
+              {loadingCheckout ? 'Procesando pago con Mercado Pago...' : 'Pagar con Mercado Pago'}
             </button>
           </form>
           )}

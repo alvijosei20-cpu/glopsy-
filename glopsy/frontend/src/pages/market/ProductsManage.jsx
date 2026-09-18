@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
-import { ArrowLeft, ImagePlus, Pause, Play, Search, Trash2, Package, Plus, Sparkles, AlertTriangle, Pencil } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, ImagePlus, Pause, Play, Search, Trash2, Package, Plus, Sparkles, AlertTriangle, Pencil, Upload, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import { useMoney } from '../../utils/money';
 import { SkeletonList } from '../../components/SkeletonLoader';
+import { compressToWebp } from '../../utils/imageCompress';
 
 export default function ProductsManage() {
   const { format: formatPrice } = useMoney();
@@ -12,6 +13,10 @@ export default function ProductsManage() {
   const [query, setQuery] = useState('');
   const [imageModal, setImageModal] = useState(null);
   const [newImages, setNewImages] = useState('');
+  const [pendingImages, setPendingImages] = useState([]);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const [imageError, setImageError] = useState('');
+  const imageInputRef = useRef(null);
   const [busyId, setBusyId] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [editName, setEditName] = useState(null);
@@ -71,19 +76,60 @@ export default function ProductsManage() {
     }
   };
 
+  const openImageModal = (product) => {
+    setImageModal(product);
+    setNewImages('');
+    setPendingImages([]);
+    setImageError('');
+  };
+
+  const closeImageModal = () => {
+    setImageModal(null);
+    setNewImages('');
+    setPendingImages([]);
+    setImageError('');
+  };
+
+  const handleProductFiles = async (fileList) => {
+    const files = Array.from(fileList || []);
+    if (files.length === 0) return;
+    setImageError('');
+    setUploadingImages(true);
+    const added = [];
+    try {
+      for (const file of files) {
+        try {
+          const compressed = await compressToWebp(file);
+          const { data } = await api.post('/product/images', { images: [compressed.dataUrl] });
+          const url = data?.images?.[0];
+          if (!data?.ok || !url) throw new Error('No se pudo subir la imagen.');
+          added.push({ url, name: file.name });
+        } catch (err) {
+          setImageError(err.response?.data?.message || err.message);
+        }
+      }
+      if (added.length > 0) {
+        setPendingImages((prev) => [...prev, ...added]);
+      }
+    } finally {
+      setUploadingImages(false);
+      if (imageInputRef.current) imageInputRef.current.value = '';
+    }
+  };
+
   const handleAddImages = async () => {
-    const urls = newImages
+    const textUrls = newImages
       .split('\n')
       .map((u) => u.trim())
       .filter(Boolean);
+    const urls = [...pendingImages.map((img) => img.url), ...textUrls];
     if (urls.length === 0 || !imageModal) return;
     setBusyId(imageModal.id);
     try {
       const { data } = await api.post(`/product/${imageModal.id}/images`, { images: urls });
       if (data.ok) {
         setProducts((prev) => prev.map((p) => (p.id === imageModal.id ? { ...p, images: data.product.images } : p)));
-        setImageModal(null);
-        setNewImages('');
+        closeImageModal();
         showToast('Imágenes agregadas.');
       }
     } catch (err) {
@@ -274,7 +320,7 @@ export default function ProductsManage() {
                       <Pencil size={14} /> Nombre
                     </button>
                     <button
-                      onClick={() => setImageModal(product)}
+                      onClick={() => openImageModal(product)}
                       className="flex-1 flex items-center justify-center gap-1.5 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-slate-300 hover:text-fuchsia-600 dark:hover:text-fuchsia-400 hover:border-fuchsia-300 dark:hover:border-fuchsia-800 px-2.5 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
                     >
                       <ImagePlus size={14} /> Imágenes
@@ -304,7 +350,7 @@ export default function ProductsManage() {
 
       {/* Modal agregar imágenes */}
       {imageModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setImageModal(null)}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={closeImageModal}>
           <div
             className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-2xl border border-slate-200 dark:border-zinc-700 shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200"
             onClick={(e) => e.stopPropagation()}
@@ -313,7 +359,7 @@ export default function ProductsManage() {
               <h3 className="text-base font-bold text-slate-900 dark:text-white">Agregar imágenes</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">{imageModal.name}</p>
             </div>
-            <div className="px-5 py-4 space-y-3">
+            <div className="px-5 py-4 space-y-4 max-h-[65vh] overflow-y-auto">
               {Array.isArray(imageModal.images) && imageModal.images.length > 0 && (
                 <div>
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">Imágenes actuales</label>
@@ -329,14 +375,57 @@ export default function ProductsManage() {
                   </div>
                 </div>
               )}
+
               <div>
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">
-                  URLs de imágenes (una por línea)
+                  Subir imágenes (se comprimen a webp)
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {pendingImages.map((img, idx) => (
+                    <div key={idx} className="relative w-16 h-16">
+                      <img
+                        src={img.url}
+                        alt={img.name}
+                        className="w-16 h-16 rounded-lg object-cover border border-slate-200 dark:border-zinc-700"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setPendingImages((prev) => prev.filter((_, i) => i !== idx))}
+                        title="Quitar"
+                        className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-rose-600 text-white text-xs flex items-center justify-center cursor-pointer border-0"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => imageInputRef.current?.click()}
+                    disabled={uploadingImages}
+                    className="w-16 h-16 rounded-lg border-2 border-dashed border-fuchsia-300 dark:border-fuchsia-800 text-fuchsia-600 dark:text-fuchsia-400 flex items-center justify-center cursor-pointer disabled:opacity-50 bg-fuchsia-50/50 dark:bg-fuchsia-950/20"
+                  >
+                    {uploadingImages ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
+                  </button>
+                </div>
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(e) => handleProductFiles(e.target.files)}
+                  className="hidden"
+                />
+                {imageError && <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1.5">{imageError}</p>}
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">
+                  o pega URLs (una por línea)
                 </label>
                 <textarea
                   value={newImages}
                   onChange={(e) => setNewImages(e.target.value)}
-                  rows={4}
+                  rows={3}
                   placeholder="https://...\nhttps://..."
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-800 dark:text-white text-sm resize-none focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
                 />
@@ -344,14 +433,14 @@ export default function ProductsManage() {
             </div>
             <div className="px-5 py-4 border-t border-slate-200 dark:border-zinc-800 flex gap-3">
               <button
-                onClick={() => setImageModal(null)}
+                onClick={closeImageModal}
                 className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 text-sm font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleAddImages}
-                disabled={busyId === imageModal.id}
+                disabled={busyId === imageModal.id || uploadingImages || (pendingImages.length === 0 && !newImages.trim())}
                 className="flex-1 py-2.5 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-sm font-semibold transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 <ImagePlus size={15} />

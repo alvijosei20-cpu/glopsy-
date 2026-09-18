@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { User, MapPin, CreditCard, Save, Plus, Trash2, Shield, Calendar, Phone, FileText, CheckCircle2, AlertCircle } from 'lucide-react';
+import { User, MapPin, Save, Plus, Trash2, Shield, Calendar, Phone, FileText, CheckCircle2, AlertCircle } from 'lucide-react';
 import api from '../../services/api';
 import { SkeletonProfile } from '../../components/SkeletonLoader';
 
 export default function Profile() {
-  const [activeTab, setActiveTab] = useState('personal'); // 'personal' | 'addresses' | 'cards'
+  const [activeTab, setActiveTab] = useState('personal'); // 'personal' | 'addresses'
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ text: '', type: '' });
@@ -36,17 +36,6 @@ export default function Profile() {
   });
   const [showAddressForm, setShowAddressForm] = useState(false);
 
-  // Cards
-  const [cards, setCards] = useState([]);
-  const [newCard, setNewCard] = useState({
-    card_holder: '',
-    card_number: '',
-    expiry_month: '12',
-    expiry_year: '28',
-    card_brand: 'Visa',
-  });
-  const [showCardForm, setShowCardForm] = useState(false);
-
   const toastTimer = useRef(null);
   const showToast = useCallback((text, type = 'success') => {
     setMessage({ text, type });
@@ -62,10 +51,9 @@ export default function Profile() {
   const fetchProfileData = async () => {
     try {
       setLoading(true);
-      const [userRes, addrRes, cardRes] = await Promise.all([
+      const [userRes, addrRes] = await Promise.all([
         api.get('/auth/me'),
         api.get('/auth/addresses'),
-        api.get('/auth/cards'),
       ]);
 
       if (userRes.data.ok) {
@@ -84,10 +72,6 @@ export default function Profile() {
 
       if (addrRes.data.ok) {
         setAddresses(addrRes.data.addresses || []);
-      }
-
-      if (cardRes.data.ok) {
-        setCards(cardRes.data.cards || []);
       }
     } catch (err) {
       console.error('Error al cargar datos del perfil:', err);
@@ -164,41 +148,6 @@ export default function Profile() {
     }
   };
 
-  const handleAddCard = async (e) => {
-    e.preventDefault();
-    try {
-      const res = await api.post('/auth/cards', newCard);
-      if (res.data.ok) {
-        setCards([res.data.card, ...cards]);
-        setNewCard({
-          card_holder: '',
-          card_number: '',
-          expiry_month: '12',
-          expiry_year: '28',
-          card_brand: 'Visa',
-        });
-        setShowCardForm(false);
-        showToast('Tarjeta guardada correctamente.', 'success');
-      }
-    } catch (err) {
-      console.error('Error al guardar tarjeta:', err);
-      showToast('Error al guardar la tarjeta.', 'error');
-    }
-  };
-
-  const handleDeleteCard = async (id) => {
-    if (!confirm('¿Estás seguro de eliminar esta tarjeta?')) return;
-    try {
-      const res = await api.delete(`/auth/cards/${id}`);
-      if (res.data.ok) {
-        setCards(cards.filter(c => c.id !== id));
-        showToast('Tarjeta eliminada.', 'success');
-      }
-    } catch (err) {
-      console.error('Error al eliminar tarjeta:', err);
-    }
-  };
-
   if (loading) {
     return <SkeletonProfile />;
   }
@@ -248,13 +197,6 @@ export default function Profile() {
         >
           <MapPin size={18} />
           Direcciones
-        </button>
-        <button
-          onClick={() => setActiveTab('cards')}
-          className={`flex items-center gap-2 pb-4 font-semibold text-sm transition-colors border-b-2 ${activeTab === 'cards' ? 'border-fuchsia-600 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}`}
-        >
-          <CreditCard size={18} />
-          Pagos
         </button>
       </div>
 
@@ -528,130 +470,6 @@ export default function Profile() {
         </div>
       )}
 
-      {/* Tab 3: Métodos de Pago */}
-      {activeTab === 'cards' && (
-        <div className="space-y-6">
-          <div className="flex justify-between items-center">
-            <h2 className="text-lg font-bold text-slate-900 dark:text-white">Pagos</h2>
-            {cards.length < 4 ? (
-              <button
-                onClick={() => setShowCardForm(!showCardForm)}
-                className="flex items-center gap-2 bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-md shadow-fuchsia-600/20 hover:from-fuchsia-500 hover:to-pink-500 transition-all cursor-pointer"
-              >
-                <Plus size={16} />
-                Nueva Tarjeta
-              </button>
-            ) : (
-              <span className="text-xs text-slate-500 font-semibold bg-slate-100 dark:bg-zinc-800 px-3 py-1.5 rounded-xl">
-                Máximo 4 tarjetas permitidas
-              </span>
-            )}
-          </div>
-
-          {showCardForm && (
-            <form onSubmit={handleAddCard} className="bg-white rounded-2xl border border-fuchsia-100 shadow-sm p-6 space-y-4">
-              <h3 className="font-bold text-slate-800 text-sm">Agregar Tarjeta</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <input
-                  type="text"
-                  placeholder="Nombre del titular"
-                  value={newCard.card_holder}
-                  onChange={e => setNewCard({ ...newCard, card_holder: e.target.value })}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-sm"
-                  required
-                />
-                <input
-                  type="text"
-                  placeholder="Número de tarjeta (ej. ...1234)"
-                  value={newCard.card_number}
-                  onChange={e => setNewCard({ ...newCard, card_number: e.target.value })}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-sm"
-                  required
-                />
-                <div className="flex gap-2">
-                  <select
-                    value={newCard.expiry_month}
-                    onChange={e => setNewCard({ ...newCard, expiry_month: e.target.value })}
-                    className="px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white"
-                  >
-                    {Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0')).map(m => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={newCard.expiry_year}
-                    onChange={e => setNewCard({ ...newCard, expiry_year: e.target.value })}
-                    className="px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white"
-                  >
-                    {['26', '27', '28', '29', '30', '31'].map(y => (
-                      <option key={y} value={y}>{y}</option>
-                    ))}
-                  </select>
-                </div>
-                <select
-                  value={newCard.card_brand}
-                  onChange={e => setNewCard({ ...newCard, card_brand: e.target.value })}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-sm bg-white"
-                >
-                  <option value="Visa">Visa</option>
-                  <option value="Mastercard">Mastercard</option>
-                  <option value="American Express">American Express</option>
-                </select>
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowCardForm(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-fuchsia-600 text-white text-sm font-medium hover:bg-fuchsia-700 shadow-sm"
-                >
-                  Guardar Tarjeta
-                </button>
-              </div>
-            </form>
-          )}
-
-          {cards.length === 0 ? (
-            <div className="text-center py-12 bg-white rounded-2xl border border-fuchsia-100 p-8">
-              <CreditCard size={32} className="mx-auto text-fuchsia-400 mb-2" />
-              <p className="text-slate-600 text-sm">No tienes tarjetas registradas.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {cards.map(card => (
-                <div key={card.id} className="bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl p-5 shadow-md flex justify-between items-start relative overflow-hidden">
-                  <div>
-                    <span className="text-xs uppercase tracking-widest text-fuchsia-400 font-bold">{card.card_brand || 'Tarjeta'}</span>
-                    <div className="text-lg font-mono tracking-wider mt-2 mb-3">•••• •••• •••• {card.last_four}</div>
-                    <div className="flex justify-between text-xs text-slate-300 gap-6">
-                      <div>
-                        <span className="block text-[10px] text-slate-400">Titular</span>
-                        <span className="font-semibold">{card.card_holder}</span>
-                      </div>
-                      <div>
-                        <span className="block text-[10px] text-slate-400">Expira</span>
-                        <span className="font-semibold">{card.expiry_month}/{card.expiry_year}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleDeleteCard(card.id)}
-                    className="text-slate-400 hover:text-pink-400 p-2 transition-colors relative z-10"
-                    title="Eliminar tarjeta"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
