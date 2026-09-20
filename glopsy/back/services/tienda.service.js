@@ -16,6 +16,7 @@ const mapTienda = (row) => ({
   registeredAt: row.fechareg,
   // Tienda principal de la plataforma: aquí se configuran las pasarelas globales.
   isMain: row.is_main === true,
+  paisCodigo: row.t_pais_codigo || null,
   // Multicountry: país y su config (moneda/locale/dominio raíz). Si la tienda
   // no tiene país, cae a la config por defecto (Colombia).
   paisId: row.t_pais_id ?? null,
@@ -84,6 +85,7 @@ const STORE_COLUMNS = `
   t.hashid, t.nombres, t.slug, t.avatar, t.activa, t.fechareg, t.ga_id,
   t.is_main,
   t.pais_id AS t_pais_id,
+  pa.codigo_iso AS t_pais_codigo,
   COALESCE(t.moneda, pa.moneda, 'COP') AS t_moneda,
   COALESCE(t.locale, pa.locale, 'es-CO') AS t_locale,
   COALESCE(t.dominio_raiz, pa.dominio_raiz) AS t_dominio,

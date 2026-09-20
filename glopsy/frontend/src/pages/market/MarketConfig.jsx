@@ -32,6 +32,65 @@ const MarketConfig = () => {
     prefix: '',
     test_set_id: ''
   });
+  const [dianPlantilla, setDianPlantilla] = useState({
+    numeroResolucion: '', desde: '1', hasta: '5000', regimen: '48', responsabilidad: 'O-47', dv: '',
+  });
+  const [generatingDian, setGeneratingDian] = useState(false);
+
+  const handleDownloadDianPlantilla = async () => {
+    setGeneratingDian(true);
+    try {
+      const doc = String(payoutAccount?.titular_documento || '').replace(/\D/g, '');
+      const payload = {
+        VersionPlantilla: '1.0',
+        TipoDocumento: '01',
+        InformacionResolucion: {
+          NumeroResolucion: dianPlantilla.numeroResolucion,
+          Prefijo: dianConfig.prefix,
+          ConsecutivoDesde: Number(dianPlantilla.desde) || 1,
+          ConsecutivoHasta: Number(dianPlantilla.hasta) || 1,
+        },
+        Emisor: {
+          TipoIdentificacion: '31',
+          NumeroIdentificacion: doc || '900000000',
+          DV: dianPlantilla.dv || '0',
+          RazonSocial: payoutAccount?.titular_cuenta || tienda?.name || 'Mi empresa',
+          RegimenFiscal: dianPlantilla.regimen,
+          ResponsabilidadFiscal: dianPlantilla.responsabilidad,
+        },
+        DetallesFactura: {
+          FechaEmision: new Date().toISOString().slice(0, 10),
+          HoraEmision: '10:00:00-05:00',
+          Moneda: 'COP',
+          FormaPago: '1',
+          MedioPago: '10',
+        },
+        LineasDeFactura: [
+          { CodigoProducto: '1', NombreProducto: 'Producto', Cantidad: 1, UnidadMedida: '94', PrecioUnitario: 1000, PorcentajeIva: 19 },
+        ],
+      };
+      const { data } = await api.post('/tienda/dian/plantilla', payload);
+      if (!data?.ok) {
+        setNotice((data.errors || [data.message]).filter(Boolean).join(' · '));
+        return;
+      }
+      const blob = new Blob([data.content], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = data.filename || 'plantilla.json.dian';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setNotice('Plantilla DIAN generada.');
+    } catch (err) {
+      const errors = err.response?.data?.errors;
+      setNotice(Array.isArray(errors) ? errors.join(' · ') : (err.response?.data?.message || 'No fue posible generar la plantilla DIAN.'));
+    } finally {
+      setGeneratingDian(false);
+    }
+  };
   const [mpMode, setMpMode] = useState('prueba');
   const [enviaMode, setEnviaMode] = useState('prueba');
 
@@ -1498,36 +1557,134 @@ const MarketConfig = () => {
               <div className="config-section-header">
                 <div>
                   <h3>Facturación</h3>
-                  <p>Gestiona los datos fiscales y la información de cobro de tu tienda.</p>
+                  <p>Documentos fiscales según el país de registro de tu tienda{(tienda?.paisCodigo || storePaisIso) ? ` (${tienda?.paisCodigo || storePaisIso})` : ''}.</p>
                 </div>
               </div>
-              <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
-                  <Receipt size={20} color="#0f172a" />
-                  <div>
-                    <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>BA VEN-NIF N° 12 — Tenencia de Criptoactivos Propios</h4>
-                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Genera el documento con las revelaciones y tus operaciones del período.</p>
+
+              {(tienda?.paisCodigo || storePaisIso) === 'CO' && (
+                <>
+                  <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginBottom: '1.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
+                      <div style={{ background: '#0284c7', color: 'white', fontWeight: 900, padding: '0.5rem 0.9rem', borderRadius: '0.5rem', fontSize: '1.1rem', letterSpacing: '1px' }}>DIAN</div>
+                      <div>
+                        <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>Facturación Electrónica DIAN (Colombia)</h4>
+                        <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Configura tu software y descarga la plantilla para importar.</p>
+                      </div>
+                    </div>
+                    <form onSubmit={handleSaveDian}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+                        <div className="config-form-group" style={{ margin: 0 }}>
+                          <label>ID del SW</label>
+                          <input value={dianConfig.sw_id} onChange={(e) => setDianConfig({ ...dianConfig, sw_id: e.target.value })} placeholder="Software ID" />
+                        </div>
+                        <div className="config-form-group" style={{ margin: 0 }}>
+                          <label>PIN del SW</label>
+                          <input type="password" value={dianConfig.sw_pin} onChange={(e) => setDianConfig({ ...dianConfig, sw_pin: e.target.value })} placeholder="PIN" />
+                        </div>
+                        <div className="config-form-group" style={{ margin: 0 }}>
+                          <label>Prefijo</label>
+                          <input value={dianConfig.prefix} onChange={(e) => setDianConfig({ ...dianConfig, prefix: e.target.value })} placeholder="Ej. SETT" />
+                        </div>
+                        <div className="config-form-group" style={{ margin: 0 }}>
+                          <label>TestSetId</label>
+                          <input value={dianConfig.test_set_id} onChange={(e) => setDianConfig({ ...dianConfig, test_set_id: e.target.value })} placeholder="TestSetId" />
+                        </div>
+                        <div className="config-form-group" style={{ margin: 0, gridColumn: '1 / -1' }}>
+                          <label>Llave técnica</label>
+                          <textarea rows={2} value={dianConfig.technical_key} onChange={(e) => setDianConfig({ ...dianConfig, technical_key: e.target.value })} placeholder="Clave técnica proporcionada por la DIAN" />
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right', marginTop: '1rem' }}>
+                        <button type="submit" className="config-btn-primary">Guardar configuración DIAN</button>
+                      </div>
+                    </form>
+                  </div>
+
+                  <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
+                      <Receipt size={20} color="#0f172a" />
+                      <div>
+                        <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>Plantilla DIAN (.json.dian)</h4>
+                        <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Descarga la plantilla para importar en la Solución Gratuita.</p>
+                      </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem' }}>
+                      <div className="config-form-group" style={{ margin: 0 }}>
+                        <label>N° Resolución</label>
+                        <input value={dianPlantilla.numeroResolucion} onChange={(e) => setDianPlantilla({ ...dianPlantilla, numeroResolucion: e.target.value })} placeholder="Ej. 187640000001" />
+                      </div>
+                      <div className="config-form-group" style={{ margin: 0 }}>
+                        <label>Consecutivo desde</label>
+                        <input type="number" value={dianPlantilla.desde} onChange={(e) => setDianPlantilla({ ...dianPlantilla, desde: e.target.value })} />
+                      </div>
+                      <div className="config-form-group" style={{ margin: 0 }}>
+                        <label>Consecutivo hasta</label>
+                        <input type="number" value={dianPlantilla.hasta} onChange={(e) => setDianPlantilla({ ...dianPlantilla, hasta: e.target.value })} />
+                      </div>
+                      <div className="config-form-group" style={{ margin: 0 }}>
+                        <label>Régimen</label>
+                        <select value={dianPlantilla.regimen} onChange={(e) => setDianPlantilla({ ...dianPlantilla, regimen: e.target.value })}>
+                          <option value="48">Responsable de IVA</option>
+                          <option value="49">No responsable de IVA</option>
+                        </select>
+                      </div>
+                      <div className="config-form-group" style={{ margin: 0 }}>
+                        <label>Responsabilidad</label>
+                        <select value={dianPlantilla.responsabilidad} onChange={(e) => setDianPlantilla({ ...dianPlantilla, responsabilidad: e.target.value })}>
+                          <option value="O-13">O-13 Gran contribuyente</option>
+                          <option value="O-15">O-15 Autorretenedor</option>
+                          <option value="O-23">O-23 Agente retención IVA</option>
+                          <option value="O-47">O-47 Régimen simple</option>
+                          <option value="R-99-PN">R-99-PN No responsable</option>
+                        </select>
+                      </div>
+                      <div className="config-form-group" style={{ margin: 0 }}>
+                        <label>DV</label>
+                        <input value={dianPlantilla.dv} onChange={(e) => setDianPlantilla({ ...dianPlantilla, dv: e.target.value.replace(/\D/g, '') })} maxLength={1} placeholder="0-9" />
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right', marginTop: '1.25rem' }}>
+                      <button type="button" className="config-btn-primary" disabled={generatingDian} onClick={handleDownloadDianPlantilla}>
+                        {generatingDian ? 'Generando…' : 'Descargar plantilla DIAN'}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {(tienda?.paisCodigo || storePaisIso) === 'VE' && (
+                <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
+                    <Receipt size={20} color="#0f172a" />
+                    <div>
+                      <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>BA VEN-NIF N° 12 — Tenencia de Criptoactivos Propios</h4>
+                      <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Genera el documento con las revelaciones y tus operaciones del período.</p>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+                    <div className="config-form-group" style={{ margin: 0 }}>
+                      <label>Desde</label>
+                      <input type="date" value={fiscalRange.desde} onChange={(e) => setFiscalRange({ ...fiscalRange, desde: e.target.value })} />
+                    </div>
+                    <div className="config-form-group" style={{ margin: 0 }}>
+                      <label>Hasta</label>
+                      <input type="date" value={fiscalRange.hasta} onChange={(e) => setFiscalRange({ ...fiscalRange, hasta: e.target.value })} />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem', flexWrap: 'wrap' }}>
+                    <button type="button" className="config-btn-primary" disabled={generatingFiscal} onClick={handleDownloadFiscal}>
+                      {generatingFiscal ? 'Generando…' : 'Descargar BA VEN-NIF 12'}
+                    </button>
+                    <button type="button" className="config-btn-primary" disabled={generatingFiscal} onClick={handleDownloadLibroVentas}>
+                      {generatingFiscal ? 'Generando…' : 'Descargar Libro de Ventas (PDF)'}
+                    </button>
                   </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
-                  <div className="config-form-group" style={{ margin: 0 }}>
-                    <label>Desde</label>
-                    <input type="date" value={fiscalRange.desde} onChange={(e) => setFiscalRange({ ...fiscalRange, desde: e.target.value })} />
-                  </div>
-                  <div className="config-form-group" style={{ margin: 0 }}>
-                    <label>Hasta</label>
-                    <input type="date" value={fiscalRange.hasta} onChange={(e) => setFiscalRange({ ...fiscalRange, hasta: e.target.value })} />
-                  </div>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem', flexWrap: 'wrap' }}>
-                  <button type="button" className="config-btn-primary" disabled={generatingFiscal} onClick={handleDownloadFiscal}>
-                    {generatingFiscal ? 'Generando…' : 'Descargar BA VEN-NIF 12'}
-                  </button>
-                  <button type="button" className="config-btn-primary" disabled={generatingFiscal} onClick={handleDownloadLibroVentas}>
-                    {generatingFiscal ? 'Generando…' : 'Descargar Libro de Ventas (PDF)'}
-                  </button>
-                </div>
-              </div>
+              )}
+
+              {(tienda?.paisCodigo || storePaisIso) && !['CO', 'VE'].includes(tienda?.paisCodigo || storePaisIso) && (
+                <p style={{ color: '#64748b' }}>No hay documentos fiscales configurados para el país de tu tienda.</p>
+              )}
             </div>
           )}
 
