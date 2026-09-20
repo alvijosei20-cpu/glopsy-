@@ -15,6 +15,7 @@ import {
   getUsdActivation,
   saveStorefrontAppearance,
   getFiscalReport,
+  getLibroVentasPdf,
   getCheckoutIntegrations,
   saveCheckoutIntegration,
   deleteCheckoutIntegration,
@@ -70,6 +71,8 @@ router.post('/usd-activation', requestUsdActivation);
 router.put('/storefront', saveStorefrontAppearance);
 // Reporte fiscal BA VEN-NIF N° 12 (criptoactivos) a partir de las ventas
 router.get('/reportes/ba-ven-nif-12', getFiscalReport);
+// Libro de Ventas (SENIAT) en PDF
+router.get('/reportes/libro-ventas.pdf', getLibroVentasPdf);
 router.get('/checkout-integrations', getCheckoutIntegrations);
 router.post('/checkout-integrations', saveCheckoutIntegration);
 router.delete('/checkout-integrations/:provider', deleteCheckoutIntegration);

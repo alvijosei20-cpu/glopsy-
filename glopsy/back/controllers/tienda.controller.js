@@ -14,6 +14,7 @@ import {
   saveStorefrontAppearanceForUser,
 } from '../services/tienda.service.js';
 import { getBaVenNif12Report } from '../services/fiscalReport.service.js';
+import { getLibroVentasData, buildLibroVentasPdf } from '../services/libroVentas.service.js';
 import {
   getCheckoutIntegrationsForUser,
   saveCheckoutIntegrationForUser,
@@ -413,6 +414,22 @@ export const createTiendaController = ({
     }
   },
 
+  getLibroVentasPdf: async (req, res) => {
+    const desde = cleanString(req.query.desde, { maxLength: 10 });
+    const hasta = cleanString(req.query.hasta, { maxLength: 10 });
+    try {
+      const data = await getLibroVentasData(req.auth.userId, { desde, hasta });
+      if (!data) return res.status(404).json({ ok: false, message: 'No tienes una tienda registrada.' });
+      const pdf = await buildLibroVentasPdf(data);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="libro-ventas-${data.periodo.hasta}.pdf"`);
+      return res.send(pdf);
+    } catch (error) {
+      console.error('Error al generar el libro de ventas:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible generar el libro de ventas.' });
+    }
+  },
+
   getAnalytics: async (req, res) => {
     try {
       const analytics = await getStoreAnalytics(req.auth.userId);
@@ -517,6 +534,7 @@ export const {
   getUsdActivation,
   saveStorefrontAppearance,
   getFiscalReport,
+  getLibroVentasPdf,
   getCheckoutIntegrations,
   saveCheckoutIntegration,
   deleteCheckoutIntegration,

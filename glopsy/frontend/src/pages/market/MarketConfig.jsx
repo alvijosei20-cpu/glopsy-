@@ -369,6 +369,29 @@ const MarketConfig = () => {
     );
   };
 
+  const handleDownloadLibroVentas = async () => {
+    setGeneratingFiscal(true);
+    try {
+      const res = await api.get('/tienda/reportes/libro-ventas.pdf', {
+        params: { desde: fiscalRange.desde || undefined, hasta: fiscalRange.hasta || undefined },
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `libro-ventas-${fiscalRange.hasta || 'periodo'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setNotice('Libro de Ventas generado.');
+    } catch {
+      setNotice('No fue posible generar el Libro de Ventas.');
+    } finally {
+      setGeneratingFiscal(false);
+    }
+  };
+
   const handleSaveMercadoPago = async (e) => {
     e.preventDefault();
     if (!mercadoPagoConfig.public_key || !mercadoPagoConfig.public_key.trim() || !mercadoPagoConfig.access_token || !mercadoPagoConfig.access_token.trim()) {
@@ -1496,9 +1519,12 @@ const MarketConfig = () => {
                     <input type="date" value={fiscalRange.hasta} onChange={(e) => setFiscalRange({ ...fiscalRange, hasta: e.target.value })} />
                   </div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem', flexWrap: 'wrap' }}>
                   <button type="button" className="config-btn-primary" disabled={generatingFiscal} onClick={handleDownloadFiscal}>
                     {generatingFiscal ? 'Generando…' : 'Descargar BA VEN-NIF 12'}
+                  </button>
+                  <button type="button" className="config-btn-primary" disabled={generatingFiscal} onClick={handleDownloadLibroVentas}>
+                    {generatingFiscal ? 'Generando…' : 'Descargar Libro de Ventas (PDF)'}
                   </button>
                 </div>
               </div>
