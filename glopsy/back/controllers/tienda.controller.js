@@ -277,7 +277,7 @@ export const createTiendaController = ({
     const titular_cuenta = cleanString(req.body.titular_cuenta, { maxLength: 150 });
     const titular_documento = cleanString(req.body.titular_documento, { maxLength: 40 });
 
-    if (!banco_codigo || !banco_nombre || !tipo_cuenta || !numero_cuenta || !titular_cuenta) {
+    if (!banco_codigo || !tipo_cuenta || !numero_cuenta || !titular_cuenta) {
       return res.status(400).json({ ok: false, message: 'Banco, tipo de cuenta, número de cuenta y titular son obligatorios.' });
     }
     if (!isAllowedEnum(tipo_cuenta, ['ahorro', 'corriente'])) {

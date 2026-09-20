@@ -27,6 +27,7 @@ export default function Vender() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [bancos, setBancos] = useState([]);
+  const [bancosError, setBancosError] = useState('');
   const [bank, setBank] = useState({
     banco_codigo: '', tipo_cuenta: '', numero_cuenta: '', titular_cuenta: user?.name || '', titular_documento: '',
   });
@@ -54,22 +55,39 @@ export default function Vender() {
       return;
     }
     let alive = true;
+    setBancosError('');
     api
       .get('/geo/bancos', { params: { pais_id: paisId } })
       .then(({ data }) => {
         if (alive) setBancos(data?.bancos || []);
       })
       .catch(() => {
-        if (alive) setBancos([]);
+        if (alive) {
+          setBancos([]);
+          setBancosError('No pudimos cargar los bancos de ese país. Reintenta o cambia de país.');
+        }
       });
     return () => {
       alive = false;
     };
   }, [paisId]);
 
+  // Al cambiar de país, el banco de otro país deja de ser válido: se limpia.
+  useEffect(() => {
+    setBank((b) => (b.banco_codigo ? { ...b, banco_codigo: '', numero_cuenta: '' } : b));
+  }, [paisId]);
+
+  // Si el nombre del usuario carga después, se prellena el titular.
+  useEffect(() => {
+    if (!user?.name) return;
+    setBank((b) => (b.titular_cuenta ? b : { ...b, titular_cuenta: user.name }));
+  }, [user?.name]);
+
   const selectedPais = paises.find((p) => String(p.id) === String(paisId)) || null;
   const raiz = selectedPais?.dominio_raiz || getRootDomain();
-  const slugReservado = RESERVED_SLUGS.has(slug.trim().toLowerCase());
+  const slugNorm = slug.trim().toLowerCase();
+  const slugReservado = RESERVED_SLUGS.has(slugNorm);
+  const slugFormatoOk = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(slugNorm) && slugNorm.length >= 2;
 
   if (!tiendaLoading && !user?.can_sell && !tienda) {
     return (
@@ -123,6 +141,10 @@ export default function Vender() {
     if (busy) return;
     if (slugReservado) {
       setError(`El subdominio "${slug}" está reservado. Elige otro.`);
+      return;
+    }
+    if (!slugFormatoOk) {
+      setError('El subdominio debe tener 2 a 63 caracteres, solo minúsculas, números y guiones, y no empezar/terminar con guion.');
       return;
     }
     if (!bank.banco_codigo || !bank.tipo_cuenta || !bank.numero_cuenta || !bank.titular_cuenta) {
@@ -200,7 +222,8 @@ export default function Vender() {
                 onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
                 placeholder="mi-tienda"
                 maxLength={63}
-                pattern="[a-z0-9-]+"
+                pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?"
+                minLength={2}
                 required
                 className="w-full py-2.5 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
               />
@@ -210,7 +233,14 @@ export default function Vender() {
                 "{slug}" está reservado por la plataforma. Elige otro, por ejemplo "{slug}-tienda".
               </p>
             )}
-            {slug && !slugReservado && <p className="mt-1 text-[11px] text-slate-400">Tu vitrina quedará en: {slug}.{raiz}</p>}
+            {slug && !slugReservado && !slugFormatoOk && (
+              <p className="mt-1 text-[11px] font-semibold text-pink-600">
+                Usa 2–63 caracteres, minúsculas/números/guiones, sin empezar ni terminar en guion.
+              </p>
+            )}
+            {slug && slugReservado === false && slugFormatoOk && (
+              <p className="mt-1 text-[11px] text-slate-400">Tu vitrina quedará en: {slugNorm}.{raiz}</p>
+            )}
           </div>
 
           <div>
@@ -252,6 +282,10 @@ export default function Vender() {
                   <option key={b.codigo} value={b.codigo}>{b.nombre}</option>
                 ))}
               </select>
+              {bancosError && <p className="mt-1 text-[11px] font-semibold text-pink-600">{bancosError}</p>}
+              {!bancosError && bancos.length === 0 && paisId && (
+                <p className="mt-1 text-[11px] text-slate-400">No hay bancos configurados para este país.</p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -338,7 +372,7 @@ export default function Vender() {
 
           <button
             type="submit"
-            disabled={busy || !name.trim() || !slug.trim() || slugReservado || !bank.banco_codigo || !bank.tipo_cuenta || !bank.numero_cuenta || !bank.titular_cuenta}
+            disabled={busy || !name.trim() || !slugFormatoOk || slugReservado || !!bancosError || !bank.banco_codigo || !bank.tipo_cuenta || !bank.numero_cuenta || !bank.titular_cuenta}
             className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-bold py-3 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
             {busy ? <Loader2 size={16} className="animate-spin" /> : null}
