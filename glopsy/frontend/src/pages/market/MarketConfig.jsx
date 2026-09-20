@@ -3,7 +3,6 @@ import { Truck, Tag, Receipt, Warehouse, CreditCard, Plus, CheckCircle, Trash2, 
 import { useAuth } from '../../context/AuthContext';
 import { useMoney } from '../../utils/money';
 import api from '../../services/api';
-import { PALETTE_OPTIONS } from '../../storefront/appearance';
 import './marketConfig.css';
 
 const MarketConfig = () => {
@@ -62,35 +61,6 @@ const MarketConfig = () => {
   const [initialBoldConfig, setInitialBoldConfig] = useState({ access_token: '', public_key: '', webhook_secret: '', is_default: false });
   const [usdStatus, setUsdStatus] = useState({ usd_activation_status: 'none' });
   const [requestingUsd, setRequestingUsd] = useState(false);
-  const [appearance, setAppearance] = useState({
-    template: 'dashboard', theme: 'auto', palette: 'fucsia', color: '#c026d3', banner: '',
-  });
-  const [savingAppearance, setSavingAppearance] = useState(false);
-
-  useEffect(() => {
-    if (!tienda) return;
-    setAppearance({
-      template: tienda.storefrontTemplate || 'dashboard',
-      theme: tienda.storefrontTheme || 'auto',
-      palette: tienda.storefrontPalette || 'fucsia',
-      color: tienda.storefrontColor || '#c026d3',
-      banner: tienda.storefrontBanner || '',
-    });
-  }, [tienda?.storefrontTemplate, tienda?.storefrontTheme, tienda?.storefrontPalette, tienda?.storefrontColor, tienda?.storefrontBanner, tienda]);
-
-  const handleSaveAppearance = async (e) => {
-    e.preventDefault();
-    setSavingAppearance(true);
-    try {
-      const res = await api.put('/tienda/storefront', appearance);
-      setNotice(res.data?.message || 'Apariencia guardada con éxito.');
-      refreshTienda?.();
-    } catch (err) {
-      setNotice(err.response?.data?.message || 'No fue posible guardar la apariencia.');
-    } finally {
-      setSavingAppearance(false);
-    }
-  };
   const [payoutAccount, setPayoutAccount] = useState({ banco_codigo: '', banco_nombre: '', tipo_cuenta: '', numero_cuenta: '', titular_cuenta: '', titular_documento: '' });
   const [bancos, setBancos] = useState([]);
   const [savingPayout, setSavingPayout] = useState(false);
@@ -2182,108 +2152,6 @@ const MarketConfig = () => {
                     <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
                       <button type="submit" className="config-btn-primary" disabled={savingPayout}>
                         {savingPayout ? 'Guardando…' : 'Guardar cuenta de pagos'}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              )}
-
-              {!isMainStore && (
-                <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginTop: '2rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
-                    <Code size={20} color="#0f172a" />
-                    <div>
-                      <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>Apariencia de tu vitrina</h4>
-                      <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Plantilla, tema y paleta de colores de tu tienda.</p>
-                    </div>
-                  </div>
-                  <form onSubmit={handleSaveAppearance}>
-                    <label style={{ color: '#334155', fontWeight: 600, fontSize: '0.9rem' }}>Plantilla</label>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', margin: '0.5rem 0 1.25rem' }}>
-                      {[
-                        { id: 'dashboard', name: 'Dashboard', desc: 'Promos, descuentos y novedades' },
-                        { id: 'catalog', name: 'Catálogo', desc: 'Lista total de productos' },
-                        { id: 'boutique', name: 'Boutique', desc: 'Portada y destacados' },
-                      ].map((t) => (
-                        <button
-                          key={t.id}
-                          type="button"
-                          onClick={() => setAppearance({ ...appearance, template: t.id })}
-                          style={{
-                            textAlign: 'left', padding: '0.75rem', borderRadius: '0.75rem', cursor: 'pointer',
-                            border: appearance.template === t.id ? '2px solid #7c3aed' : '1px solid #cbd5e1',
-                            background: appearance.template === t.id ? '#f5f3ff' : 'white',
-                          }}
-                        >
-                          <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.9rem' }}>{t.name}</div>
-                          <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{t.desc}</div>
-                        </button>
-                      ))}
-                    </div>
-
-                    <label style={{ color: '#334155', fontWeight: 600, fontSize: '0.9rem' }}>Tema</label>
-                    <div style={{ display: 'flex', gap: '0.5rem', margin: '0.5rem 0 1.25rem' }}>
-                      {[['auto', 'Automático'], ['light', 'Claro'], ['dark', 'Oscuro']].map(([id, name]) => (
-                        <button
-                          key={id}
-                          type="button"
-                          onClick={() => setAppearance({ ...appearance, theme: id })}
-                          style={{
-                            padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600,
-                            border: appearance.theme === id ? '2px solid #7c3aed' : '1px solid #cbd5e1',
-                            background: appearance.theme === id ? '#f5f3ff' : 'white', color: '#0f172a',
-                          }}
-                        >
-                          {name}
-                        </button>
-                      ))}
-                    </div>
-
-                    <label style={{ color: '#334155', fontWeight: 600, fontSize: '0.9rem' }}>Paleta de colores</label>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', margin: '0.5rem 0 1rem', alignItems: 'center' }}>
-                      {PALETTE_OPTIONS.map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          title={p.name}
-                          onClick={() => setAppearance({ ...appearance, palette: p.id })}
-                          style={{
-                            width: 40, height: 40, borderRadius: '50%', cursor: 'pointer',
-                            backgroundImage: `linear-gradient(135deg, ${p.from}, ${p.to})`,
-                            border: appearance.palette === p.id ? '3px solid #0f172a' : '2px solid transparent',
-                            boxShadow: '0 0 0 1px #cbd5e1',
-                          }}
-                        />
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => setAppearance({ ...appearance, palette: 'custom' })}
-                        style={{
-                          padding: '0.4rem 0.8rem', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600,
-                          border: appearance.palette === 'custom' ? '2px solid #7c3aed' : '1px solid #cbd5e1',
-                          background: appearance.palette === 'custom' ? '#f5f3ff' : 'white', color: '#0f172a',
-                        }}
-                      >
-                        Personalizado
-                      </button>
-                      {appearance.palette === 'custom' && (
-                        <input
-                          type="color"
-                          value={appearance.color}
-                          onChange={(e) => setAppearance({ ...appearance, color: e.target.value })}
-                          style={{ width: 40, height: 40, borderRadius: '0.5rem', border: '1px solid #cbd5e1', cursor: 'pointer' }}
-                        />
-                      )}
-                    </div>
-
-                    <div className="config-form-group" style={{ margin: 0 }}>
-                      <label style={{ color: '#334155', fontWeight: 600 }}>Banner (plantilla Boutique, opcional)</label>
-                      <input value={appearance.banner} onChange={(e) => setAppearance({ ...appearance, banner: e.target.value })} placeholder="https://…/banner.jpg" />
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
-                      <button type="submit" className="config-btn-primary" disabled={savingAppearance}>
-                        {savingAppearance ? 'Guardando…' : 'Guardar apariencia'}
                       </button>
                     </div>
                   </form>
