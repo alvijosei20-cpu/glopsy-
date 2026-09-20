@@ -14,6 +14,7 @@ import * as bold from './bold.service.js';
 import { createPendingOrderForCart } from './product.service.js';
 import { recordSaleForOrder } from './ledger.service.js';
 import { loadBoldCredentials } from './paymentConfig.service.js';
+import { resolveCheckoutCurrency, convertAmount } from './checkoutCurrency.service.js';
 
 const ensureCreds = () => loadBoldCredentials().catch(() => null);
 
@@ -32,7 +33,9 @@ const findOrder = async (reference) => {
 
 const orderRef = (order) => order.order_number || order.order_hash;
 
-const markOrderPaid = async (orderId, { paymentId = null, payloadExtra = {}, moneda = 'COP' } = {}) => {
+const markOrderPaid = async (orderId, { paymentId = null, payloadExtra = {} } = {}) => {
+  const { rows } = await pool.query(`SELECT currency FROM orders WHERE id = $1 LIMIT 1`, [orderId]);
+  const moneda = rows[0]?.currency || 'COP';
   await pool.query(
     `UPDATE orders
      SET status = 'Completado',
@@ -56,9 +59,9 @@ export const startBoldCheckout = async (userId, {
   shippingCost = 0,
   shippingPayload = null,
   callbackUrl,
-  currency = 'COP',
   taxes,
   deviceFingerprint,
+  visitor = null,
 } = {}) => {
   await ensureCreds();
   if (!Array.isArray(items) || items.length === 0) return { ok: false, reason: 'carrito_vacio' };
@@ -70,9 +73,19 @@ export const startBoldCheckout = async (userId, {
     shippingPayload,
   });
 
+  // Moneda de cobro: local (COP, Bold) para visitantes del país; USD para el resto.
+  const { currency, rate, converted } = await resolveCheckoutCurrency(order.tiendaId, visitor);
+  const chargeAmount = convertAmount(order.totalAmount, rate);
+
+  if (converted) {
+    await pool.query(`UPDATE orders SET amount = $2, currency = $3 WHERE id = $1`, [order.orderId, chargeAmount, currency]);
+  } else {
+    await pool.query(`UPDATE orders SET currency = $2 WHERE id = $1`, [order.orderId, currency]);
+  }
+
   const intent = await bold.createPaymentIntent({
     referenceId: order.orderNumber,
-    amount: order.totalAmount,
+    amount: chargeAmount,
     currency,
     taxes,
     customer: {
@@ -89,7 +102,8 @@ export const startBoldCheckout = async (userId, {
     orderId: order.orderId,
     orderNumber: order.orderNumber,
     orderHash: order.orderHash,
-    amount: order.totalAmount,
+    amount: chargeAmount,
+    currency,
     intent,
   };
 };

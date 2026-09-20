@@ -1,5 +1,6 @@
 import { obtenerProductoPorId } from '../services/mastershopService.js';
 import { uploadProductImage, isR2Configured } from '../services/r2.service.js';
+import { visitorCountryFromReq } from '../services/checkoutCurrency.service.js';
 import { saveProductForUser, getProductsForUser, getProductsForUserManagement, setProductStatusForUser, deleteProductForUser, addProductImagesForUser, updateProductNameForUser, searchQueryProductsCached, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, getMainStoreId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, cancelOrderForUser, updateOrderAddressForUser, getProductReviews, getUserReviewStatus, getOrderReviewsStatus, addProductReview, updateProductReview, deleteProductReview } from '../services/product.service.js';
 import { validatePaymentBiometricNonce } from '../services/auth.service.js';
 import { getInternationalShippingOptions } from '../services/internationalShipping.service.js';
@@ -404,7 +405,7 @@ export const createPreferenceController = async (req, res) => {
       return res.status(400).json({ ok: false, message: 'No hay productos en el carrito.' });
     }
     const userId = req.auth?.userId || 1;
-    const result = await createMercadoPagoPreferenceForCart(userId, items, shipping_cost, customer_info, guestHash);
+    const result = await createMercadoPagoPreferenceForCart(userId, items, shipping_cost, customer_info, guestHash, visitorCountryFromReq(req));
     res.json({ ok: true, ...result });
   } catch (error) {
     console.error('Error al crear preferencia de Mercado Pago:', error.message);
@@ -426,7 +427,7 @@ export const processMpPaymentController = async (req, res) => {
     const items = sanitizeCartItems(req.body.items);
     const userId = req.auth?.userId || 1;
     await requirePaymentBiometric(req.auth?.userId, req.body.biometric_nonce);
-    const paymentRes = await processMpPaymentForCart(userId, formData, preferenceId, customer_info, guestHash, shipping_cost, shipping_payload, items);
+    const paymentRes = await processMpPaymentForCart(userId, formData, preferenceId, customer_info, guestHash, shipping_cost, shipping_payload, items, visitorCountryFromReq(req));
     res.json({ ok: true, payment: paymentRes });
   } catch (error) {
     console.error('Error al procesar pago con Mercado Pago Bricks:', error.message);

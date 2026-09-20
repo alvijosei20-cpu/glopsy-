@@ -12,7 +12,7 @@ import BoldPayment from '../../components/BoldPayment';
 import './cart.css';
 
 export default function Checkout() {
-  const { format: formatPrice, currency, locale } = useMoney();
+  const { format: formatPrice, currency, locale, rate: currencyRate = 1 } = useMoney();
   const { store } = useStorefront();
   const { user } = useAuth();
   const paisId = store?.paisId || null;
@@ -111,7 +111,7 @@ export default function Checkout() {
         await bricksBuilder.create('payment', 'paymentBrick_container', {
           initialization: {
             preferenceId: preferenceData.preferenceId,
-            amount: Number(total),
+            amount: Math.round(Number(total) * currencyRate * 100) / 100,
           },
           callbacks: {
             onReady: () => {},

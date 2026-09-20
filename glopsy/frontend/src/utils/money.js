@@ -34,6 +34,7 @@ export const useMoney = () => {
   return {
     currency,
     locale,
+    rate,
     converted: Boolean(pricing?.converted),
     format: (value) => formatMoney(Number(value || 0) * rate, { currency, locale }),
   };

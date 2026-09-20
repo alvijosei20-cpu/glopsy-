@@ -1,3 +1,4 @@
+import { visitorCountryFromReq } from '../services/checkoutCurrency.service.js';
 import {
   startBoldCheckout,
   createIntentForOrder,
@@ -18,7 +19,10 @@ const handle = (res, result) => {
 // Crea la orden pendiente + la intención de pago (inicio del checkout transparente).
 export const boldStart = async (req, res) => {
   try {
-    const result = await startBoldCheckout(req.auth?.userId || null, req.body || {});
+    const result = await startBoldCheckout(req.auth?.userId || null, {
+      ...(req.body || {}),
+      visitor: visitorCountryFromReq(req),
+    });
     if (!result.ok) return res.status(400).json({ ok: false, message: result.reason });
     return res.json(result);
   } catch (error) {

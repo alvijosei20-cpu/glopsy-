@@ -4,6 +4,7 @@ import axios from 'axios';
 import { getShippingOptionsFromEnvia, invalidateRatesCacheForStore } from './envia.service.js';
 import { findZoomCityCode, quoteZoomShipping } from './zoom.service.js';
 import { getVeUsdRate } from './rates.service.js';
+import { resolveCheckoutCurrency } from './checkoutCurrency.service.js';
 import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
 import { obtenerProductoPorId } from './mastershopService.js';
 import { dispatchInternationalOrder } from './internationalShipping.service.js';
@@ -1737,7 +1738,7 @@ const ensureSingleStoreCart = async (items) => {
   return [...stores][0] || null;
 };
 
-export const createMercadoPagoPreferenceForCart = async (userId, items, shippingCost, customerInfo, guestHash) => {
+export const createMercadoPagoPreferenceForCart = async (userId, items, shippingCost, customerInfo, guestHash, visitor = null) => {
   await reserveStockForSession(items, guestHash || `user_${userId}`);
   await ensureSingleStoreCart(items);
 
@@ -1749,14 +1750,8 @@ export const createMercadoPagoPreferenceForCart = async (userId, items, shipping
   const client = new MercadoPagoConfig({ accessToken: mpInt.access_token });
   const preference = new Preference(client);
 
-  // Moneda de la tienda (multicountry): MP solo se usa en tiendas que la configuran.
-  const { rows: monRows } = await pool.query(
-    `SELECT COALESCE(t.moneda, pa.moneda, 'COP') AS moneda
-     FROM tiendas t LEFT JOIN paises pa ON pa.id = t.pais_id
-     WHERE t.usrid = $1 LIMIT 1`,
-    [mpInt.tienda_id]
-  );
-  const currency = monRows[0]?.moneda || 'COP';
+  // Moneda de cobro: local (COP) para visitantes del país en tiendas USD; si no, moneda de la tienda.
+  const { currency, rate } = await resolveCheckoutCurrency(mpInt.tienda_id, visitor);
 
   const prefResponse = await preference.create({
     body: {
@@ -1764,13 +1759,13 @@ export const createMercadoPagoPreferenceForCart = async (userId, items, shipping
         ...items.map(i => ({
           title: String(i.name || 'Producto'),
           quantity: Number(i.quantity) || 1,
-          unit_price: Number(i.price) || 0,
+          unit_price: Math.round((Number(i.price) || 0) * rate * 100) / 100,
           currency_id: currency
         })),
         ...(shippingCost > 0 ? [{
           title: 'Envío',
           quantity: 1,
-          unit_price: Number(shippingCost),
+          unit_price: Math.round(Number(shippingCost) * rate * 100) / 100,
           currency_id: currency
         }] : [])
       ],
@@ -1791,17 +1786,19 @@ export const createMercadoPagoPreferenceForCart = async (userId, items, shipping
     sandbox_init_point: prefResponse.sandbox_init_point,
     preferenceId: prefResponse.id,
     public_key: mpInt.public_key,
-    mode: mpInt.mode
+    mode: mpInt.mode,
+    currency
   };
 };
 
-export const processMpPaymentForCart = async (userId, formData, preferenceId, customerInfo, guestHash, shippingCost, shippingPayload, inputItems) => {
+export const processMpPaymentForCart = async (userId, formData, preferenceId, customerInfo, guestHash, shippingCost, shippingPayload, inputItems, visitor = null) => {
   const { items: resolvedItems, foundKey } = await resolveCartItems(inputItems, userId, guestHash);
   await ensureSingleStoreCart(resolvedItems);
   const mpInt = await getMpIntegrationForCart(resolvedItems);
   if (!mpInt?.access_token) {
     throw new Error('La tienda no tiene configurada la integración de Mercado Pago.');
   }
+  const { currency: chargeCurrency, rate } = await resolveCheckoutCurrency(mpInt.tienda_id, visitor);
 
   const client = new MercadoPagoConfig({ accessToken: mpInt.access_token });
   const payment = new Payment(client);
@@ -1812,13 +1809,18 @@ export const processMpPaymentForCart = async (userId, formData, preferenceId, cu
   const isSuccessful = status === 'approved' || status === 'pending' || status === 'in_process' || status === 'authorized' || (paymentResponse && !['rejected', 'cancelled', 'refunded', 'charged_back'].includes(status));
 
   if (paymentResponse && isSuccessful && resolvedItems.length > 0) {
+    const chargeTotal = Math.round(
+      (resolvedItems.reduce((acc, it) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0) + Number(shippingCost || 0)) * rate * 100
+    ) / 100;
     await recordPurchaseForUser(userId, resolvedItems, {
       preferenceId,
       paymentResponse,
       customerInfo,
       guestHash,
       shippingCost,
-      shippingPayload
+      shippingPayload,
+      currency: chargeCurrency,
+      amountOverride: chargeTotal
     });
     if (foundKey) {
       await redisClient.del(foundKey);
@@ -2046,7 +2048,9 @@ export const recordPurchaseForUser = async (userId, items, options = {}) => {
     shippingCost = 0,
     shippingPayload = null,
     status: statusOverride = null,
-    payloadExtra = null
+    payloadExtra = null,
+    currency = null,
+    amountOverride = null
   } = options;
 
   let tiendaId = items[0]?.tienda_id;
@@ -2072,18 +2076,19 @@ export const recordPurchaseForUser = async (userId, items, options = {}) => {
   const identificationType = customerInfo.identification_type || paymentResponse?.payer?.identification?.type || null;
   const identificationNumber = customerInfo.identification_number || paymentResponse?.payer?.identification?.number || null;
 
-  const totalAmount = items.reduce((acc, item) => acc + (Number(item.price || 0) * Number(item.quantity || 1)), 0) + Number(shippingCost || 0);
+  const computedTotal = items.reduce((acc, item) => acc + (Number(item.price || 0) * Number(item.quantity || 1)), 0) + Number(shippingCost || 0);
+  const totalAmount = amountOverride != null ? Number(amountOverride) : computedTotal;
   const orderHash = `ord_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
   const { rows: orderRows } = await pool.query(
     `INSERT INTO orders (
        tienda_id, user_id, guest_hash, preference_id, mercadopago_payment_id,
-       status, amount, payload, departamento_id, ciudad_id, direccion, telefono,
+       status, amount, currency, payload, departamento_id, ciudad_id, direccion, telefono,
        shipping_cost, shipping_payload, customer_name, identification_type, identification_number,
        order_hash, created_at
      ) VALUES (
        $1, $2, $3, $4, $5,
-       $6, $7, $8::jsonb, $9, $10, $11, $12,
+       $6, $7, $19, $8::jsonb, $9, $10, $11, $12,
        $13, $14::jsonb, $15, $16, $17,
        $18, NOW()
      ) RETURNING id`,
@@ -2091,7 +2096,7 @@ export const recordPurchaseForUser = async (userId, items, options = {}) => {
       tiendaId, userId, guestHash, preferenceId, mercadopagoPaymentId,
       status, totalAmount, payloadJson, departamentoId, ciudadId, direccion, telefono,
       shippingCost, shippingPayload ? JSON.stringify(shippingPayload) : null, customerName, identificationType, identificationNumber,
-      orderHash
+      orderHash, currency
     ]
   );
 
@@ -2164,7 +2169,7 @@ export const recordPurchaseForUser = async (userId, items, options = {}) => {
     );
   }
 
-  return { orderId, orderNumber, orderHash, totalAmount };
+  return { orderId, orderNumber, orderHash, totalAmount, tiendaId };
 };
 
 // Crea la orden en estado 'pending' ANTES de cobrar (checkout transparente Bold):
