@@ -1000,29 +1000,6 @@ const MarketConfig = () => {
         <main className="config-content">
           <div style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: '1rem', border: '1px solid #e2e8f0', marginBottom: '1.5rem', display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'flex-end', justifyContent: 'space-between' }}>
             <div style={{ minWidth: '220px' }}>
-              <h4 style={{ margin: '0 0 0.25rem 0', color: '#1e293b', fontSize: '1rem' }}>País de operación</h4>
-              <p style={{ margin: 0, fontSize: '0.875rem', color: '#64748b' }}>Define la moneda de tu catálogo y tu zona de envíos.</p>
-            </div>
-            <div className="config-form-group" style={{ margin: 0, minWidth: '220px' }}>
-              <select value={paisId} onChange={(e) => setPaisId(e.target.value)}>
-                {paises.length === 0 && <option value="">Cargando…</option>}
-                {paises.map((p) => (
-                  <option key={p.id} value={p.id}>{p.nombre} ({p.moneda})</option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="btn-primary"
-                style={{ marginTop: '0.5rem' }}
-                disabled={savingPais || !paisId || String(paisId) === String(tienda?.paisId || '')}
-                onClick={savePais}
-              >
-                {savingPais ? 'Guardando…' : 'Guardar país'}
-              </button>
-            </div>
-          </div>
-          <div style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: '1rem', border: '1px solid #e2e8f0', marginBottom: '1.5rem', display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-            <div style={{ minWidth: '220px' }}>
               <h4 style={{ margin: '0 0 0.25rem 0', color: '#1e293b', fontSize: '1rem' }}>Origen de envíos (Venezuela · ZOOM)</h4>
               <p style={{ margin: 0, fontSize: '0.875rem', color: '#64748b' }}>Ciudad desde donde despachas tus envíos. Aplica a tiendas de Venezuela.</p>
             </div>
@@ -1472,103 +1449,6 @@ const MarketConfig = () => {
                 </button>
               </div>
 
-              {/* Sección DIAN - Facturación Electrónica */}
-              <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', opacity: 0.65 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <div style={{ background: '#0284c7', color: 'white', fontWeight: 900, padding: '0.5rem 0.9rem', borderRadius: '0.5rem', fontSize: '1.1rem', letterSpacing: '1px' }}>
-                      DIAN
-                    </div>
-                    <div>
-                      <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>Facturación Electrónica DIAN (Colombia)</h4>
-                      <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Configuración de habilitación y software para emisión de documentos electrónicos.</p>
-                    </div>
-                  </div>
-                  <span style={{ background: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1', padding: '0.25rem 0.75rem', borderRadius: '999px', fontSize: '0.8rem', fontWeight: 600 }}>
-                    Próximamente
-                  </span>
-                </div>
-
-                <form onSubmit={handleSaveDian}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem' }}>
-                    <div className="config-form-group" style={{ margin: 0 }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#334155', fontWeight: 600 }}>
-                        <Code size={16} color="#0284c7" /> ID del SW
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="ID del Software DIAN"
-                        value={dianConfig.sw_id}
-                        onChange={(e) => setDianConfig({ ...dianConfig, sw_id: e.target.value })}
-                        disabled
-                        style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', boxSizing: 'border-box', backgroundColor: '#f8fafc', cursor: 'not-allowed' }}
-                      />
-                    </div>
-
-                    <div className="config-form-group" style={{ margin: 0 }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#334155', fontWeight: 600 }}>
-                        <KeyRound size={16} color="#0284c7" /> PIN del SW
-                      </label>
-                      <input
-                        type="password"
-                        placeholder="PIN del Software"
-                        value={dianConfig.sw_pin}
-                        onChange={(e) => setDianConfig({ ...dianConfig, sw_pin: e.target.value })}
-                        disabled
-                        style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', boxSizing: 'border-box', backgroundColor: '#f8fafc', cursor: 'not-allowed' }}
-                      />
-                    </div>
-
-                    <div className="config-form-group" style={{ margin: 0, gridColumn: '1 / -1' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#334155', fontWeight: 600 }}>
-                        <Shield size={16} color="#0284c7" /> Llave Técnica
-                      </label>
-                      <textarea
-                        rows={2}
-                        placeholder="Llave técnica proporcionada por la DIAN"
-                        value={dianConfig.technical_key}
-                        onChange={(e) => setDianConfig({ ...dianConfig, technical_key: e.target.value })}
-                        disabled
-                        style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', boxSizing: 'border-box', resize: 'vertical', backgroundColor: '#f8fafc', cursor: 'not-allowed' }}
-                      />
-                    </div>
-
-                    <div className="config-form-group" style={{ margin: 0 }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#334155', fontWeight: 600 }}>
-                        <Hash size={16} color="#0284c7" /> Prefijo
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Ej. SETT"
-                        value={dianConfig.prefix}
-                        onChange={(e) => setDianConfig({ ...dianConfig, prefix: e.target.value })}
-                        disabled
-                        style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', boxSizing: 'border-box', backgroundColor: '#f8fafc', cursor: 'not-allowed' }}
-                      />
-                    </div>
-
-                    <div className="config-form-group" style={{ margin: 0 }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#334155', fontWeight: 600 }}>
-                        <Terminal size={16} color="#0284c7" /> TestSetId
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="TestSetId de pruebas"
-                        value={dianConfig.test_set_id}
-                        onChange={(e) => setDianConfig({ ...dianConfig, test_set_id: e.target.value })}
-                        disabled
-                        style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', boxSizing: 'border-box', backgroundColor: '#f8fafc', cursor: 'not-allowed' }}
-                      />
-                    </div>
-                  </div>
-
-                  <div style={{ marginTop: '1.5rem', textAlign: 'right' }}>
-                    <button type="submit" className="config-btn-primary" disabled style={{ background: '#cbd5e1', color: '#64748b', cursor: 'not-allowed' }}>
-                      Guardar configuración DIAN (Próximamente)
-                    </button>
-                  </div>
-                </form>
-              </div>
             </div>
           )}
 

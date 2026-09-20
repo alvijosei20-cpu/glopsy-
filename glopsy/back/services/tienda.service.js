@@ -212,24 +212,21 @@ export const updateTiendaForUser = async (userId, { name = null, slug = null, ga
     throw err;
   }
 
-  // Cambio de país de operación (multicountry): null/undefined = no tocar.
+  // El país de operación queda fijo desde el registro: no se puede cambiar.
   let newPaisId;
-  if (pais_id === null) {
-    newPaisId = null; // limpiar => Colombia por defecto
-  } else if (pais_id !== undefined) {
-    const paisId = Number(pais_id);
-    if (!Number.isInteger(paisId) || paisId <= 0) {
+  if (pais_id !== undefined) {
+    const target = pais_id === null ? null : Number(pais_id);
+    if (pais_id !== null && (!Number.isInteger(target) || target <= 0)) {
       const err = new Error('País no válido.');
       err.code = 400;
       throw err;
     }
-    const { rows: pr } = await pool.query(`SELECT id FROM paises WHERE id = $1 LIMIT 1`, [paisId]);
-    if (!pr[0]) {
-      const err = new Error('País no válido.');
+    if (target !== (current.paisId ?? null)) {
+      const err = new Error('El país de operación no se puede cambiar después del registro de la tienda.');
       err.code = 400;
       throw err;
     }
-    newPaisId = paisId;
+    newPaisId = undefined; // mismo país: no se toca
   }
 
   // Origen de envíos ZOOM (Venezuela): null limpia, undefined no toca.
