@@ -34,7 +34,7 @@ const mapTienda = (row) => ({
 
 // ------------------------------------------------------------------ Subdominio (slug)
 const RESERVED_SLUGS = new Set([
-  'app', 'www', 'api', 'tienda', 'store', 'stores', 'admin', 'panel', 'market',
+  'app', 'www', 'api', 'tienda', 'admin', 'panel', 'market',
   'marketing', 'listpr', 'catalogo', 'glopsy', 'glopsybot', 'auth', 'cart',
   'checkout', 'profile', 'favorites', 'terminos', 'privacidad', 'compras',
   'consultar-pedido', 'deep-link', 'product', 'products', 'home', 'search',
@@ -66,6 +66,16 @@ const slugFromInput = (slug) => {
   if (slug === null || slug === undefined || String(slug).trim() === '') return null;
   const normalized = normalizeStoreSlug(slug);
   return isValidStoreSlug(normalized) ? normalized : null;
+};
+
+// Mensaje específico: distingue "reservado" de "formato inválido".
+const slugErrorMessage = (slug) => {
+  const normalized = normalizeStoreSlug(slug);
+  const formatoOk = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(normalized) && normalized.length >= 2;
+  if (formatoOk && RESERVED_SLUGS.has(normalized)) {
+    return `El subdominio "${normalized}" está reservado. Elige otro (ej: mi-tienda).`;
+  }
+  return 'Subdominio no válido. Usa solo minúsculas, números y guiones, entre 2 y 63 caracteres (ej: mi-tienda).';
 };
 
 // Incluye la config del país (moneda/locale/dominio) vía JOIN con aliases t_*.
@@ -140,7 +150,7 @@ export const ensureTiendaForUser = async (userId, { name = '', slug = null, ga_i
   }
 
   if (slug !== null && slug !== undefined && String(slug).trim() !== '' && !storeSlug) {
-    const err = new Error('Subdominio no válido. Usa solo minúsculas, números y guiones (ej: mi-tienda).');
+    const err = new Error(slugErrorMessage(slug));
     err.code = 400;
     throw err;
   }
@@ -197,7 +207,7 @@ export const updateTiendaForUser = async (userId, { name = null, slug = null, ga
   const wantsSlug = slug !== null && slug !== undefined && String(slug).trim() !== '';
   const storeSlug = wantsSlug ? slugFromInput(slug) : null;
   if (wantsSlug && !storeSlug) {
-    const err = new Error('Subdominio no válido. Usa solo minúsculas, números y guiones (ej: mi-tienda).');
+    const err = new Error(slugErrorMessage(slug));
     err.code = 400;
     throw err;
   }

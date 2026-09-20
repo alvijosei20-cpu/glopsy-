@@ -5,6 +5,17 @@ import { useAuth } from '../../context/AuthContext';
 import api from '../../services/api';
 import { getRootOrigin, getRootDomain } from '../../utils/storeHost';
 
+// Subdominios reservados por la plataforma (no se pueden usar como tienda).
+const RESERVED_SLUGS = new Set([
+  'app', 'www', 'api', 'tienda', 'admin', 'panel', 'market', 'marketing',
+  'listpr', 'catalogo', 'glopsy', 'glopsybot', 'auth', 'cart', 'checkout',
+  'profile', 'favorites', 'terminos', 'privacidad', 'compras', 'consultar-pedido',
+  'deep-link', 'product', 'products', 'home', 'search', 'banners', 'notifications',
+  'webhooks', 'webhook', 'geo', 'stats', 'returns', 'login', 'register', 'vender',
+  'publish', 'pago', 'pagos', 'mi-tienda', 'micuenta', 'ayuda', 'faq', 'blog',
+  'legal', 'mail', 'smtp', 'support',
+]);
+
 export default function Vender() {
   const navigate = useNavigate();
   const { user, tienda, tiendaLoading, refreshTienda } = useAuth();
@@ -58,6 +69,7 @@ export default function Vender() {
 
   const selectedPais = paises.find((p) => String(p.id) === String(paisId)) || null;
   const raiz = selectedPais?.dominio_raiz || getRootDomain();
+  const slugReservado = RESERVED_SLUGS.has(slug.trim().toLowerCase());
 
   if (!tiendaLoading && !user?.can_sell && !tienda) {
     return (
@@ -109,6 +121,10 @@ export default function Vender() {
   const create = async (e) => {
     e.preventDefault();
     if (busy) return;
+    if (slugReservado) {
+      setError(`El subdominio "${slug}" está reservado. Elige otro.`);
+      return;
+    }
     if (!bank.banco_codigo || !bank.tipo_cuenta || !bank.numero_cuenta || !bank.titular_cuenta) {
       setError('Completa tu cuenta bancaria: banco, tipo, número y titular.');
       return;
@@ -189,7 +205,12 @@ export default function Vender() {
                 className="w-full py-2.5 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
               />
             </div>
-            {slug && <p className="mt-1 text-[11px] text-slate-400">Tu vitrina quedará en: {slug}.{raiz}</p>}
+            {slug && slugReservado && (
+              <p className="mt-1 text-[11px] font-semibold text-pink-600">
+                "{slug}" está reservado por la plataforma. Elige otro, por ejemplo "{slug}-tienda".
+              </p>
+            )}
+            {slug && !slugReservado && <p className="mt-1 text-[11px] text-slate-400">Tu vitrina quedará en: {slug}.{raiz}</p>}
           </div>
 
           <div>
@@ -317,7 +338,7 @@ export default function Vender() {
 
           <button
             type="submit"
-            disabled={busy || !name.trim() || !slug.trim() || !bank.banco_codigo || !bank.tipo_cuenta || !bank.numero_cuenta || !bank.titular_cuenta}
+            disabled={busy || !name.trim() || !slug.trim() || slugReservado || !bank.banco_codigo || !bank.tipo_cuenta || !bank.numero_cuenta || !bank.titular_cuenta}
             className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-bold py-3 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
             {busy ? <Loader2 size={16} className="animate-spin" /> : null}
