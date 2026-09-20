@@ -59,6 +59,10 @@ export const getUsdRateTo = async (currency) => {
     return r && r > 0 ? r : null;
   }
 
+  // Tasa forzada por entorno (tiene prioridad; no depende de APIs externas).
+  const forced = Number(process.env[`USD_${cur}_RATE`]);
+  if (Number.isFinite(forced) && forced > 0) return forced;
+
   const cacheKey = `rates:usd:${cur}`;
   const cached = await redisClient.get(cacheKey).catch(() => null);
   if (cached) {
@@ -67,7 +71,7 @@ export const getUsdRateTo = async (currency) => {
   }
 
   try {
-    const res = await fetch(`https://api.frankfurter.app/latest?from=USD&to=${encodeURIComponent(cur)}`, {
+    const res = await fetch('https://open.er-api.com/v6/latest/USD', {
       headers: { Accept: 'application/json' },
     });
     if (res.ok) {
@@ -82,6 +86,5 @@ export const getUsdRateTo = async (currency) => {
     console.warn(`[rates] no se pudo obtener USD->${cur}:`, error.message);
   }
 
-  const fallback = Number(process.env[`USD_${cur}_RATE`]);
-  return Number.isFinite(fallback) && fallback > 0 ? fallback : null;
+  return null;
 };
