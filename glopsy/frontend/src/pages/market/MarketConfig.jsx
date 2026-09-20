@@ -30,17 +30,43 @@ const MarketConfig = () => {
     sw_pin: '',
     technical_key: '',
     prefix: '',
-    test_set_id: ''
+    test_set_id: '',
+    numero_resolucion: '',
+    resolucion_fecha_desde: '',
+    resolucion_fecha_hasta: '',
+    direccion_fiscal: '',
+    regimen: '48',
+    responsabilidad: 'O-47',
   });
-  const [dianPlantilla, setDianPlantilla] = useState({ regimen: '48', responsabilidad: 'O-47' });
+  const [savingDianFiscal, setSavingDianFiscal] = useState(false);
+
+  const handleSaveDianFiscal = async (e) => {
+    e.preventDefault();
+    setSavingDianFiscal(true);
+    try {
+      const res = await api.put('/tienda/dian/fiscal', {
+        numero_resolucion: dianConfig.numero_resolucion,
+        resolucion_fecha_desde: dianConfig.resolucion_fecha_desde || null,
+        resolucion_fecha_hasta: dianConfig.resolucion_fecha_hasta || null,
+        direccion_fiscal: dianConfig.direccion_fiscal,
+        regimen: dianConfig.regimen,
+        responsabilidad: dianConfig.responsabilidad,
+      });
+      setNotice(res.data?.message || 'Datos fiscales DIAN guardados.');
+    } catch (err) {
+      setNotice(err.response?.data?.message || 'No fue posible guardar los datos fiscales.');
+    } finally {
+      setSavingDianFiscal(false);
+    }
+  };
   const [generatingDian, setGeneratingDian] = useState(false);
 
   const handleDownloadDianPlantilla = async () => {
     setGeneratingDian(true);
     try {
       const { data } = await api.post('/tienda/dian/plantilla/ventas', {
-        regimen: dianPlantilla.regimen,
-        responsabilidad: dianPlantilla.responsabilidad,
+        regimen: dianConfig.regimen,
+        responsabilidad: dianConfig.responsabilidad,
       });
       if (!data?.ok) {
         setNotice((data.errors || [data.message]).filter(Boolean).join(' · '));
@@ -314,7 +340,15 @@ const MarketConfig = () => {
           setFullments(uniqueFullments);
         }
         if (resDian.data && resDian.data.dian) {
-          setDianConfig(resDian.data.dian);
+          const d = resDian.data.dian;
+          setDianConfig((prev) => ({
+            ...prev,
+            ...d,
+            regimen: d.regimen || prev.regimen || '48',
+            responsabilidad: d.responsabilidad || prev.responsabilidad || 'O-47',
+            resolucion_fecha_desde: d.resolucion_fecha_desde ? String(d.resolucion_fecha_desde).slice(0, 10) : '',
+            resolucion_fecha_hasta: d.resolucion_fecha_hasta ? String(d.resolucion_fecha_hasta).slice(0, 10) : '',
+          }));
         }
         if (resCheckout.data && resCheckout.data.integrations) {
           const integrations = resCheckout.data.integrations;
@@ -1542,30 +1576,54 @@ const MarketConfig = () => {
                       <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Se arma lista con tus ventas y datos. Solo elige régimen y responsabilidad.</p>
                     </div>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
-                    <div className="config-form-group" style={{ margin: 0 }}>
-                      <label>Régimen</label>
-                      <select value={dianPlantilla.regimen} onChange={(e) => setDianPlantilla({ ...dianPlantilla, regimen: e.target.value })}>
-                        <option value="48">Responsable de IVA</option>
-                        <option value="49">No responsable de IVA</option>
-                      </select>
+                  <form onSubmit={handleSaveDianFiscal}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                      <div className="config-form-group" style={{ margin: 0 }}>
+                        <label>N° de resolución</label>
+                        <input value={dianConfig.numero_resolucion} onChange={(e) => setDianConfig({ ...dianConfig, numero_resolucion: e.target.value })} placeholder="Ej. 187640000001" />
+                      </div>
+                      <div className="config-form-group" style={{ margin: 0 }}>
+                        <label>Vigencia desde</label>
+                        <input type="date" value={dianConfig.resolucion_fecha_desde || ''} onChange={(e) => setDianConfig({ ...dianConfig, resolucion_fecha_desde: e.target.value })} />
+                      </div>
+                      <div className="config-form-group" style={{ margin: 0 }}>
+                        <label>Vigencia hasta</label>
+                        <input type="date" value={dianConfig.resolucion_fecha_hasta || ''} onChange={(e) => setDianConfig({ ...dianConfig, resolucion_fecha_hasta: e.target.value })} />
+                      </div>
+                      <div className="config-form-group" style={{ margin: 0, gridColumn: '1 / -1' }}>
+                        <label>Dirección fiscal</label>
+                        <input value={dianConfig.direccion_fiscal} onChange={(e) => setDianConfig({ ...dianConfig, direccion_fiscal: e.target.value })} placeholder="Dirección del RUT" />
+                      </div>
+                      <div className="config-form-group" style={{ margin: 0 }}>
+                        <label>Régimen</label>
+                        <select value={dianConfig.regimen} onChange={(e) => setDianConfig({ ...dianConfig, regimen: e.target.value })}>
+                          <option value="48">Responsable de IVA</option>
+                          <option value="49">No responsable de IVA</option>
+                        </select>
+                      </div>
+                      <div className="config-form-group" style={{ margin: 0 }}>
+                        <label>Responsabilidad</label>
+                        <select value={dianConfig.responsabilidad} onChange={(e) => setDianConfig({ ...dianConfig, responsabilidad: e.target.value })}>
+                          <option value="O-13">O-13 Gran contribuyente</option>
+                          <option value="O-15">O-15 Autorretenedor</option>
+                          <option value="O-23">O-23 Agente retención IVA</option>
+                          <option value="O-47">O-47 Régimen simple</option>
+                          <option value="R-99-PN">R-99-PN No responsable</option>
+                        </select>
+                      </div>
                     </div>
-                    <div className="config-form-group" style={{ margin: 0 }}>
-                      <label>Responsabilidad</label>
-                      <select value={dianPlantilla.responsabilidad} onChange={(e) => setDianPlantilla({ ...dianPlantilla, responsabilidad: e.target.value })}>
-                        <option value="O-13">O-13 Gran contribuyente</option>
-                        <option value="O-15">O-15 Autorretenedor</option>
-                        <option value="O-23">O-23 Agente retención IVA</option>
-                        <option value="O-47">O-47 Régimen simple</option>
-                        <option value="R-99-PN">R-99-PN No responsable</option>
-                      </select>
+                    <p style={{ margin: '0.75rem 0 0', fontSize: '0.78rem', color: '#64748b' }}>
+                      El DV del NIT y el departamento/municipio (DANE) se calculan solos desde tu NIT y tu ciudad.
+                    </p>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem', flexWrap: 'wrap' }}>
+                      <button type="submit" className="config-btn-primary" disabled={savingDianFiscal}>
+                        {savingDianFiscal ? 'Guardando…' : 'Guardar datos fiscales'}
+                      </button>
+                      <button type="button" className="config-btn-primary" disabled={generatingDian} onClick={handleDownloadDianPlantilla}>
+                        {generatingDian ? 'Generando…' : 'Descargar plantilla DIAN'}
+                      </button>
                     </div>
-                  </div>
-                  <div style={{ textAlign: 'right', marginTop: '1.25rem' }}>
-                    <button type="button" className="config-btn-primary" disabled={generatingDian} onClick={handleDownloadDianPlantilla}>
-                      {generatingDian ? 'Generando…' : 'Descargar plantilla DIAN'}
-                    </button>
-                  </div>
+                  </form>
                 </div>
               )}
 

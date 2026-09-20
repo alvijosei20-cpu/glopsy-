@@ -375,13 +375,48 @@ export const updateTiendaStatus = async (userId, isActive) => {
 
 export const getDianConfigForUser = async (userId) => {
   const { rows } = await pool.query(
-    `SELECT sw_id, sw_pin, technical_key, prefix, test_set_id
+    `SELECT sw_id, sw_pin, technical_key, prefix, test_set_id,
+            numero_resolucion, resolucion_fecha_desde, resolucion_fecha_hasta,
+            direccion_fiscal, regimen, responsabilidad
      FROM tienda_dian
      WHERE tienda_id = $1
      LIMIT 1`,
     [userId]
   );
-  return rows[0] || { sw_id: '', sw_pin: '', technical_key: '', prefix: '', test_set_id: '' };
+  return rows[0] || {
+    sw_id: '', sw_pin: '', technical_key: '', prefix: '', test_set_id: '',
+    numero_resolucion: '', resolucion_fecha_desde: null, resolucion_fecha_hasta: null,
+    direccion_fiscal: '', regimen: '', responsabilidad: '',
+  };
+};
+
+// Datos fiscales de la plantilla DIAN (resolución, vigencia, dirección, régimen).
+export const saveDianFiscalForUser = async (userId, data) => {
+  const {
+    numero_resolucion, resolucion_fecha_desde, resolucion_fecha_hasta,
+    direccion_fiscal, regimen, responsabilidad,
+  } = data;
+  const { rows } = await pool.query(
+    `INSERT INTO tienda_dian (
+       tienda_id, sw_id, sw_pin, technical_key, prefix, test_set_id,
+       numero_resolucion, resolucion_fecha_desde, resolucion_fecha_hasta,
+       direccion_fiscal, regimen, responsabilidad, updated_at
+     ) VALUES ($1, '', '', '', 'FE', '', $2, $3, $4, $5, $6, $7, NOW())
+     ON CONFLICT (tienda_id) DO UPDATE SET
+       numero_resolucion = EXCLUDED.numero_resolucion,
+       resolucion_fecha_desde = EXCLUDED.resolucion_fecha_desde,
+       resolucion_fecha_hasta = EXCLUDED.resolucion_fecha_hasta,
+       direccion_fiscal = EXCLUDED.direccion_fiscal,
+       regimen = EXCLUDED.regimen,
+       responsabilidad = EXCLUDED.responsabilidad,
+       updated_at = NOW()
+     RETURNING numero_resolucion, resolucion_fecha_desde, resolucion_fecha_hasta,
+               direccion_fiscal, regimen, responsabilidad`,
+    [userId, numero_resolucion || null, resolucion_fecha_desde || null, resolucion_fecha_hasta || null,
+      direccion_fiscal || null, regimen || null, responsabilidad || null]
+  );
+  await redisClient.del(cacheKey(userId)).catch(() => {});
+  return rows[0];
 };
 
 export const saveDianConfigForUser = async (userId, data) => {

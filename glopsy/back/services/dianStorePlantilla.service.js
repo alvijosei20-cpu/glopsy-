@@ -6,8 +6,9 @@
 
 import { pool } from '../db.js';
 import { generateDianPlantillaFile } from './dianPlantilla.service.js';
+import { computeNitDv } from '../utils/nit.js';
 
-export const buildDianPlantillaFromStore = async (tiendaId, { regimen = '48', responsabilidad = 'O-47' } = {}) => {
+export const buildDianPlantillaFromStore = async (tiendaId, { regimen, responsabilidad } = {}) => {
   const { rows: tRows } = await pool.query(
     `SELECT nombres, titular_cuenta, titular_documento FROM tiendas WHERE usrid = $1 LIMIT 1`,
     [tiendaId]
@@ -16,11 +17,29 @@ export const buildDianPlantillaFromStore = async (tiendaId, { regimen = '48', re
   if (!tienda) return { ok: false, errors: ['No tienes una tienda registrada.'] };
 
   const { rows: dianRows } = await pool.query(
-    `SELECT prefix, test_set_id FROM tienda_dian WHERE tienda_id = $1 LIMIT 1`,
+    `SELECT prefix, test_set_id, numero_resolucion, resolucion_fecha_desde, resolucion_fecha_hasta,
+            direccion_fiscal, regimen AS regimen_guardado, responsabilidad AS responsabilidad_guardada
+     FROM tienda_dian WHERE tienda_id = $1 LIMIT 1`,
     [tiendaId]
   );
-  const prefix = dianRows[0]?.prefix || 'FE';
-  const resolucion = String(dianRows[0]?.test_set_id || '').replace(/\D/g, '') || '0';
+  const dian = dianRows[0] || {};
+  const prefix = dian.prefix || 'FE';
+  const resolucion = String(dian.numero_resolucion || dian.test_set_id || '').replace(/\D/g, '') || '0';
+  const regimenFinal = regimen || dian.regimen_guardado || '48';
+  const responsabilidadFinal = responsabilidad || dian.responsabilidad_guardada || 'O-47';
+
+  // Departamento (2) y municipio (5) DANE desde la ciudad de la tienda.
+  const { rows: cityRows } = await pool.query(
+    `SELECT c.codigo_dane
+     FROM fullments f
+     JOIN ciudades c ON c.id = f.ciudad_id
+     WHERE f.tienda_id = $1 AND f.estado = 'activo' AND c.codigo_dane ~ '^[0-9]{5}$'
+     ORDER BY f.id ASC LIMIT 1`,
+    [tiendaId]
+  );
+  const dane = cityRows[0]?.codigo_dane || null;
+  const departamento = dane ? dane.slice(0, 2) : null;
+  const municipio = dane || null;
 
   // Líneas a partir de las ventas del proveedor.
   const { rows: vendidos } = await pool.query(
@@ -64,12 +83,15 @@ export const buildDianPlantillaFromStore = async (tiendaId, { regimen = '48', re
   }
 
   const doc = String(tienda.titular_documento || '').replace(/\D/g, '');
+  const dv = computeNitDv(doc);
 
   return generateDianPlantillaFile({
     VersionPlantilla: '1.0',
     TipoDocumento: '01',
     InformacionResolucion: {
       NumeroResolucion: resolucion,
+      FechaDesde: dian.resolucion_fecha_desde ? String(dian.resolucion_fecha_desde).slice(0, 10) : undefined,
+      FechaHasta: dian.resolucion_fecha_hasta ? String(dian.resolucion_fecha_hasta).slice(0, 10) : undefined,
       Prefijo: prefix,
       ConsecutivoDesde: 1,
       ConsecutivoHasta: 5000,
@@ -77,10 +99,13 @@ export const buildDianPlantillaFromStore = async (tiendaId, { regimen = '48', re
     Emisor: {
       TipoIdentificacion: '31',
       NumeroIdentificacion: doc || '900000000',
-      DV: '0',
+      DV: dv != null ? String(dv) : '0',
       RazonSocial: tienda.titular_cuenta || tienda.nombres || 'Mi empresa',
-      RegimenFiscal: regimen,
-      ResponsabilidadFiscal: responsabilidad,
+      RegimenFiscal: regimenFinal,
+      ResponsabilidadFiscal: responsabilidadFinal,
+      Direccion: dian.direccion_fiscal || null,
+      Departamento: departamento,
+      Municipio: municipio,
     },
     DetallesFactura: {
       FechaEmision: new Date().toISOString().slice(0, 10),

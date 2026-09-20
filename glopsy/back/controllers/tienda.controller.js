@@ -6,6 +6,7 @@ import {
   getProductionIntegrationsForUser,
   getDianConfigForUser, 
   saveDianConfigForUser,
+  saveDianFiscalForUser,
   getPayoutAccountForUser,
   savePayoutAccountForUser,
   getPublicPaymentMethods,
@@ -315,6 +316,25 @@ export const createTiendaController = ({
     }
   },
 
+  saveDianFiscal: async (req, res) => {
+    const numero_resolucion = cleanString(req.body?.numero_resolucion, { maxLength: 40 });
+    const resolucion_fecha_desde = cleanString(req.body?.resolucion_fecha_desde, { maxLength: 10 });
+    const resolucion_fecha_hasta = cleanString(req.body?.resolucion_fecha_hasta, { maxLength: 10 });
+    const direccion_fiscal = cleanString(req.body?.direccion_fiscal, { maxLength: 200 });
+    const regimen = cleanString(req.body?.regimen, { maxLength: 5 });
+    const responsabilidad = cleanString(req.body?.responsabilidad, { maxLength: 10 });
+    try {
+      const fiscal = await saveDianFiscalForUser(req.auth.userId, {
+        numero_resolucion, resolucion_fecha_desde, resolucion_fecha_hasta,
+        direccion_fiscal, regimen, responsabilidad,
+      });
+      return res.json({ ok: true, fiscal, message: 'Datos fiscales DIAN guardados.' });
+    } catch (error) {
+      console.error('Error al guardar datos fiscales DIAN:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible guardar los datos fiscales.' });
+    }
+  },
+
   getDianPlantillaFromStore: async (req, res) => {
     const regimen = cleanString(req.body?.regimen, { maxLength: 5 }) || '48';
     const responsabilidad = cleanString(req.body?.responsabilidad, { maxLength: 10 }) || 'O-47';
@@ -542,6 +562,7 @@ export const {
   getDian, 
   saveDian,
   generateDianPlantilla,
+  saveDianFiscal,
   getDianPlantillaFromStore,
   getPayoutAccount,
   savePayoutAccount,

@@ -7,6 +7,7 @@ import {
   getDian, 
   saveDian,
   generateDianPlantilla,
+  saveDianFiscal,
   getDianPlantillaFromStore,
   getPayoutAccount,
   savePayoutAccount,
@@ -62,6 +63,8 @@ router.put('/dian', saveDian);
 router.post('/dian/plantilla', generateDianPlantilla);
 // Plantilla DIAN lista según las ventas del proveedor (solo régimen y responsabilidad)
 router.post('/dian/plantilla/ventas', getDianPlantillaFromStore);
+// Datos fiscales DIAN (resolución, vigencia, dirección, régimen, responsabilidad)
+router.put('/dian/fiscal', saveDianFiscal);
 // Saldo contable del vendedor (disponible / diferido) y movimientos
 router.get('/ledger', getLedger);
 // Cuenta bancaria donde el proveedor recibe sus pagos
