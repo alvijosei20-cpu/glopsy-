@@ -281,6 +281,8 @@ export const reverseGeocode = async (req, res) => {
       ubicacion: {
         reversedCity,
         departamento,
+        // País directo desde las coordenadas (independiente de la cobertura de envío).
+        paisCodigo: cleanString(address.country_code, { maxLength: 4 }).toUpperCase() || null,
         match: match || null,
       },
     };

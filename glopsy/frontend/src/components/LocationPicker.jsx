@@ -52,7 +52,12 @@ export default function LocationPicker({ className = '' }) {
       setStatus('reverse');
       const u = await reverseCity(lat, lon);
       if (u && u.match) {
-        saveCity({ city: u.match.ciudad_nombre, departamento: u.match.departamento_nombre, paisCodigo: u.match.pais_codigo, source: 'geo' });
+        saveCity({
+          city: u.match.ciudad_nombre,
+          departamento: u.match.departamento_nombre,
+          paisCodigo: u.paisCodigo || u.match.pais_codigo,
+          source: 'geo',
+        });
         setOpen(false);
         return;
       }
