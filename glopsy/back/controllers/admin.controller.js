@@ -1,5 +1,6 @@
 import { pool } from '../db.js';
 import { cleanString, cleanEmail } from '../utils/validation.js';
+import { approveUsdActivation } from '../services/tienda.service.js';
 
 // GET /api/admin/sellers?q=&limit= -> usuarios con su estado de vendedor y tienda.
 export const listUsersForAdmin = async (req, res) => {
@@ -57,5 +58,20 @@ export const setUserCanSell = async (req, res) => {
   } catch (error) {
     console.error('Error actualizando can_sell:', error.message);
     return res.status(500).json({ ok: false, message: 'No fue posible actualizar el usuario.' });
+  }
+};
+
+// POST /api/admin/sellers/usd-activation { email, approve } -> activa (o rechaza) la tienda en USD.
+export const setUsdActivation = async (req, res) => {
+  try {
+    const email = cleanEmail(req.body?.email, { required: true });
+    if (!email) return res.status(400).json({ ok: false, message: 'Correo inválido.' });
+    const { rows } = await pool.query(`SELECT id FROM users WHERE email = $1 LIMIT 1`, [email]);
+    if (!rows[0]) return res.status(404).json({ ok: false, message: 'Usuario no encontrado.' });
+    const result = await approveUsdActivation(rows[0].id, req.body?.approve !== false);
+    return res.json({ ok: true, result });
+  } catch (error) {
+    console.error('Error actualizando activación USD:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible actualizar la activación USD.' });
   }
 };

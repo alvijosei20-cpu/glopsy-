@@ -5,6 +5,7 @@ import {
   getCiudades, 
   getDepartamentos,
   getPaises,
+  getBancos,
   getVisitorCountry,
   getZoomCiudades,
   createFullment, 
@@ -23,6 +24,7 @@ router.get('/fullments/mine', requireAuth, getMyFullments);
 router.get('/ciudades', getCiudades);
 router.get('/departamentos', getDepartamentos);
 router.get('/paises', getPaises);
+router.get('/bancos', getBancos);
 router.get('/visitor-country', getVisitorCountry);
 router.get('/zoom-ciudades', getZoomCiudades);
 router.get('/reverse', reverseGeocode);

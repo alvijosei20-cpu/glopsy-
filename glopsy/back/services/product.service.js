@@ -957,6 +957,87 @@ export const getStorefrontProducts = async ({ slug = '', q = '', limit = 48, off
   };
 };
 
+const mapStorefrontCard = (r) => ({
+  id: r.public_id,
+  public_id: r.public_id,
+  name: r.name,
+  images: r.images,
+  price: Number(r.price ?? r.suggested_price ?? 0),
+  avg_rating: Number(r.avg_rating || 0),
+  review_count: Number(r.review_count || 0),
+});
+
+// Datos para la vitrina tipo dashboard: últimos publicados, promociones y descuentos.
+export const getStorefrontHome = async ({ slug = '', ciudadName = null } = {}) => {
+  const isMain = String(slug || '').toLowerCase() === 'main';
+  const cleanSlug = isMain ? '' : String(slug || '').toLowerCase().trim().slice(0, 63);
+
+  let tiendaId = null;
+  if (isMain) {
+    tiendaId = await resolveMainStoreId();
+  } else if (cleanSlug) {
+    const { rows } = await pool.query(
+      `SELECT usrid FROM tiendas WHERE slug = $1 AND COALESCE(activa, true) = true LIMIT 1`,
+      [cleanSlug]
+    );
+    tiendaId = rows[0] ? Number(rows[0].usrid) : null;
+  }
+  if (!tiendaId) return { store: null, latest: [], promotions: [], discounts: [] };
+
+  const latestData = await getStorefrontProducts({ slug, limit: 8, offset: 0, ciudadName });
+
+  const { rows: ofertas } = await pool.query(
+    `SELECT id, titulo, descripcion, tipo_descuento, valor_descuento, alcance
+     FROM ofertas
+     WHERE tienda_id = $1 AND estado = 'activo'
+       AND (fecha_inicio IS NULL OR fecha_inicio <= NOW())
+       AND (fecha_fin IS NULL OR fecha_fin >= NOW())
+     ORDER BY created_at DESC
+     LIMIT 10`,
+    [tiendaId]
+  );
+
+  const ofertaIds = ofertas.map((o) => o.id);
+  const discountIds = new Set();
+  if (ofertaIds.length) {
+    const { rows: links } = await pool.query(
+      `SELECT producto_id FROM oferta_productos WHERE oferta_id = ANY($1::int[])`,
+      [ofertaIds]
+    );
+    links.forEach((l) => discountIds.add(Number(l.producto_id)));
+  }
+  const hasGlobal = ofertas.some((o) => o.alcance === 'global');
+
+  let discounts = [];
+  if (hasGlobal || discountIds.size > 0) {
+    const params = hasGlobal ? [tiendaId] : [tiendaId, [...discountIds]];
+    const cond = hasGlobal ? '1 = 1' : 'p.id = ANY($2::int[])';
+    const { rows } = await pool.query(
+      `SELECT p.public_id, p.name, p.images, COALESCE(p.suggested_price, p.base_price) AS price
+       FROM produc p
+       WHERE p.status = 'active' AND p.tienda_id = $1 AND ${cond}
+       ORDER BY p.created_at DESC
+       LIMIT 12`,
+      params
+    );
+    discounts = rows.map(mapStorefrontCard);
+  }
+
+  return {
+    store: latestData.store,
+    latest: latestData.products,
+    promotions: ofertas.map((o) => ({
+      id: o.id,
+      titulo: o.titulo,
+      descripcion: o.descripcion,
+      tipo: o.tipo_descuento,
+      valor: Number(o.valor_descuento),
+      alcance: o.alcance,
+    })),
+    discounts,
+  };
+};
+
 export const getUserFavorites = async (userId) => {
   const { rows } = await pool.query(
     `SELECT product_id FROM favoritos WHERE user_id = $1`,
@@ -1963,7 +2044,9 @@ export const recordPurchaseForUser = async (userId, items, options = {}) => {
     customerInfo = {},
     guestHash = null,
     shippingCost = 0,
-    shippingPayload = null
+    shippingPayload = null,
+    status: statusOverride = null,
+    payloadExtra = null
   } = options;
 
   let tiendaId = items[0]?.tienda_id;
@@ -1977,8 +2060,9 @@ export const recordPurchaseForUser = async (userId, items, options = {}) => {
   }
 
   const mercadopagoPaymentId = paymentResponse?.id ? String(paymentResponse.id) : null;
-  const status = paymentResponse?.status === 'approved' ? 'Completado' : (paymentResponse?.status || 'Completado');
-  const payloadJson = paymentResponse ? JSON.stringify(paymentResponse) : null;
+  const status = statusOverride || (paymentResponse?.status === 'approved' ? 'Completado' : (paymentResponse?.status || 'Completado'));
+  const payloadObj = { ...(paymentResponse || {}), ...(payloadExtra || {}) };
+  const payloadJson = Object.keys(payloadObj).length > 0 ? JSON.stringify(payloadObj) : null;
 
   const departamentoId = customerInfo.departamento_id ? Number(customerInfo.departamento_id) : null;
   const ciudadId = customerInfo.ciudad_id ? Number(customerInfo.ciudad_id) : null;
@@ -2080,7 +2164,19 @@ export const recordPurchaseForUser = async (userId, items, options = {}) => {
     );
   }
 
-  return { orderId, orderNumber, orderHash };
+  return { orderId, orderNumber, orderHash, totalAmount };
+};
+
+// Crea la orden en estado 'pending' ANTES de cobrar (checkout transparente Bold):
+// reserva stock, valida una sola tienda y deja la orden lista para asociarle el pago.
+export const createPendingOrderForCart = async (userId, items, options = {}) => {
+  await reserveStockForSession(items, options.guestHash || `user_${userId}`);
+  await ensureSingleStoreCart(items);
+  return recordPurchaseForUser(userId, items, {
+    ...options,
+    status: 'pending',
+    payloadExtra: { ...(options.payloadExtra || {}), pending_reason: 'bold_checkout' }
+  });
 };
 
 export const getUserPurchasesDetails = async (userId, guestHash) => {

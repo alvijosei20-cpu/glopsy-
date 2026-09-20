@@ -388,3 +388,24 @@ export const updateFullmentProducts = async (req, res) => {
     res.status(400).json({ ok: false, message: error.message || 'Error al actualizar los productos del centro de distribución' });
   }
 };
+
+// Catálogo de bancos por país (para la cuenta de pagos del proveedor).
+export const getBancos = async (req, res) => {
+  try {
+    const paisId = toInt(req.query.pais_id, { min: 1 });
+    const params = [];
+    let where = 'WHERE activo = true';
+    if (paisId) {
+      params.push(paisId);
+      where += ` AND pais_id = $${params.length}`;
+    }
+    const { rows } = await query(
+      `SELECT id, pais_id, codigo, nombre FROM bancos ${where} ORDER BY nombre`,
+      params
+    );
+    return res.json({ ok: true, bancos: rows });
+  } catch (error) {
+    console.error('Error al consultar bancos:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible consultar los bancos.' });
+  }
+};

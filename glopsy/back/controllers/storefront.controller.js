@@ -1,6 +1,6 @@
 import { cleanString, toInt } from '../utils/validation.js';
 import { getPublicStoreBySlug, getMainStore } from '../services/tienda.service.js';
-import { getStorefrontProducts } from '../services/product.service.js';
+import { getStorefrontProducts, getStorefrontHome } from '../services/product.service.js';
 
 // GET /api/storefront/:slug -> información pública de la tienda (vitrina del subdominio).
 // El slug especial "main" resuelve la tienda principal (app.glopsy.shop).
@@ -36,5 +36,21 @@ export const storefrontProducts = async (req, res) => {
   } catch (error) {
     console.error('Error al listar productos de la tienda:', error.message);
     return res.status(500).json({ ok: false, message: 'No fue posible listar los productos.' });
+  }
+};
+
+// GET /api/storefront/:slug/home -> secciones del dashboard (últimos, promociones, descuentos).
+export const storefrontHome = async (req, res) => {
+  try {
+    const slug = cleanString(req.params.slug, { maxLength: 63 });
+    const ciudad = cleanString(req.query.ciudad, { maxLength: 100 }) || null;
+    const data = await getStorefrontHome({ slug, ciudadName: ciudad });
+    if (!data.store) {
+      return res.status(404).json({ ok: false, message: 'Tienda no encontrada.' });
+    }
+    return res.json({ ok: true, ...data });
+  } catch (error) {
+    console.error('Error al cargar la vitrina:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible cargar la vitrina.' });
   }
 };

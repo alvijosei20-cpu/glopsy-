@@ -14,6 +14,8 @@ const mapTienda = (row) => ({
   isActive: row.activa,
   gaId: row.ga_id || null,
   registeredAt: row.fechareg,
+  // Tienda principal de la plataforma: aquí se configuran las pasarelas globales.
+  isMain: row.is_main === true,
   // Multicountry: país y su config (moneda/locale/dominio raíz). Si la tienda
   // no tiene país, cae a la config por defecto (Colombia).
   paisId: row.t_pais_id ?? null,
@@ -22,6 +24,12 @@ const mapTienda = (row) => ({
   dominio_raiz: row.t_dominio || null,
   zoomOrigenCodciudad: row.t_zoom_origen ?? null,
   internationalDispatchProvider: row.t_international_dispatch_provider || null,
+  // Apariencia de la vitrina (sub-tiendas).
+  storefrontTemplate: row.storefront_template || 'dashboard',
+  storefrontTheme: row.storefront_theme || 'auto',
+  storefrontPalette: row.storefront_palette || 'fucsia',
+  storefrontColor: row.storefront_color || null,
+  storefrontBanner: row.storefront_banner || null,
 });
 
 // ------------------------------------------------------------------ Subdominio (slug)
@@ -64,12 +72,15 @@ const slugFromInput = (slug) => {
 // Requiere que la consulta use alias `t` para tiendas y `pa` para paises.
 const STORE_COLUMNS = `
   t.hashid, t.nombres, t.slug, t.avatar, t.activa, t.fechareg, t.ga_id,
+  t.is_main,
   t.pais_id AS t_pais_id,
   COALESCE(t.moneda, pa.moneda, 'COP') AS t_moneda,
   COALESCE(t.locale, pa.locale, 'es-CO') AS t_locale,
   COALESCE(t.dominio_raiz, pa.dominio_raiz) AS t_dominio,
   t.zoom_origen_codciudad AS t_zoom_origen,
-  t.international_dispatch_provider AS t_international_dispatch_provider
+  t.international_dispatch_provider AS t_international_dispatch_provider,
+  t.storefront_template, t.storefront_theme, t.storefront_palette,
+  t.storefront_color, t.storefront_banner
 `;
 const STORE_JOIN = `
   LEFT JOIN paises pa ON pa.id = t.pais_id
@@ -285,22 +296,19 @@ export const updateTiendaForUser = async (userId, { name = null, slug = null, ga
   }
 };
 
-// Una tienda nueva nace inactiva. Solo puede "darse de alta" si ya configuró en
-// PRODUCCIÓN Mercado Pago y ENVIA (token de envíos y de pagos), para no operar
-// con credenciales de prueba o de la plataforma.
+// Una tienda nueva nace inactiva. Solo puede "darse de alta" si ya configuró su
+// cuenta bancaria de pagos (las pasarelas MP/Bold/ENVIA son globales de la plataforma).
 export const getProductionIntegrationsForUser = async (userId) => {
   const { rows } = await pool.query(
-    `SELECT provider, mode,
-            (access_token IS NOT NULL AND length(access_token) > 0) AS has_token
-     FROM checkout_integrations
-     WHERE tienda_id = $1 AND provider IN ('mercadopago', 'envia')`,
+    `SELECT banco_codigo, tipo_cuenta, numero_cuenta, titular_cuenta
+     FROM tiendas WHERE usrid = $1 LIMIT 1`,
     [userId]
   );
-  const hasInProduction = (provider) =>
-    rows.some((r) => r.provider === provider && r.mode === 'produccion' && r.has_token);
+  const a = rows[0] || {};
   const missing = [];
-  if (!hasInProduction('mercadopago')) missing.push('Mercado Pago (producción)');
-  if (!hasInProduction('envia')) missing.push('ENVIA (producción)');
+  if (!a.banco_codigo || !a.tipo_cuenta || !a.numero_cuenta || !a.titular_cuenta) {
+    missing.push('Cuenta de pagos (banco, tipo, número y titular)');
+  }
   return { ok: missing.length === 0, missing };
 };
 
@@ -386,9 +394,48 @@ export const saveDianConfigForUser = async (userId, data) => {
   return rows[0];
 };
 
+// Cuenta bancaria donde el proveedor recibe su liquidación.
+export const getPayoutAccountForUser = async (userId) => {
+  const { rows } = await pool.query(
+    `SELECT banco_codigo, banco_nombre, tipo_cuenta, numero_cuenta, titular_cuenta, titular_documento
+     FROM tiendas WHERE usrid = $1 LIMIT 1`,
+    [userId]
+  );
+  return rows[0] || { banco_codigo: '', banco_nombre: '', tipo_cuenta: '', numero_cuenta: '', titular_cuenta: '', titular_documento: '' };
+};
+
+export const savePayoutAccountForUser = async (userId, data) => {
+  const { banco_codigo, banco_nombre, tipo_cuenta, numero_cuenta, titular_cuenta, titular_documento } = data;
+  const { rows } = await pool.query(
+    `UPDATE tiendas
+     SET banco_codigo = $2, banco_nombre = $3, tipo_cuenta = $4,
+         numero_cuenta = $5, titular_cuenta = $6, titular_documento = $7
+     WHERE usrid = $1
+     RETURNING banco_codigo, banco_nombre, tipo_cuenta, numero_cuenta, titular_cuenta, titular_documento`,
+    [userId, banco_codigo, banco_nombre, tipo_cuenta, numero_cuenta, titular_cuenta, titular_documento]
+  );
+  await redisClient.del(cacheKey(userId)).catch(() => {});
+  return rows[0];
+};
+
+// Apariencia de la vitrina (plantilla, tema, paleta, color y banner).
+export const saveStorefrontAppearanceForUser = async (userId, data) => {
+  const { template, theme, palette, color, banner } = data;
+  const { rows } = await pool.query(
+    `UPDATE tiendas
+     SET storefront_template = $2, storefront_theme = $3, storefront_palette = $4,
+         storefront_color = $5, storefront_banner = $6
+     WHERE usrid = $1
+     RETURNING storefront_template, storefront_theme, storefront_palette, storefront_color, storefront_banner`,
+    [userId, template, theme, palette, color, banner]
+  );
+  await redisClient.del(cacheKey(userId)).catch(() => {});
+  return rows[0] || null;
+};
+
 export const getCheckoutIntegrationsForUser = async (userId) => {
   const { rows } = await pool.query(
-    `SELECT provider, mode, public_key, access_token, webhook_secret, updated_at
+    `SELECT provider, mode, public_key, access_token, webhook_secret, is_default, updated_at
      FROM checkout_integrations
      WHERE tienda_id = $1`,
     [userId]
@@ -408,16 +455,27 @@ export const getCheckoutIntegrationsForUser = async (userId) => {
       public_key: row.public_key,
       access_token: access ? maskSecret(access) : '',
       webhook_secret: web ? maskSecret(web) : '',
+      is_default: row.is_default === true,
       broken,
       updated_at: row.updated_at,
     };
   });
 };
 
-export const saveCheckoutIntegrationForUser = async (userId, provider, mode, { publicKey, accessToken, webhookSecret } = {}) => {
+export const saveCheckoutIntegrationForUser = async (userId, provider, mode, { publicKey, accessToken, webhookSecret, isDefault = false } = {}) => {
   const encPublicKey = publicKey || null;
   const encAccessToken = accessToken ? encryptSecret(accessToken) : null;
   const encWebhookSecret = webhookSecret ? encryptSecret(webhookSecret) : null;
+
+  // Solo una pasarela predeterminada por tienda: se desmarcan las demás.
+  if (isDefault) {
+    await pool.query(
+      `UPDATE checkout_integrations
+       SET is_default = false
+       WHERE tienda_id = $1 AND NOT (provider = $2 AND mode = $3)`,
+      [userId, provider, mode || 'prueba']
+    );
+  }
 
   const { rows: existing } = await pool.query(
     `SELECT id, access_token FROM checkout_integrations WHERE tienda_id = $1 AND provider = $2 AND mode = $3 LIMIT 1`,
@@ -430,10 +488,11 @@ export const saveCheckoutIntegrationForUser = async (userId, provider, mode, { p
        SET public_key = COALESCE($4, public_key),
            access_token = COALESCE($5, access_token),
            webhook_secret = COALESCE($6, webhook_secret),
+           is_default = CASE WHEN $7 THEN true ELSE is_default END,
            updated_at = NOW()
        WHERE tienda_id = $1 AND provider = $2 AND mode = $3
-       RETURNING provider, mode, public_key, access_token, webhook_secret, updated_at`,
-      [userId, provider, mode || 'prueba', encPublicKey, encAccessToken, encWebhookSecret]
+       RETURNING provider, mode, public_key, access_token, webhook_secret, is_default, updated_at`,
+      [userId, provider, mode || 'prueba', encPublicKey, encAccessToken, encWebhookSecret, isDefault]
     );
     return {
       provider: rows[0].provider,
@@ -441,6 +500,7 @@ export const saveCheckoutIntegrationForUser = async (userId, provider, mode, { p
       public_key: rows[0].public_key,
       access_token: maskSecret(decryptSecret(rows[0].access_token)),
       webhook_secret: rows[0].webhook_secret ? maskSecret(decryptSecret(rows[0].webhook_secret)) : '',
+      is_default: rows[0].is_default === true,
       updated_at: rows[0].updated_at,
     };
   }
@@ -450,10 +510,10 @@ export const saveCheckoutIntegrationForUser = async (userId, provider, mode, { p
   }
 
   const { rows } = await pool.query(
-    `INSERT INTO checkout_integrations (tienda_id, provider, mode, public_key, access_token, webhook_secret, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, NOW())
-     RETURNING provider, mode, public_key, access_token, webhook_secret, updated_at`,
-    [userId, provider, mode || 'prueba', encPublicKey, encAccessToken, encWebhookSecret]
+    `INSERT INTO checkout_integrations (tienda_id, provider, mode, public_key, access_token, webhook_secret, is_default, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+     RETURNING provider, mode, public_key, access_token, webhook_secret, is_default, updated_at`,
+    [userId, provider, mode || 'prueba', encPublicKey, encAccessToken, encWebhookSecret, isDefault]
   );
   return {
     provider: rows[0].provider,
@@ -461,8 +521,62 @@ export const saveCheckoutIntegrationForUser = async (userId, provider, mode, { p
     public_key: rows[0].public_key,
     access_token: maskSecret(decryptSecret(rows[0].access_token)),
     webhook_secret: rows[0].webhook_secret ? maskSecret(decryptSecret(rows[0].webhook_secret)) : '',
+    is_default: rows[0].is_default === true,
     updated_at: rows[0].updated_at,
   };
+};
+
+// Pasarelas disponibles en el checkout y cuál es la predeterminada.
+// MP y Bold son para tiendas colombianas (COP).
+export const getPublicPaymentMethods = async ({ moneda = 'COP' } = {}) => {
+  const providers = [];
+  if (String(moneda).toUpperCase() === 'COP') {
+    const { rows } = await pool.query(
+      `SELECT provider, is_default
+       FROM checkout_integrations
+       WHERE provider IN ('mercadopago', 'bold')
+         AND access_token IS NOT NULL AND length(access_token) > 0
+         AND mode = 'produccion'
+       ORDER BY is_default DESC`
+    );
+    for (const r of rows) providers.push({ provider: r.provider, is_default: r.is_default === true });
+  }
+  const def = providers.find((p) => p.is_default)?.provider || providers[0]?.provider || null;
+  return { moneda: String(moneda).toUpperCase(), providers, default: def };
+};
+
+// Solicitud de activación de la tienda en USD para vender al exterior.
+export const requestUsdActivation = async (userId, note = null) => {
+  const { rows } = await pool.query(
+    `UPDATE tiendas
+     SET usd_activation_status = 'pending', usd_activation_requested_at = NOW(), usd_activation_note = $2
+     WHERE usrid = $1
+     RETURNING usd_activation_status, usd_activation_requested_at, usd_activation_note`,
+    [userId, note]
+  );
+  await redisClient.del(cacheKey(userId)).catch(() => {});
+  return rows[0] || null;
+};
+
+export const getUsdActivationStatus = async (userId) => {
+  const { rows } = await pool.query(
+    `SELECT usd_activation_status, usd_activation_requested_at, usd_activation_note
+     FROM tiendas WHERE usrid = $1 LIMIT 1`,
+    [userId]
+  );
+  return rows[0] || { usd_activation_status: 'none' };
+};
+
+export const approveUsdActivation = async (userId, approve = true) => {
+  const { rows } = await pool.query(
+    `UPDATE tiendas
+     SET usd_activation_status = $2, moneda = CASE WHEN $2 = 'approved' THEN 'USD' ELSE moneda END
+     WHERE usrid = $1
+     RETURNING usrid, usd_activation_status, moneda`,
+    [userId, approve ? 'approved' : 'rejected']
+  );
+  await redisClient.del(cacheKey(userId)).catch(() => {});
+  return rows[0] || null;
 };
 
 export const deleteCheckoutIntegrationForUser = async (userId, provider, mode) => {

@@ -8,6 +8,7 @@ import { trackEvent } from '../../utils/analytics';
 import { useMoney } from '../../utils/money';
 import { useStorefront } from '../../storefront/StorefrontContext';
 import { useAuth } from '../../context/AuthContext';
+import BoldPayment from '../../components/BoldPayment';
 import './cart.css';
 
 export default function Checkout() {
@@ -50,6 +51,27 @@ export default function Checkout() {
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [showBricks, setShowBricks] = useState(false);
   const [preferenceData, setPreferenceData] = useState(null);
+  const [paymentProvider, setPaymentProvider] = useState('mercadopago');
+  const [showBold, setShowBold] = useState(false);
+
+  // Si el cliente vuelve de una autenticación 3DS/PSE de Bold, retomamos el pago.
+  useEffect(() => {
+    if (sessionStorage.getItem('glopsy_bold_ref')) {
+      setPaymentProvider('bold');
+      setShowBold(true);
+    }
+  }, []);
+
+  // Pasarela predeterminada de la plataforma (MP o Bold) para tiendas COP.
+  useEffect(() => {
+    if (!isCOP) return;
+    api.get('/tienda/payment-methods', { params: { moneda: currency || 'COP' } })
+      .then(res => {
+        const def = res.data?.default;
+        if (def === 'bold' || def === 'mercadopago') setPaymentProvider(def);
+      })
+      .catch(() => {});
+  }, [isCOP, currency]);
 
   useEffect(() => {
     if (!isLoggedIn()) return;
@@ -346,6 +368,13 @@ export default function Checkout() {
     sessionStorage.removeItem('glopsy_checkout_snapshot');
   };
 
+  const handleBoldSuccess = () => {
+    setCheckoutSuccess(true);
+    localStorage.removeItem('glopsy_cart');
+    window.dispatchEvent(new Event('storage'));
+    firePurchase(null, null, total);
+  };
+
   const customerInfoForOrder = () => (
     isIntlUI
       ? {
@@ -403,6 +432,13 @@ export default function Checkout() {
       price: Number(item.price || 0),
       quantity: Number(item.quantity || 1),
     }));
+
+    // Bold: checkout transparente (la tarjeta se captura en la web).
+    if (paymentProvider === 'bold') {
+      trackEvent('begin_checkout', { currency, value: total, items: checkoutItems });
+      setShowBold(true);
+      return;
+    }
 
     setLoadingCheckout(true);
     try {
@@ -514,8 +550,41 @@ export default function Checkout() {
               </div>
               <div id="paymentBrick_container" className="min-h-[450px]"></div>
             </div>
+          ) : showBold ? (
+            <BoldPayment
+              total={total}
+              items={cartItemsConPrecio}
+              shippingCost={shippingCost}
+              shippingPayload={shippingPayloadForOrder()}
+              customerInfo={customerInfoForOrder()}
+              guestHash={guestHash}
+              currency={currency}
+              user={user}
+              formatPrice={formatPrice}
+              onSuccess={handleBoldSuccess}
+              onBack={() => setShowBold(false)}
+            />
           ) : (
             <form onSubmit={handleCheckout} className="space-y-6">
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-slate-700">Método de pago</label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPaymentProvider('mercadopago')}
+                  className={`p-3 rounded-xl border text-sm font-bold transition-all cursor-pointer ${paymentProvider === 'mercadopago' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                >
+                  Mercado Pago
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentProvider('bold')}
+                  className={`p-3 rounded-xl border text-sm font-bold transition-all cursor-pointer ${paymentProvider === 'bold' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                >
+                  Tarjeta / PSE (Bold)
+                </button>
+              </div>
+            </div>
             {isInternationalStore && (
               <div className="space-y-2">
                 <label className="block text-xs font-bold text-slate-700">Tipo de envío</label>
@@ -885,7 +954,9 @@ export default function Checkout() {
               className="w-full text-white font-bold py-4 rounded-2xl shadow-lg text-base transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 shadow-blue-600/30"
             >
               <ShieldCheck size={20} />
-              {loadingCheckout ? 'Procesando pago con Mercado Pago...' : 'Pagar con Mercado Pago'}
+              {loadingCheckout
+                ? 'Procesando pago con Mercado Pago...'
+                : paymentProvider === 'bold' ? 'Continuar con Bold' : 'Pagar con Mercado Pago'}
             </button>
           </form>
           )}

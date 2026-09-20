@@ -6,6 +6,14 @@ import {
   getMine, 
   getDian, 
   saveDian,
+  generateDianPlantilla,
+  getPayoutAccount,
+  savePayoutAccount,
+  getLedger,
+  getPaymentMethods,
+  requestUsdActivation,
+  getUsdActivation,
+  saveStorefrontAppearance,
   getCheckoutIntegrations,
   saveCheckoutIntegration,
   deleteCheckoutIntegration,
@@ -36,6 +44,9 @@ const router = Router();
 // si el usuario ya tiene tienda. requireSeller solo aplica a la gestion del vendedor.
 router.get('/', requireAuth, tiendaLimiter, getMine);
 
+// Público: pasarelas disponibles y predeterminada (lo usa el checkout del comprador).
+router.get('/payment-methods', getPaymentMethods);
+
 router.use(requireAuth, requireSeller, tiendaLimiter);
 // Alta de tienda para un vendedor nuevo (idempotente)
 router.post('/', createStore);
@@ -44,6 +55,18 @@ router.patch('/', updateStore);
 router.patch('/estado', changeStatus);
 router.get('/dian', getDian);
 router.put('/dian', saveDian);
+// Genera el archivo .json.dian (plantilla) para importar manualmente en la DIAN
+router.post('/dian/plantilla', generateDianPlantilla);
+// Saldo contable del vendedor (disponible / diferido) y movimientos
+router.get('/ledger', getLedger);
+// Cuenta bancaria donde el proveedor recibe sus pagos
+router.get('/payout-account', getPayoutAccount);
+router.put('/payout-account', savePayoutAccount);
+// Solicitud de tienda en USD para vender al exterior
+router.get('/usd-activation', getUsdActivation);
+router.post('/usd-activation', requestUsdActivation);
+// Apariencia de la vitrina (plantilla, tema, paleta)
+router.put('/storefront', saveStorefrontAppearance);
 router.get('/checkout-integrations', getCheckoutIntegrations);
 router.post('/checkout-integrations', saveCheckoutIntegration);
 router.delete('/checkout-integrations/:provider', deleteCheckoutIntegration);

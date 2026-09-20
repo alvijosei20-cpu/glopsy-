@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Truck, Tag, Receipt, Warehouse, CreditCard, Plus, CheckCircle, Trash2, Code, KeyRound, Shield, Hash, Terminal } from 'lucide-react';
+import { Truck, Tag, Receipt, Warehouse, CreditCard, Plus, CheckCircle, Trash2, Code, KeyRound, Shield, Hash, Terminal, DollarSign } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useMoney } from '../../utils/money';
 import api from '../../services/api';
+import { PALETTE_OPTIONS } from '../../storefront/appearance';
 import './marketConfig.css';
 
 const MarketConfig = () => {
@@ -36,12 +37,12 @@ const MarketConfig = () => {
   const [enviaMode, setEnviaMode] = useState('prueba');
 
   const [mercadoPagoConfigs, setMercadoPagoConfigs] = useState({
-    prueba: { public_key: '', access_token: '', webhook_secret: '' },
-    produccion: { public_key: '', access_token: '', webhook_secret: '' }
+    prueba: { public_key: '', access_token: '', webhook_secret: '', is_default: false },
+    produccion: { public_key: '', access_token: '', webhook_secret: '', is_default: false }
   });
   const [initialMercadoPagoConfigs, setInitialMercadoPagoConfigs] = useState({
-    prueba: { public_key: '', access_token: '', webhook_secret: '' },
-    produccion: { public_key: '', access_token: '', webhook_secret: '' }
+    prueba: { public_key: '', access_token: '', webhook_secret: '', is_default: false },
+    produccion: { public_key: '', access_token: '', webhook_secret: '', is_default: false }
   });
 
   const [enviaConfigs, setEnviaConfigs] = useState({
@@ -57,6 +58,44 @@ const MarketConfig = () => {
   const enviaConfig = enviaConfigs[enviaMode];
   const initialEnviaConfig = initialEnviaConfigs[enviaMode];
 
+  const [boldConfig, setBoldConfig] = useState({ access_token: '', public_key: '', webhook_secret: '', is_default: false });
+  const [initialBoldConfig, setInitialBoldConfig] = useState({ access_token: '', public_key: '', webhook_secret: '', is_default: false });
+  const [usdStatus, setUsdStatus] = useState({ usd_activation_status: 'none' });
+  const [requestingUsd, setRequestingUsd] = useState(false);
+  const [appearance, setAppearance] = useState({
+    template: 'dashboard', theme: 'auto', palette: 'fucsia', color: '#c026d3', banner: '',
+  });
+  const [savingAppearance, setSavingAppearance] = useState(false);
+
+  useEffect(() => {
+    if (!tienda) return;
+    setAppearance({
+      template: tienda.storefrontTemplate || 'dashboard',
+      theme: tienda.storefrontTheme || 'auto',
+      palette: tienda.storefrontPalette || 'fucsia',
+      color: tienda.storefrontColor || '#c026d3',
+      banner: tienda.storefrontBanner || '',
+    });
+  }, [tienda?.storefrontTemplate, tienda?.storefrontTheme, tienda?.storefrontPalette, tienda?.storefrontColor, tienda?.storefrontBanner, tienda]);
+
+  const handleSaveAppearance = async (e) => {
+    e.preventDefault();
+    setSavingAppearance(true);
+    try {
+      const res = await api.put('/tienda/storefront', appearance);
+      setNotice(res.data?.message || 'Apariencia guardada con éxito.');
+      refreshTienda?.();
+    } catch (err) {
+      setNotice(err.response?.data?.message || 'No fue posible guardar la apariencia.');
+    } finally {
+      setSavingAppearance(false);
+    }
+  };
+  const [payoutAccount, setPayoutAccount] = useState({ banco_codigo: '', banco_nombre: '', tipo_cuenta: '', numero_cuenta: '', titular_cuenta: '', titular_documento: '' });
+  const [bancos, setBancos] = useState([]);
+  const [savingPayout, setSavingPayout] = useState(false);
+  const isMainStore = tienda?.isMain === true;
+
   const setMercadoPagoConfig = (updater) => {
     setMercadoPagoConfigs(prev => ({
       ...prev,
@@ -70,6 +109,37 @@ const MarketConfig = () => {
       [enviaMode]: typeof updater === 'function' ? updater(prev[enviaMode]) : updater
     }));
   };
+
+  // Cuenta de pagos del proveedor (banco según el país de la tienda).
+  useEffect(() => {
+    api.get('/tienda/payout-account')
+      .then(res => { if (res.data?.account) setPayoutAccount(res.data.account); })
+      .catch(() => {});
+    api.get('/tienda/usd-activation')
+      .then(res => { if (res.data?.status) setUsdStatus(res.data.status); })
+      .catch(() => {});
+  }, []);
+
+  const handleRequestUsd = async () => {
+    setRequestingUsd(true);
+    try {
+      const res = await api.post('/tienda/usd-activation', {});
+      if (res.data?.status) setUsdStatus(res.data.status);
+      setNotice(res.data?.message || 'Solicitud enviada.');
+    } catch (err) {
+      setNotice(err.response?.data?.message || 'No fue posible enviar la solicitud.');
+    } finally {
+      setRequestingUsd(false);
+    }
+  };
+
+  useEffect(() => {
+    const pid = tienda?.paisId;
+    if (!pid) return;
+    api.get('/geo/bancos', { params: { pais_id: pid } })
+      .then(res => setBancos(res.data?.bancos || []))
+      .catch(() => {});
+  }, [tienda?.paisId]);
 
   const [savedCheckoutIntegrations, setSavedCheckoutIntegrations] = useState([]);
 
@@ -208,12 +278,14 @@ const MarketConfig = () => {
             prueba: {
               public_key: mpPrueba?.public_key || '',
               access_token: mpPrueba?.access_token || '',
-              webhook_secret: mpPrueba?.webhook_secret || ''
+              webhook_secret: mpPrueba?.webhook_secret || '',
+              is_default: false
             },
             produccion: {
               public_key: mpProd?.public_key || '',
               access_token: mpProd?.access_token || '',
-              webhook_secret: mpProd?.webhook_secret || ''
+              webhook_secret: mpProd?.webhook_secret || '',
+              is_default: mpProd?.is_default === true
             }
           };
           setMercadoPagoConfigs(newMp);
@@ -227,6 +299,12 @@ const MarketConfig = () => {
           };
           setEnviaConfigs(newEnvia);
           setInitialEnviaConfigs(JSON.parse(JSON.stringify(newEnvia)));
+          const bold = integrations.find(i => i.provider === 'bold');
+          if (bold) {
+            const c = { access_token: bold.access_token || '', public_key: bold.public_key || '', webhook_secret: bold.webhook_secret || '', is_default: bold.is_default === true };
+            setBoldConfig(c);
+            setInitialBoldConfig(c);
+          }
         }
         // fetch shipping profiles
         const resPerfiles = await api.get('/tienda/perfiles-envio').catch(() => ({ data: { perfiles: [] } }));
@@ -262,7 +340,8 @@ const MarketConfig = () => {
     return (
       mercadoPagoConfig.public_key !== initialMercadoPagoConfig.public_key ||
       tokenChanged ||
-      webhookChanged
+      webhookChanged ||
+      mercadoPagoConfig.is_default !== initialMercadoPagoConfig.is_default
     );
   };
 
@@ -288,6 +367,7 @@ const MarketConfig = () => {
       const res = await api.post('/tienda/checkout-integrations', {
         provider: 'mercadopago',
         mode: mpMode,
+        is_default: mercadoPagoConfig.is_default === true,
         public_key: mercadoPagoConfig.public_key,
         ...(tokenChanged ? { access_token: mercadoPagoConfig.access_token } : {}),
         ...(webhookChanged ? { webhook_secret: mercadoPagoConfig.webhook_secret } : {}),
@@ -338,6 +418,51 @@ const MarketConfig = () => {
       console.error('Error al guardar ENVIA:', err);
       setNotice(err.response?.data?.message || 'Error al guardar la configuración de ENVIA.');
       setTimeout(() => setNotice(''), 4000);
+    }
+  };
+
+  const handleSaveBold = async (e) => {
+    e.preventDefault();
+    if (!boldConfig.access_token || !boldConfig.access_token.trim()) {
+      setNotice('Error: La llave de identidad de Bold es obligatoria.');
+      return;
+    }
+    try {
+      const tokenChanged = boldConfig.access_token !== initialBoldConfig.access_token && boldConfig.access_token.trim() !== '';
+      const res = await api.post('/tienda/checkout-integrations', {
+        provider: 'bold',
+        mode: 'produccion',
+        is_default: boldConfig.is_default === true,
+        ...(tokenChanged ? { access_token: boldConfig.access_token } : {}),
+        public_key: boldConfig.public_key || undefined,
+        webhook_secret: boldConfig.webhook_secret || undefined,
+      });
+      setNotice(res.data.message || 'Configuración de Bold guardada con éxito.');
+      setInitialBoldConfig({ ...boldConfig });
+      const resCheckout = await api.get('/tienda/checkout-integrations');
+      if (resCheckout.data?.integrations) setSavedCheckoutIntegrations(resCheckout.data.integrations);
+    } catch (err) {
+      console.error('Error al guardar Bold:', err);
+      setNotice(err.response?.data?.message || 'Error al guardar la configuración de Bold.');
+    }
+  };
+
+  const handleSavePayoutAccount = async (e) => {
+    e.preventDefault();
+    if (!payoutAccount.banco_codigo || !payoutAccount.tipo_cuenta || !payoutAccount.numero_cuenta || !payoutAccount.titular_cuenta) {
+      setNotice('Error: Banco, tipo de cuenta, número de cuenta y titular son obligatorios.');
+      return;
+    }
+    setSavingPayout(true);
+    try {
+      const res = await api.put('/tienda/payout-account', payoutAccount);
+      setNotice(res.data.message || 'Cuenta de pagos guardada con éxito.');
+      if (res.data?.account) setPayoutAccount(res.data.account);
+    } catch (err) {
+      console.error('Error al guardar la cuenta de pagos:', err);
+      setNotice(err.response?.data?.message || 'Error al guardar la cuenta de pagos.');
+    } finally {
+      setSavingPayout(false);
     }
   };
 
@@ -837,9 +962,8 @@ const MarketConfig = () => {
             ⚠️ Tu tienda está pendiente de activación (no la ven los clientes).
           </p>
           <p style={{ margin: '0.35rem 0 0.75rem', fontSize: '0.85rem' }}>
-            Para darla de alta debes tener configurados en <b>PRODUCCIÓN</b>: tu token de
-            <b> Mercado Pago</b> (pagos) y tu token de <b>ENVIA</b> (envíos), en las pestañas
-            correspondientes de este panel.
+            Para darla de alta debes tener configurada tu <b>cuenta de pagos</b>
+            (banco, tipo de cuenta, número y titular) en la pestaña <b>Payments y Checkout</b>.
           </p>
           {activationMsg && (
             <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: '#b91c1c', fontWeight: 600 }}>
@@ -1703,10 +1827,14 @@ const MarketConfig = () => {
               <div className="config-section-header">
                 <div>
                   <h3>Payments y Checkout</h3>
-                  <p>Configura la pasarela de pago de Mercado Pago y el servicio de envío ENVIA para tu tienda.</p>
+                  <p>{isMainStore
+                    ? 'Pasarelas globales de la plataforma (Mercado Pago, Bold y ENVIA).'
+                    : 'Configura la cuenta bancaria donde recibes la liquidación de tus ventas.'}</p>
                 </div>
               </div>
 
+              {isMainStore ? (
+                <>
               {/* Mercado Pago Section */}
               <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginBottom: '2rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
@@ -1811,6 +1939,15 @@ const MarketConfig = () => {
                       <small style={{ color: '#64748b', fontSize: '0.8rem' }}>Opcional. Úsalo para validar la firma de los webhooks en el endpoint /api/payments/mercadopago/webhook.</small>
                     </div>
                   </div>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem', color: '#334155', fontWeight: 600 }}>
+                    <input
+                      type="checkbox"
+                      checked={mercadoPagoConfig.is_default === true}
+                      onChange={(e) => setMercadoPagoConfig({ ...mercadoPagoConfig, is_default: e.target.checked })}
+                    />
+                    Usar Mercado Pago como pasarela predeterminada en el checkout
+                  </label>
 
                   <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
                     {savedCheckoutIntegrations.some(i => i.provider === 'mercadopago' && (i.mode === mpMode || (!i.mode && mpMode === 'prueba'))) ? (
@@ -1946,6 +2083,228 @@ const MarketConfig = () => {
                   </div>
                 </form>
               </div>
+
+              {/* Bold Section */}
+              <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginBottom: '2rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
+                  <div style={{ background: '#111827', color: 'white', fontWeight: 900, padding: '0.5rem 0.9rem', borderRadius: '0.5rem', fontSize: '1.1rem', letterSpacing: '1px' }}>
+                    B
+                  </div>
+                  <div>
+                    <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>Bold (Colombia)</h4>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Llave de identidad del comercio para pagos en línea y links de pago.</p>
+                  </div>
+                </div>
+                <form onSubmit={handleSaveBold}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    <div className="config-form-group" style={{ margin: 0 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#334155', fontWeight: 600 }}>
+                        <KeyRound size={16} color="#111827" /> Llave de identidad (API key)
+                      </label>
+                      <input type="password" value={boldConfig.access_token} onChange={(e) => setBoldConfig({ ...boldConfig, access_token: e.target.value })} placeholder="x-api-key de Bold" />
+                    </div>
+                    <div className="config-form-group" style={{ margin: 0 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#334155', fontWeight: 600 }}>
+                        <Shield size={16} color="#111827" /> Llave secreta (webhook)
+                      </label>
+                      <input type="password" value={boldConfig.webhook_secret} onChange={(e) => setBoldConfig({ ...boldConfig, webhook_secret: e.target.value })} placeholder="Vacía en ambiente de pruebas" />
+                    </div>
+                  </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem', color: '#334155', fontWeight: 600 }}>
+                    <input
+                      type="checkbox"
+                      checked={boldConfig.is_default === true}
+                      onChange={(e) => setBoldConfig({ ...boldConfig, is_default: e.target.checked })}
+                    />
+                    Usar Bold como pasarela predeterminada en el checkout
+                  </label>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
+                    <button type="submit" className="config-btn-primary">Guardar Bold</button>
+                  </div>
+                </form>
+              </div>
+                </>
+              ) : (
+                <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
+                    <CreditCard size={20} color="#0f172a" />
+                    <div>
+                      <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>Cuenta de pagos</h4>
+                      <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Aquí recibirás la liquidación diaria de tus ventas.</p>
+                    </div>
+                  </div>
+                  <form onSubmit={handleSavePayoutAccount}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                      <div className="config-form-group" style={{ margin: 0 }}>
+                        <label style={{ color: '#334155', fontWeight: 600 }}>Banco</label>
+                        <select
+                          value={payoutAccount.banco_codigo}
+                          onChange={(e) => {
+                            const b = bancos.find((x) => String(x.codigo) === e.target.value);
+                            setPayoutAccount({ ...payoutAccount, banco_codigo: e.target.value, banco_nombre: b?.nombre || '' });
+                          }}
+                        >
+                          <option value="">Selecciona tu banco</option>
+                          {bancos.map((b) => <option key={b.codigo} value={b.codigo}>{b.nombre}</option>)}
+                        </select>
+                      </div>
+                      <div className="config-form-group" style={{ margin: 0 }}>
+                        <label style={{ color: '#334155', fontWeight: 600 }}>Tipo de cuenta</label>
+                        <select value={payoutAccount.tipo_cuenta} onChange={(e) => setPayoutAccount({ ...payoutAccount, tipo_cuenta: e.target.value })}>
+                          <option value="">Selecciona</option>
+                          <option value="ahorro">Ahorros</option>
+                          <option value="corriente">Corriente</option>
+                        </select>
+                      </div>
+                      <div className="config-form-group" style={{ margin: 0 }}>
+                        <label style={{ color: '#334155', fontWeight: 600 }}>Número de cuenta</label>
+                        <input inputMode="numeric" value={payoutAccount.numero_cuenta} onChange={(e) => setPayoutAccount({ ...payoutAccount, numero_cuenta: e.target.value.replace(/\D/g, '') })} placeholder="Solo dígitos" />
+                      </div>
+                      <div className="config-form-group" style={{ margin: 0 }}>
+                        <label style={{ color: '#334155', fontWeight: 600 }}>Titular</label>
+                        <input value={payoutAccount.titular_cuenta} onChange={(e) => setPayoutAccount({ ...payoutAccount, titular_cuenta: e.target.value })} placeholder="Nombre o razón social" />
+                      </div>
+                      <div className="config-form-group" style={{ margin: 0 }}>
+                        <label style={{ color: '#334155', fontWeight: 600 }}>Documento del titular</label>
+                        <input value={payoutAccount.titular_documento} onChange={(e) => setPayoutAccount({ ...payoutAccount, titular_documento: e.target.value })} placeholder="NIT o cédula" />
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
+                      <button type="submit" className="config-btn-primary" disabled={savingPayout}>
+                        {savingPayout ? 'Guardando…' : 'Guardar cuenta de pagos'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {!isMainStore && (
+                <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginTop: '2rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
+                    <Code size={20} color="#0f172a" />
+                    <div>
+                      <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>Apariencia de tu vitrina</h4>
+                      <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Plantilla, tema y paleta de colores de tu tienda.</p>
+                    </div>
+                  </div>
+                  <form onSubmit={handleSaveAppearance}>
+                    <label style={{ color: '#334155', fontWeight: 600, fontSize: '0.9rem' }}>Plantilla</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', margin: '0.5rem 0 1.25rem' }}>
+                      {[
+                        { id: 'dashboard', name: 'Dashboard', desc: 'Promos, descuentos y novedades' },
+                        { id: 'catalog', name: 'Catálogo', desc: 'Lista total de productos' },
+                        { id: 'boutique', name: 'Boutique', desc: 'Portada y destacados' },
+                      ].map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => setAppearance({ ...appearance, template: t.id })}
+                          style={{
+                            textAlign: 'left', padding: '0.75rem', borderRadius: '0.75rem', cursor: 'pointer',
+                            border: appearance.template === t.id ? '2px solid #7c3aed' : '1px solid #cbd5e1',
+                            background: appearance.template === t.id ? '#f5f3ff' : 'white',
+                          }}
+                        >
+                          <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.9rem' }}>{t.name}</div>
+                          <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{t.desc}</div>
+                        </button>
+                      ))}
+                    </div>
+
+                    <label style={{ color: '#334155', fontWeight: 600, fontSize: '0.9rem' }}>Tema</label>
+                    <div style={{ display: 'flex', gap: '0.5rem', margin: '0.5rem 0 1.25rem' }}>
+                      {[['auto', 'Automático'], ['light', 'Claro'], ['dark', 'Oscuro']].map(([id, name]) => (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => setAppearance({ ...appearance, theme: id })}
+                          style={{
+                            padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600,
+                            border: appearance.theme === id ? '2px solid #7c3aed' : '1px solid #cbd5e1',
+                            background: appearance.theme === id ? '#f5f3ff' : 'white', color: '#0f172a',
+                          }}
+                        >
+                          {name}
+                        </button>
+                      ))}
+                    </div>
+
+                    <label style={{ color: '#334155', fontWeight: 600, fontSize: '0.9rem' }}>Paleta de colores</label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', margin: '0.5rem 0 1rem', alignItems: 'center' }}>
+                      {PALETTE_OPTIONS.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          title={p.name}
+                          onClick={() => setAppearance({ ...appearance, palette: p.id })}
+                          style={{
+                            width: 40, height: 40, borderRadius: '50%', cursor: 'pointer',
+                            backgroundImage: `linear-gradient(135deg, ${p.from}, ${p.to})`,
+                            border: appearance.palette === p.id ? '3px solid #0f172a' : '2px solid transparent',
+                            boxShadow: '0 0 0 1px #cbd5e1',
+                          }}
+                        />
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setAppearance({ ...appearance, palette: 'custom' })}
+                        style={{
+                          padding: '0.4rem 0.8rem', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600,
+                          border: appearance.palette === 'custom' ? '2px solid #7c3aed' : '1px solid #cbd5e1',
+                          background: appearance.palette === 'custom' ? '#f5f3ff' : 'white', color: '#0f172a',
+                        }}
+                      >
+                        Personalizado
+                      </button>
+                      {appearance.palette === 'custom' && (
+                        <input
+                          type="color"
+                          value={appearance.color}
+                          onChange={(e) => setAppearance({ ...appearance, color: e.target.value })}
+                          style={{ width: 40, height: 40, borderRadius: '0.5rem', border: '1px solid #cbd5e1', cursor: 'pointer' }}
+                        />
+                      )}
+                    </div>
+
+                    <div className="config-form-group" style={{ margin: 0 }}>
+                      <label style={{ color: '#334155', fontWeight: 600 }}>Banner (plantilla Boutique, opcional)</label>
+                      <input value={appearance.banner} onChange={(e) => setAppearance({ ...appearance, banner: e.target.value })} placeholder="https://…/banner.jpg" />
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
+                      <button type="submit" className="config-btn-primary" disabled={savingAppearance}>
+                        {savingAppearance ? 'Guardando…' : 'Guardar apariencia'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {!isMainStore && (
+                <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginTop: '2rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
+                    <DollarSign size={20} color="#0f172a" />
+                    <div>
+                      <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>Vender en el exterior (USD)</h4>
+                      <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Solicita la activación de tu tienda en USD para vender fuera de Colombia.</p>
+                    </div>
+                  </div>
+                  {usdStatus.usd_activation_status === 'pending' && (
+                    <p style={{ color: '#b45309', fontWeight: 600, fontSize: '0.9rem', margin: 0 }}>Solicitud enviada. Está pendiente de aprobación.</p>
+                  )}
+                  {usdStatus.usd_activation_status === 'approved' && (
+                    <p style={{ color: '#166534', fontWeight: 600, fontSize: '0.9rem', margin: 0 }}>Tu tienda está habilitada en USD.</p>
+                  )}
+                  {usdStatus.usd_activation_status === 'rejected' && (
+                    <p style={{ color: '#b91c1c', fontWeight: 600, fontSize: '0.9rem', margin: 0 }}>La solicitud fue rechazada. Contacta a soporte.</p>
+                  )}
+                  {(usdStatus.usd_activation_status === 'none' || usdStatus.usd_activation_status === 'rejected') && (
+                    <button type="button" onClick={handleRequestUsd} disabled={requestingUsd} className="config-btn-primary">
+                      {requestingUsd ? 'Enviando…' : 'Solicitar activación en USD'}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </main>

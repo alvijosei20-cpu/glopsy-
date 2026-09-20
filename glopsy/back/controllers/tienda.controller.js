@@ -6,11 +6,19 @@ import {
   getProductionIntegrationsForUser,
   getDianConfigForUser, 
   saveDianConfigForUser,
+  getPayoutAccountForUser,
+  savePayoutAccountForUser,
+  getPublicPaymentMethods,
+  requestUsdActivation as requestUsdActivationForUser,
+  getUsdActivationStatus,
+  saveStorefrontAppearanceForUser,
   getCheckoutIntegrationsForUser,
   saveCheckoutIntegrationForUser,
   deleteCheckoutIntegrationForUser,
   getStoreAnalytics
 } from '../services/tienda.service.js';
+import { generateDianPlantillaFile } from '../services/dianPlantilla.service.js';
+import { getStoreLedgerForUser } from '../services/ledger.service.js';
 import { pool } from '../db.js';
 import { getShippingOptionsFromEnvia } from '../services/envia.service.js';
 import { cleanString, isAllowedEnum } from '../utils/validation.js';
@@ -229,6 +237,78 @@ export const createTiendaController = ({
     }
   },
 
+  generateDianPlantilla: async (req, res) => {
+    try {
+      const result = generateDianPlantillaFile(req.body || {});
+      if (!result.ok) {
+        return res.status(400).json({
+          ok: false,
+          message: 'La plantilla tiene errores de validación.',
+          errors: result.errors,
+        });
+      }
+      return res.json({
+        ok: true,
+        filename: result.filename,
+        plantilla: result.plantilla,
+        content: result.content,
+      });
+    } catch (error) {
+      console.error('Error al generar plantilla DIAN:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible generar la plantilla DIAN.' });
+    }
+  },
+
+  getPayoutAccount: async (req, res) => {
+    try {
+      const account = await getPayoutAccountForUser(req.auth.userId);
+      return res.json({ ok: true, account });
+    } catch (error) {
+      console.error('Error al consultar la cuenta de pagos:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible consultar la cuenta de pagos.' });
+    }
+  },
+
+  savePayoutAccount: async (req, res) => {
+    const banco_codigo = cleanString(req.body.banco_codigo, { maxLength: 20 });
+    const banco_nombre = cleanString(req.body.banco_nombre, { maxLength: 120 });
+    const tipo_cuenta = cleanString(req.body.tipo_cuenta, { maxLength: 20 });
+    const numero_cuenta = cleanString(req.body.numero_cuenta, { maxLength: 40 });
+    const titular_cuenta = cleanString(req.body.titular_cuenta, { maxLength: 150 });
+    const titular_documento = cleanString(req.body.titular_documento, { maxLength: 40 });
+
+    if (!banco_codigo || !banco_nombre || !tipo_cuenta || !numero_cuenta || !titular_cuenta) {
+      return res.status(400).json({ ok: false, message: 'Banco, tipo de cuenta, número de cuenta y titular son obligatorios.' });
+    }
+    if (!isAllowedEnum(tipo_cuenta, ['ahorro', 'corriente'])) {
+      return res.status(400).json({ ok: false, message: 'El tipo de cuenta debe ser ahorro o corriente.' });
+    }
+    if (!/^\d{4,40}$/.test(numero_cuenta)) {
+      return res.status(400).json({ ok: false, message: 'El número de cuenta debe tener entre 4 y 40 dígitos.' });
+    }
+
+    try {
+      const account = await savePayoutAccountForUser(req.auth.userId, {
+        banco_codigo, banco_nombre, tipo_cuenta, numero_cuenta, titular_cuenta, titular_documento,
+      });
+      return res.json({ ok: true, account, message: 'Cuenta de pagos guardada con éxito.' });
+    } catch (error) {
+      console.error('Error al guardar la cuenta de pagos:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible guardar la cuenta de pagos.' });
+    }
+  },
+
+  getLedger: async (req, res) => {
+    try {
+      const moneda = cleanString(req.query.moneda, { maxLength: 10 }) || 'COP';
+      const ledger = await getStoreLedgerForUser(req.auth.userId, moneda.toUpperCase());
+      return res.json({ ok: true, ...ledger });
+    } catch (error) {
+      console.error('Error al consultar el ledger de la tienda:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible consultar el saldo.' });
+    }
+  },
+
   getCheckoutIntegrations: async (req, res) => {
     try {
       const integrations = await getCheckoutIntegrations(req.auth.userId);
@@ -236,6 +316,72 @@ export const createTiendaController = ({
     } catch (error) {
       console.error('Error al consultar integraciones de checkout:', error.message);
       return res.status(500).json({ ok: false, message: 'No fue posible consultar las integraciones de checkout.' });
+    }
+  },
+
+  // Público: pasarelas disponibles y cuál es la predeterminada (para el checkout).
+  getPaymentMethods: async (req, res) => {
+    try {
+      const moneda = cleanString(req.query.moneda, { maxLength: 10 }) || 'COP';
+      const methods = await getPublicPaymentMethods({ moneda });
+      return res.json({ ok: true, ...methods });
+    } catch (error) {
+      console.error('Error al consultar métodos de pago:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible consultar los métodos de pago.' });
+    }
+  },
+
+  requestUsdActivation: async (req, res) => {
+    const note = cleanString(req.body?.note, { maxLength: 500 });
+    try {
+      const status = await requestUsdActivationForUser(req.auth.userId, note || null);
+      return res.json({ ok: true, status, message: 'Solicitud enviada. Te avisaremos cuando sea aprobada.' });
+    } catch (error) {
+      console.error('Error al solicitar activación USD:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible enviar la solicitud.' });
+    }
+  },
+
+  getUsdActivation: async (req, res) => {
+    try {
+      const status = await getUsdActivationStatus(req.auth.userId);
+      return res.json({ ok: true, status });
+    } catch (error) {
+      console.error('Error al consultar activación USD:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible consultar la solicitud.' });
+    }
+  },
+
+  saveStorefrontAppearance: async (req, res) => {
+    const template = cleanString(req.body.template, { maxLength: 20 });
+    const theme = cleanString(req.body.theme, { maxLength: 10 });
+    const palette = cleanString(req.body.palette, { maxLength: 30 });
+    const color = cleanString(req.body.color, { maxLength: 9 });
+    const banner = cleanString(req.body.banner, { maxLength: 500 });
+
+    if (!isAllowedEnum(template, ['dashboard', 'catalog', 'boutique'])) {
+      return res.status(400).json({ ok: false, message: 'Plantilla no válida.' });
+    }
+    if (!isAllowedEnum(theme, ['light', 'dark', 'auto'])) {
+      return res.status(400).json({ ok: false, message: 'Tema no válido.' });
+    }
+    if (!isAllowedEnum(palette, ['fucsia', 'azul', 'esmeralda', 'naranja', 'grafito', 'custom'])) {
+      return res.status(400).json({ ok: false, message: 'Paleta no válida.' });
+    }
+    if (palette === 'custom' && !/^#[0-9a-fA-F]{6}$/.test(color)) {
+      return res.status(400).json({ ok: false, message: 'El color personalizado debe ser un hex como #7c3aed.' });
+    }
+
+    try {
+      const appearance = await saveStorefrontAppearanceForUser(req.auth.userId, {
+        template, theme, palette,
+        color: palette === 'custom' ? color : null,
+        banner: banner || null,
+      });
+      return res.json({ ok: true, appearance, message: 'Apariencia guardada con éxito.' });
+    } catch (error) {
+      console.error('Error al guardar la apariencia:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible guardar la apariencia.' });
     }
   },
 
@@ -255,8 +401,9 @@ export const createTiendaController = ({
     const public_key = cleanString(req.body.public_key, { maxLength: 2048 });
     const access_token = cleanString(req.body.access_token, { maxLength: 2048 });
     const webhook_secret = cleanString(req.body.webhook_secret, { maxLength: 2048 });
+    const is_default = req.body.is_default === true;
 
-    if (!provider || !isAllowedEnum(provider, ['mercadopago', 'envia'])) {
+    if (!provider || !isAllowedEnum(provider, ['mercadopago', 'envia', 'bold'])) {
       return res.status(400).json({ ok: false, message: 'Proveedor no válido.' });
     }
 
@@ -290,6 +437,7 @@ export const createTiendaController = ({
         publicKey: cleanPublicKey,
         accessToken: cleanAccessToken || undefined,
         webhookSecret: cleanWebhookSecret || undefined,
+        isDefault: is_default,
       });
       const provName = provider === 'mercadopago' ? 'Mercado Pago' : 'ENVIA';
       const modeName = integrationMode === 'prueba' ? 'Prueba' : 'Producción';
@@ -303,7 +451,7 @@ export const createTiendaController = ({
   deleteCheckoutIntegration: async (req, res) => {
     const provider = cleanString(req.params.provider, { maxLength: 50 });
     const mode = cleanString(req.query.mode || req.body?.mode, { maxLength: 20 });
-    if (!provider || !isAllowedEnum(provider, ['mercadopago', 'envia'])) {
+    if (!provider || !isAllowedEnum(provider, ['mercadopago', 'envia', 'bold'])) {
       return res.status(400).json({ ok: false, message: 'Proveedor no válido.' });
     }
 
@@ -332,6 +480,14 @@ export const {
   changeStatus, 
   getDian, 
   saveDian,
+  generateDianPlantilla,
+  getPayoutAccount,
+  savePayoutAccount,
+  getLedger,
+  getPaymentMethods,
+  requestUsdActivation,
+  getUsdActivation,
+  saveStorefrontAppearance,
   getCheckoutIntegrations,
   saveCheckoutIntegration,
   deleteCheckoutIntegration,
