@@ -283,8 +283,17 @@ export const createTiendaController = ({
     if (!isAllowedEnum(tipo_cuenta, ['ahorro', 'corriente'])) {
       return res.status(400).json({ ok: false, message: 'El tipo de cuenta debe ser ahorro o corriente.' });
     }
-    if (!/^\d{4,40}$/.test(numero_cuenta)) {
-      return res.status(400).json({ ok: false, message: 'El número de cuenta debe tener entre 4 y 40 dígitos.' });
+    const esBinance = banco_codigo === 'BINANCE_PAY';
+    const cuentaValida = esBinance
+      ? /^[A-Za-z0-9._@-]{4,60}$/.test(numero_cuenta)
+      : /^\d{4,40}$/.test(numero_cuenta);
+    if (!cuentaValida) {
+      return res.status(400).json({
+        ok: false,
+        message: esBinance
+          ? 'Ingresa tu Binance Pay ID o correo (4 a 60 caracteres).'
+          : 'El número de cuenta debe tener entre 4 y 40 dígitos.',
+      });
     }
 
     try {

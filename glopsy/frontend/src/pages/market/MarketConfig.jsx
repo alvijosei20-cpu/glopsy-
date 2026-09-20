@@ -2157,8 +2157,18 @@ const MarketConfig = () => {
                         </select>
                       </div>
                       <div className="config-form-group" style={{ margin: 0 }}>
-                        <label style={{ color: '#334155', fontWeight: 600 }}>Número de cuenta</label>
-                        <input inputMode="numeric" value={payoutAccount.numero_cuenta} onChange={(e) => setPayoutAccount({ ...payoutAccount, numero_cuenta: e.target.value.replace(/\D/g, '') })} placeholder="Solo dígitos" />
+                        <label style={{ color: '#334155', fontWeight: 600 }}>
+                          {payoutAccount.banco_codigo === 'BINANCE_PAY' ? 'Binance Pay ID o correo' : 'Número de cuenta'}
+                        </label>
+                        <input
+                          inputMode={payoutAccount.banco_codigo === 'BINANCE_PAY' ? 'text' : 'numeric'}
+                          value={payoutAccount.numero_cuenta}
+                          onChange={(e) => setPayoutAccount({
+                            ...payoutAccount,
+                            numero_cuenta: payoutAccount.banco_codigo === 'BINANCE_PAY' ? e.target.value.trim() : e.target.value.replace(/\D/g, ''),
+                          })}
+                          placeholder={payoutAccount.banco_codigo === 'BINANCE_PAY' ? 'Ej. 123456789 o correo' : 'Solo dígitos'}
+                        />
                       </div>
                       <div className="config-form-group" style={{ margin: 0 }}>
                         <label style={{ color: '#334155', fontWeight: 600 }}>Titular</label>

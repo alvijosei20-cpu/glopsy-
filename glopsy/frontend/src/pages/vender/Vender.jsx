@@ -113,8 +113,14 @@ export default function Vender() {
       setError('Completa tu cuenta bancaria: banco, tipo, número y titular.');
       return;
     }
-    if (!/^\d{4,40}$/.test(bank.numero_cuenta)) {
-      setError('El número de cuenta debe tener entre 4 y 40 dígitos.');
+    const esBinance = bank.banco_codigo === 'BINANCE_PAY';
+    const cuentaValida = esBinance
+      ? /^[A-Za-z0-9._@-]{4,60}$/.test(bank.numero_cuenta)
+      : /^\d{4,40}$/.test(bank.numero_cuenta);
+    if (!cuentaValida) {
+      setError(esBinance
+        ? 'Ingresa tu Binance Pay ID o correo (4 a 60 caracteres).'
+        : 'El número de cuenta debe tener entre 4 y 40 dígitos.');
       return;
     }
     setBusy(true);
@@ -243,13 +249,15 @@ export default function Vender() {
                 </select>
               </div>
               <div>
-                <label htmlFor="bank-number" className="block text-xs font-bold text-slate-600 mb-1.5">Número de cuenta</label>
+                <label htmlFor="bank-number" className="block text-xs font-bold text-slate-600 mb-1.5">
+                  {bank.banco_codigo === 'BINANCE_PAY' ? 'Binance Pay ID o correo' : 'Número de cuenta'}
+                </label>
                 <input
                   id="bank-number"
-                  inputMode="numeric"
+                  inputMode={bank.banco_codigo === 'BINANCE_PAY' ? 'text' : 'numeric'}
                   value={bank.numero_cuenta}
-                  onChange={(e) => setBank({ ...bank, numero_cuenta: e.target.value.replace(/\D/g, '') })}
-                  placeholder="Solo dígitos"
+                  onChange={(e) => setBank({ ...bank, numero_cuenta: bank.banco_codigo === 'BINANCE_PAY' ? e.target.value.trim() : e.target.value.replace(/\D/g, '') })}
+                  placeholder={bank.banco_codigo === 'BINANCE_PAY' ? 'Ej. 123456789 o correo' : 'Solo dígitos'}
                   required
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 outline-none focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-100 placeholder:text-slate-400"
                 />
