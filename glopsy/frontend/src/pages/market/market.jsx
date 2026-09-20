@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Pencil, Plug, KeyRound, Send, Palette } from 'lucide-react';
+import { Pencil, Plug, KeyRound, Send, Palette, ExternalLink } from 'lucide-react';
 import StoreCard from './StoreCard';
 import { useAuth } from '../../context/AuthContext';
 import { ApiLoadingModal } from '../../components/LoadingScreen';
 import api from '../../services/api';
 import { PALETTE_OPTIONS } from '../../storefront/appearance';
 import '../panel/panel.css';
+import './market.css';
 const Market = () => {
   const navigate = useNavigate();
   const { tienda, setTienda, refreshTienda } = useAuth();
@@ -137,12 +138,23 @@ const Market = () => {
         errorMessage="Ocurrió un error"
       />
 
-      <div className="panel__heading">
-        <div>
+      <div className="market__top">
+        <div className="market__intro">
           <p className="panel__eyebrow">Panel de control</p>
           <h1 id="market-title">Mi tienda</h1>
-          <p>Gestiona la disponibilidad de tu espacio comercial.</p>
+          <p className="market__subtitle">Gestiona tu vitrina, integraciones y publicaciones.</p>
         </div>
+        {tienda?.slug && (
+          <a
+            className="market__visit"
+            href={`https://${tienda.slug}.${tienda.dominio_raiz || 'glopsy.shop'}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <ExternalLink size={16} />
+            Ver mi tienda
+          </a>
+        )}
       </div>
 
       {error && <div className="panel__error" role="alert">{error}</div>}
@@ -158,30 +170,13 @@ const Market = () => {
       />
       {notice && <p className="panel__notice" role="status">{notice}</p>}
 
-      {tienda?.slug && (
-        <p className="panel__notice" role="status" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          Tu vitrina:
-          <a
-            href={`https://${tienda.slug}.${tienda.dominio_raiz || 'glopsy.shop'}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: '#7e22ce', fontWeight: 700, textDecoration: 'underline' }}
-          >
-            {tienda.slug}.{tienda.dominio_raiz || 'glopsy.shop'}
-          </a>
-        </p>
-      )}
+      <div className="market__grid">
 
-      <section className="integrations" aria-labelledby="integrations-title">
-        <div className="integrations__heading">
-          <div>
-            <p className="panel__eyebrow">Conecta tus proveedores</p>
-            <h2 className="font-bold text-xl tracking-wide bg-gradient-to-r from-fuchsia-600 to-pink-600 bg-clip-text text-transparent" id="integrations-title">
-              <Plug size={22} aria-hidden="true" /> Integraciones
-            </h2>
-          </div>
-          <p>Configura tus claves para sincronizar productos.</p>
-        </div>
+      <section className="market__card" aria-labelledby="integrations-title">
+        <h2 className="market__card-title" id="integrations-title">
+          <Plug size={18} aria-hidden="true" /> Integraciones
+        </h2>
+        <p className="market__hint">Configura tus claves para sincronizar productos.</p>
         <div className="integrations__grid">
           {integrations.map((integration) => {
             const isEditing = editingKey === integration.id;
@@ -227,18 +222,13 @@ const Market = () => {
         </div>
       </section>
 
-      <section className="integrations" aria-labelledby="appearance-title">
-        <div className="integrations__heading">
-          <div>
-            <p className="panel__eyebrow">Diseño de tu tienda</p>
-            <h2 className="font-bold text-xl tracking-wide bg-gradient-to-r from-fuchsia-600 to-pink-600 bg-clip-text text-transparent" id="appearance-title">
-              <Palette size={22} aria-hidden="true" /> Apariencia de tu vitrina
-            </h2>
-          </div>
-          <p>Elige plantilla, tema y colores de tu tienda.</p>
-        </div>
+      <section className="market__card" aria-labelledby="appearance-title">
+        <h2 className="market__card-title" id="appearance-title">
+          <Palette size={18} aria-hidden="true" /> Apariencia de tu vitrina
+        </h2>
+        <p className="market__hint">Elige plantilla, tema y colores de tu tienda.</p>
 
-        <form onSubmit={handleSaveAppearance} style={{ marginTop: '1rem' }}>
+        <form onSubmit={handleSaveAppearance}>
           <label style={{ display: 'block', color: '#334155', fontWeight: 600, fontSize: '0.9rem' }}>Plantilla</label>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.75rem', margin: '0.5rem 0 1.25rem' }}>
             {[
@@ -336,6 +326,7 @@ const Market = () => {
           </div>
         </form>
       </section>
+      </div>
     </section>
   );
 };
