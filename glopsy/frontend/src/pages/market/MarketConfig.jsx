@@ -1133,29 +1133,31 @@ const MarketConfig = () => {
 
         {/* Contenido Principal de cada Sección */}
         <main className="config-content">
-          <div style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: '1rem', border: '1px solid #e2e8f0', marginBottom: '1.5rem', display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-            <div style={{ minWidth: '220px' }}>
-              <h4 style={{ margin: '0 0 0.25rem 0', color: '#1e293b', fontSize: '1rem' }}>Origen de envíos (Venezuela · ZOOM)</h4>
-              <p style={{ margin: 0, fontSize: '0.875rem', color: '#64748b' }}>Ciudad desde donde despachas tus envíos. Aplica a tiendas de Venezuela.</p>
+          {(tienda?.paisCodigo || storePaisIso) === 'VE' && (
+            <div style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: '1rem', border: '1px solid #e2e8f0', marginBottom: '1.5rem', display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+              <div style={{ minWidth: '220px' }}>
+                <h4 style={{ margin: '0 0 0.25rem 0', color: '#1e293b', fontSize: '1rem' }}>Origen de envíos (Venezuela · ZOOM)</h4>
+                <p style={{ margin: 0, fontSize: '0.875rem', color: '#64748b' }}>Ciudad desde donde despachas tus envíos. Aplica a tiendas de Venezuela.</p>
+              </div>
+              <div className="config-form-group" style={{ margin: 0, minWidth: '260px' }}>
+                <select value={zoomOrigen} onChange={(e) => setZoomOrigen(e.target.value)}>
+                  <option value="">Selecciona una ciudad…</option>
+                  {zoomCiudades.map((c) => (
+                    <option key={c.codigo} value={c.codigo}>{c.nombre} ({c.estado})</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  style={{ marginTop: '0.5rem' }}
+                  disabled={savingZoom || !zoomOrigen || String(zoomOrigen) === String(tienda?.zoomOrigenCodciudad || '')}
+                  onClick={saveZoomOrigen}
+                >
+                  {savingZoom ? 'Guardando…' : 'Guardar origen'}
+                </button>
+              </div>
             </div>
-            <div className="config-form-group" style={{ margin: 0, minWidth: '260px' }}>
-              <select value={zoomOrigen} onChange={(e) => setZoomOrigen(e.target.value)}>
-                <option value="">Selecciona una ciudad…</option>
-                {zoomCiudades.map((c) => (
-                  <option key={c.codigo} value={c.codigo}>{c.nombre} ({c.estado})</option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="btn-primary"
-                style={{ marginTop: '0.5rem' }}
-                disabled={savingZoom || !zoomOrigen || String(zoomOrigen) === String(tienda?.zoomOrigenCodciudad || '')}
-                onClick={saveZoomOrigen}
-              >
-                {savingZoom ? 'Guardando…' : 'Guardar origen'}
-              </button>
-            </div>
-          </div>
+          )}
           {activeTab === 'envios' && (
             <div>
               <div className="config-section-header">
