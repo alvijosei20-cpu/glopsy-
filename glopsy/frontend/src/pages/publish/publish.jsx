@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, AlertCircle, Save, CheckCircle2, DollarSign, Tag, Layers, Image as ImageIcon, MapPin, Package, PackagePlus } from 'lucide-react';
+import { Search, AlertCircle, Save, CheckCircle2, DollarSign, Tag, Layers, Image as ImageIcon, MapPin, Package } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { ApiLoadingModal } from '../../components/LoadingScreen';
 import ManualProductForm from '../../components/ManualProductForm';
@@ -371,9 +371,6 @@ export default function Publish() {
 
       {isManual && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#7e22ce', background: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: '10px', padding: '0.9rem 1.1rem', fontSize: '0.9rem', fontWeight: 600 }}>
-            <PackagePlus size={18} /> Completa la plantilla para publicar tu propio producto (sin integración externa). Máximo 3 imágenes en webp.
-          </div>
           <ManualProductForm
             tienda={tienda}
             fullments={fullments}

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { ArrowLeft, ShieldCheck, Truck, RotateCcw, FileWarning, CreditCard, Lock, Scale, ScrollText, CircleHelp } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, Truck, RotateCcw, FileWarning, CreditCard, Lock, Scale, ScrollText, CircleHelp, FileSignature } from 'lucide-react';
 import { useSEO } from '../../utils/seo';
 
 const SECTIONS = [
@@ -13,8 +13,21 @@ const SECTIONS = [
     ],
   },
   {
+    icon: FileSignature,
+    title: '2. Contrato de Mandato (Vendedores)',
+    body: [
+      'Al publicar un producto en Glopsy, el Vendedor otorga a Nodux Technology (operadora de Glopsy) un mandato comercial de carácter oneroso, regido por los artículos 1262 y siguientes del Código de Comercio colombiano, para que actúe en su nombre y por su cuenta en la publicación, promoción, gestión de pagos y coordinación logística de los bienes ofertados.',
+      'El presente mandato no transfiere la propiedad de los productos, los cuales permanecen en cabeza del Vendedor, quien asume íntegramente los riesgos y responsabilidades derivados de su comercialización.',
+      'Obligaciones del mandatario (Glopsy): publicar la información suministrada por el Vendedor, procesar los pagos a través de pasarelas autorizadas, coordinar la logística de entrega, rendir cuentas de las ventas realizadas y transferir los recaudos conforme a las políticas de la plataforma, sin modificar unilateralmente los precios autorizados.',
+      'Obligaciones del mandante (Vendedor): garantizar la veracidad, legalidad y calidad de la información y de los productos publicados; cumplir el Estatuto del Consumidor (Ley 1480 de 2011); atender las garantías, devoluciones y reclamaciones; acreditar registro mercantil y RUT cuando la actividad lo exija; y dar cumplimiento a la Ley 1581 de 2012 en el tratamiento de datos personales.',
+      'El Vendedor declara que el producto que publica es lícito, no se encuentra prohibido por la normativa colombiana y no vulnera derechos de propiedad intelectual de terceros.',
+      'El mandato podrá darse por terminado por mutuo acuerdo o por revocatoria de cualquiera de las partes, sin perjuicio de los pedidos que se encuentren en curso al momento de la terminación.',
+      'Este contrato de mandato se rige por la legislación de la República de Colombia, incluida la Ley 527 de 1999 sobre comercio electrónico, el Decreto 1074 de 2015 y las normas que las modifiquen o sustituyan.',
+    ],
+  },
+  {
     icon: FileWarning,
-    title: '2. Limitación de responsabilidad',
+    title: '3. Limitación de responsabilidad',
     body: [
       'En virtud de lo dispuesto en el artículo 16 de la Ley 1480 de 2011 (Estatuto del Consumidor) y demás normas concordantes, la responsabilidad sobre los bienes ofertados corresponde directamente al Vendedor.',
       'Glopsy no responde por vicios ocultos, defectos de calidad, incumplimiento en la entrega, diferencias en el producto recibido, ni por cualquier daño derivado de la relación entre el Comprador y el Vendedor.',
@@ -23,7 +36,7 @@ const SECTIONS = [
   },
   {
     icon: Truck,
-    title: '3. Envíos y entrega',
+    title: '4. Envíos y entrega',
     body: [
       'El envío de los productos es coordinado directamente entre el Vendedor y el Comprador a través de transportadoras y mensajerías de terceros.',
       'Los tiempos de entrega, costos de envío y cobertura geográfica son responsabilidad exclusiva del Vendedor y de las empresas de mensajería contratadas.',
@@ -32,7 +45,7 @@ const SECTIONS = [
   },
   {
     icon: RotateCcw,
-    title: '4. Devoluciones y garantías',
+    title: '5. Devoluciones y garantías',
     body: [
       'Las garantías legales previstas en la Ley 1480 de 2011 serán atendidas por el Vendedor responsable del producto.',
       'Las políticas de devolución, cambio o reembolso de cada tienda son independientes y deben ser aceptadas por el Comprador al momento de realizar la compra.',
@@ -41,7 +54,7 @@ const SECTIONS = [
   },
   {
     icon: CreditCard,
-    title: '5. Pagos y transacciones',
+    title: '6. Pagos y transacciones',
     body: [
       'Los pagos se procesan a través de pasarelas de pago autorizadas por las autoridades colombianas (como Mercado Pago) bajo sus propios términos.',
       'Glopsy no almacena, procesa ni tiene acceso a los datos de tarjetas de crédito, débito ni credenciales bancarias de los usuarios.',
@@ -50,7 +63,7 @@ const SECTIONS = [
   },
   {
     icon: Lock,
-    title: '6. Protección de datos personales',
+    title: '7. Protección de datos personales',
     body: [
       'El tratamiento de datos personales se rige por la Ley 1581 de 2012 y el Decreto 1377 de 2013.',
       'Al registrarte, autorizas el tratamiento de tus datos personales de conformidad con nuestra Política de Privacidad para la prestación del servicio.',
@@ -59,7 +72,7 @@ const SECTIONS = [
   },
   {
     icon: Scale,
-    title: '7. Ley aplicable y jurisdicción',
+    title: '8. Ley aplicable y jurisdicción',
     body: [
       'Estos términos se rigen por las leyes de la República de Colombia.',
       'Cualquier controversia será sometida a la jurisdicción ordinaria de Colombia, de acuerdo con las normas de competencia aplicables.',
@@ -68,7 +81,7 @@ const SECTIONS = [
   },
   {
     icon: CircleHelp,
-    title: '8. Contacto',
+    title: '9. Contacto',
     body: [
       'Si tienes inquietudes sobre estos términos, escríbenos al correo de soporte indicado en la aplicación.',
     ],
@@ -100,7 +113,7 @@ export default function Terms() {
           </h1>
         </div>
         <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
-          Última actualización: 24 de agosto de 2026
+          Última actualización: 20 de septiembre de 2026
         </p>
         <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-8 max-w-2xl">
           Este documento regula el uso de la plataforma Glopsy, operada por Nodux Technology. Al acceder o usar

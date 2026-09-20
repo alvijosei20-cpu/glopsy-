@@ -108,6 +108,8 @@ export const saveProductForUser = async (userId, productData) => {
     warrantyConditions,
     supportEmail,
     warrantyPhone,
+    termsAccepted,
+    termsVersion,
     selectedOptions,
     fullmId,
     integracionId,
@@ -147,11 +149,26 @@ export const saveProductForUser = async (userId, productData) => {
     if (!description) {
       throw new Error('La descripción del producto es obligatoria.');
     }
-    if (!(suggestedPrice > 0) && !(basePrice > 0)) {
+    if (!(suggestedPrice > 0)) {
       throw new Error('El precio de venta debe ser mayor a 0.');
+    }
+    if (!(basePrice > 0)) {
+      throw new Error('El precio base es obligatorio y debe ser mayor a 0.');
     }
     if (!cleanString(baseCurrencyPrice, { maxLength: 10 })) {
       throw new Error('La moneda es obligatoria.');
+    }
+    if (!categoriaId) {
+      throw new Error('La categoría del producto es obligatoria.');
+    }
+    if (!cleanString(warrantyPeriod, { maxLength: 500 })) {
+      throw new Error('El período de garantía es obligatorio.');
+    }
+    if (!cleanText(warrantyConditions, { maxLength: 2000 })) {
+      throw new Error('Las condiciones de garantía son obligatorias.');
+    }
+    if (termsAccepted !== true) {
+      throw new Error('Debes aceptar los términos, condiciones y el contrato de mandato.');
     }
   }
 
@@ -225,6 +242,11 @@ export const saveProductForUser = async (userId, productData) => {
   const warranties = {
     period: cleanString(warrantyPeriod, { maxLength: 500 }) || '',
     conditions: cleanText(warrantyConditions, { maxLength: 2000 }) || '',
+    terms: {
+      accepted: termsAccepted === true,
+      version: cleanString(termsVersion, { maxLength: 30 }) || null,
+      acceptedAt: termsAccepted === true ? new Date().toISOString() : null,
+    },
   };
   const support = {
     email: cleanEmail(supportEmail) || '',

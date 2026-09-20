@@ -1,4 +1,5 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import {
   AlertCircle,
   Save,
@@ -13,6 +14,7 @@ import {
   Upload,
   Loader2,
   CheckCircle2,
+  FileSignature,
 } from 'lucide-react';
 import api from '../services/api';
 import { compressToWebp, MAX_IMAGES } from '../utils/imageCompress';
@@ -55,6 +57,7 @@ const emptyForm = (currency) => ({
   warrantyConditions: '',
   supportEmail: '',
   warrantyPhone: '',
+  acceptTerms: false,
 });
 
 export default function ManualProductForm({
@@ -77,6 +80,10 @@ export default function ManualProductForm({
   const [processingImages, setProcessingImages] = useState(false);
   const [success, setSuccess] = useState(false);
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    setForm((prev) => ({ ...prev, baseCurrencyPrice: currency }));
+  }, [currency]);
 
   const update = (patch) => setForm((prev) => ({ ...prev, ...patch }));
 
@@ -141,12 +148,15 @@ export default function ManualProductForm({
     if (!form.description.trim()) errors.description = 'La descripción es obligatoria.';
     else if (form.description.trim().length < 10) errors.description = 'Describe el producto (mínimo 10 caracteres).';
 
+    if (!form.categoriaId) errors.categoriaId = 'Selecciona una categoría.';
+
     const price = Number(form.suggestedPrice);
     if (form.suggestedPrice === '' || Number.isNaN(price) || price <= 0) {
       errors.suggestedPrice = 'Ingresa un precio de venta mayor a 0.';
     }
-    if (form.basePrice !== '' && (Number.isNaN(Number(form.basePrice)) || Number(form.basePrice) < 0)) {
-      errors.basePrice = 'El precio base no puede ser negativo.';
+    const base = Number(form.basePrice);
+    if (form.basePrice === '' || Number.isNaN(base) || base <= 0) {
+      errors.basePrice = 'Ingresa un precio base mayor a 0.';
     }
     const stock = Number(form.stockTotal);
     if (form.stockTotal === '' || Number.isNaN(stock) || stock < 0 || !Number.isInteger(stock)) {
@@ -167,8 +177,11 @@ export default function ManualProductForm({
       }
     });
 
-    if (form.warrantyPeriod !== '' && (Number.isNaN(Number(form.warrantyPeriod)) || Number(form.warrantyPeriod) < 0)) {
-      errors.warrantyPeriod = 'El período de garantía no puede ser negativo.';
+    if (form.warrantyPeriod === '' || Number.isNaN(Number(form.warrantyPeriod)) || Number(form.warrantyPeriod) <= 0) {
+      errors.warrantyPeriod = 'Ingresa un período de garantía mayor a 0 días.';
+    }
+    if (!String(form.warrantyConditions || '').trim()) {
+      errors.warrantyConditions = 'Las condiciones de garantía son obligatorias.';
     }
     if (form.supportEmail && !isEmail(form.supportEmail)) {
       errors.supportEmail = 'Correo de soporte inválido.';
@@ -177,6 +190,7 @@ export default function ManualProductForm({
       errors.warrantyPhone = 'Teléfono de soporte inválido.';
     }
     if (!selectedFullmentId) errors.fullment = 'Selecciona un centro de distribución.';
+    if (!form.acceptTerms) errors.acceptTerms = 'Debes aceptar los términos, condiciones y el contrato de mandato.';
 
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
@@ -199,9 +213,9 @@ export default function ManualProductForm({
       provider: 'manual',
       name: form.name.trim(),
       description: form.description.replace(/\r?\n/g, '<br/>'),
-      basePrice: form.basePrice === '' ? 0 : Number(form.basePrice),
+      basePrice: Number(form.basePrice),
       suggestedPrice: Number(form.suggestedPrice),
-      baseCurrencyPrice: form.baseCurrencyPrice,
+      baseCurrencyPrice: currency,
       stockTotal: Number(form.stockTotal),
       images: form.images.map((img) => img.url),
       variation: cleanVariants,
@@ -214,6 +228,8 @@ export default function ManualProductForm({
       categoriaId: form.categoriaId ? Number(form.categoriaId) : null,
       fullmId: selectedFullmentId,
       perfilEnvioId: selectedPerfilEnvioId ? Number(selectedPerfilEnvioId) : null,
+      termsAccepted: form.acceptTerms,
+      termsVersion: '2026-09-20',
     };
 
     const ok = await onPublish(payload);
@@ -320,17 +336,18 @@ export default function ManualProductForm({
           {fieldErrors.name && <span style={errorStyle}>{fieldErrors.name}</span>}
         </div>
         <div>
-          <label style={labelStyle}>Categoría</label>
+          <label style={labelStyle}>Categoría *</label>
           <select
             value={form.categoriaId}
             onChange={(e) => update({ categoriaId: e.target.value })}
-            style={inputStyle}
+            style={{ ...inputStyle, borderColor: fieldErrors.categoriaId ? '#dc2626' : '#d4d4d8' }}
           >
-            <option value="">Sin categoría</option>
+            <option value="">Selecciona una categoría</option>
             {categories.map((c) => (
               <option key={c.id} value={c.id}>{c.nombre}</option>
             ))}
           </select>
+          {fieldErrors.categoriaId && <span style={errorStyle}>{fieldErrors.categoriaId}</span>}
         </div>
       </div>
 
@@ -419,7 +436,7 @@ export default function ManualProductForm({
         </div>
         <div>
           <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <DollarSign size={16} /> Precio Base (opcional)
+            <DollarSign size={16} /> Precio Base *
           </label>
           <input
             type="number"
@@ -433,17 +450,14 @@ export default function ManualProductForm({
           {fieldErrors.basePrice && <span style={errorStyle}>{fieldErrors.basePrice}</span>}
         </div>
         <div>
-          <label style={labelStyle}>Moneda *</label>
-          <select
-            value={form.baseCurrencyPrice}
-            onChange={(e) => update({ baseCurrencyPrice: e.target.value })}
-            style={inputStyle}
-          >
-            {['COP', 'USD', 'VES', 'EUR', 'MXN'].map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-          {fieldErrors.baseCurrencyPrice && <span style={errorStyle}>{fieldErrors.baseCurrencyPrice}</span>}
+          <label style={labelStyle}>Moneda de la tienda</label>
+          <input
+            type="text"
+            readOnly
+            value={currency}
+            title="La moneda está vinculada a tu tienda"
+            style={{ ...inputStyle, background: '#e4e4e7', color: '#52525b', fontWeight: 600, cursor: 'not-allowed' }}
+          />
         </div>
         <div>
           <label style={labelStyle}>Stock Total *</label>
@@ -523,7 +537,7 @@ export default function ManualProductForm({
         <h4 style={{ margin: 0, fontSize: '1rem', color: '#334155' }}>Garantía e Información de Soporte</h4>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
           <div>
-            <label style={{ ...labelStyle, color: '#475569', fontSize: '0.85rem' }}>Período de Garantía (días)</label>
+            <label style={{ ...labelStyle, color: '#475569', fontSize: '0.85rem' }}>Período de Garantía (días) *</label>
             <input
               type="number"
               min="0"
@@ -559,15 +573,40 @@ export default function ManualProductForm({
           </div>
         </div>
         <div>
-          <label style={{ ...labelStyle, color: '#475569', fontSize: '0.85rem' }}>Condiciones de Garantía</label>
+          <label style={{ ...labelStyle, color: '#475569', fontSize: '0.85rem' }}>Condiciones de Garantía *</label>
           <textarea
             rows={2}
             value={form.warrantyConditions}
             onChange={(e) => update({ warrantyConditions: e.target.value })}
             placeholder="Ej. No cubre daños por mal uso."
-            style={{ ...inputStyle, background: '#ffffff', resize: 'vertical' }}
+            style={{ ...inputStyle, background: '#ffffff', resize: 'vertical', borderColor: fieldErrors.warrantyConditions ? '#dc2626' : '#cbd5e1' }}
           />
+          {fieldErrors.warrantyConditions && <span style={errorStyle}>{fieldErrors.warrantyConditions}</span>}
         </div>
+      </div>
+
+      {/* Términos, condiciones y contrato de mandato */}
+      <div style={{ background: '#faf5ff', padding: '1.2rem', borderRadius: '10px', border: `1px solid ${fieldErrors.acceptTerms ? '#dc2626' : '#e9d5ff'}`, display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+        <h4 style={{ margin: 0, fontSize: '1rem', color: '#6b21a8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <FileSignature size={16} /> Términos, Condiciones y Contrato de Mandato
+        </h4>
+        <label htmlFor="manual-accept-terms" style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '0.85rem', color: '#4b5563', lineHeight: 1.5, cursor: 'pointer' }}>
+          <input
+            id="manual-accept-terms"
+            type="checkbox"
+            checked={form.acceptTerms}
+            onChange={(e) => update({ acceptTerms: e.target.checked })}
+            style={{ marginTop: '3px', width: '16px', height: '16px', accentColor: '#7e22ce', flexShrink: 0, cursor: 'pointer' }}
+          />
+          <span>
+            Declaro que soy el titular o representante autorizado del producto y acepto los{' '}
+            <Link to="/terminos" target="_blank" rel="noopener noreferrer" style={{ color: '#7e22ce', fontWeight: 600, textDecoration: 'underline' }}>
+              Términos y Condiciones
+            </Link>{' '}
+            y el <strong>Contrato de Mandato</strong> de Glopsy, actuando conforme a las leyes colombianas (Ley 1480 de 2011, Ley 527 de 1999, Ley 1581 de 2012 y Decreto 1074 de 2015). Autorizo a Glopsy a publicar y gestionar la venta del producto en mi nombre. *
+          </span>
+        </label>
+        {fieldErrors.acceptTerms && <span style={errorStyle}>{fieldErrors.acceptTerms}</span>}
       </div>
 
       {/* Publicar */}
