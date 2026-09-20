@@ -48,3 +48,40 @@ export const bsToUsd = (bs, rate) => {
   if (!rate || rate <= 0) return null;
   return Math.round((n / rate) * 100) / 100;
 };
+
+// Tasa USD -> moneda local (para mostrar precio local a visitantes del país).
+// VES usa DolarApi; otras (p. ej. COP) usan Frankfurter con respaldo en env USD_<CUR>_RATE.
+export const getUsdRateTo = async (currency) => {
+  const cur = String(currency || '').toUpperCase();
+  if (!cur || cur === 'USD') return 1;
+  if (cur === 'VES') {
+    const r = await getVeUsdRate();
+    return r && r > 0 ? r : null;
+  }
+
+  const cacheKey = `rates:usd:${cur}`;
+  const cached = await redisClient.get(cacheKey).catch(() => null);
+  if (cached) {
+    const n = Number(cached);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+
+  try {
+    const res = await fetch(`https://api.frankfurter.app/latest?from=USD&to=${encodeURIComponent(cur)}`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const rate = Number(data?.rates?.[cur]);
+      if (Number.isFinite(rate) && rate > 0) {
+        await redisClient.set(cacheKey, String(rate), { EX: CACHE_TTL_SECONDS }).catch(() => {});
+        return rate;
+      }
+    }
+  } catch (error) {
+    console.warn(`[rates] no se pudo obtener USD->${cur}:`, error.message);
+  }
+
+  const fallback = Number(process.env[`USD_${cur}_RATE`]);
+  return Number.isFinite(fallback) && fallback > 0 ? fallback : null;
+};

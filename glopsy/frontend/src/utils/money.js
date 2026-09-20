@@ -23,13 +23,18 @@ export const formatMoney = (value, { currency = DEFAULT_CURRENCY, locale = DEFAU
 };
 
 // Divisa/locale de la tienda actual (vitrina o principal). Fallback Colombia.
+// En tiendas habilitadas en USD, a un visitante del mismo país se le muestra
+// el precio en su moneda local (store.pricing lo define el backend).
 export const useMoney = () => {
   const { store } = useStorefront();
-  const currency = store?.moneda || DEFAULT_CURRENCY;
+  const pricing = store?.pricing;
+  const currency = pricing?.displayCurrency || store?.moneda || DEFAULT_CURRENCY;
   const locale = store?.locale || DEFAULT_LOCALE;
+  const rate = Number(pricing?.rate) > 0 ? Number(pricing.rate) : 1;
   return {
     currency,
     locale,
-    format: (value) => formatMoney(value, { currency, locale }),
+    converted: Boolean(pricing?.converted),
+    format: (value) => formatMoney(Number(value || 0) * rate, { currency, locale }),
   };
 };

@@ -17,7 +17,12 @@ export const productImg = (p) => {
   return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60';
 };
 
-const money = (p, store) => formatMoney(p.price, { currency: store?.moneda, locale: store?.locale });
+const money = (p, store) => {
+  const pricing = store?.pricing;
+  const currency = pricing?.displayCurrency || store?.moneda;
+  const rate = Number(pricing?.rate) > 0 ? Number(pricing.rate) : 1;
+  return formatMoney(Number(p.price || 0) * rate, { currency, locale: store?.locale });
+};
 
 export function ProductCard({ p, store }) {
   return (

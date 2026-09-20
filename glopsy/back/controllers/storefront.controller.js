@@ -1,6 +1,31 @@
 import { cleanString, toInt } from '../utils/validation.js';
+import { query } from '../db.js';
 import { getPublicStoreBySlug, getMainStore } from '../services/tienda.service.js';
 import { getStorefrontProducts, getStorefrontHome } from '../services/product.service.js';
+import { getUsdRateTo } from '../services/rates.service.js';
+
+const visitorCountry = (req) => {
+  const raw = req.headers['x-visitor-country'] || req.headers['cf-ipcountry'] || req.headers['x-vercel-ip-country'] || '';
+  const c = String(raw).trim().toUpperCase();
+  return c && c !== 'XX' && c !== 'T1' ? c : null;
+};
+
+// Precio local para visitantes del país de una tienda habilitada en USD.
+const buildPricing = async (store, req) => {
+  const storeCurrency = String(store.moneda || 'COP').toUpperCase();
+  const base = { displayCurrency: storeCurrency, rate: 1, converted: false };
+  if (storeCurrency !== 'USD' || !store.paisId) return base;
+
+  const { rows } = await query(`SELECT codigo_iso, moneda FROM paises WHERE id = $1 LIMIT 1`, [store.paisId]);
+  const pais = rows[0];
+  const visitor = visitorCountry(req);
+  const localCur = String(pais?.moneda || '').toUpperCase();
+  if (!pais || !visitor || localCur === 'USD' || visitor !== String(pais.codigo_iso).toUpperCase()) return base;
+
+  const rate = await getUsdRateTo(localCur);
+  if (!rate || rate <= 0) return base;
+  return { displayCurrency: localCur, rate, converted: true };
+};
 
 // GET /api/storefront/:slug -> información pública de la tienda (vitrina del subdominio).
 // El slug especial "main" resuelve la tienda principal (app.glopsy.shop).
@@ -13,7 +38,8 @@ export const storefrontInfo = async (req, res) => {
     if (!store) {
       return res.status(404).json({ ok: false, message: 'Tienda no encontrada.' });
     }
-    return res.json({ ok: true, store });
+    const pricing = await buildPricing(store, req).catch(() => ({ displayCurrency: store.moneda, rate: 1, converted: false }));
+    return res.json({ ok: true, store: { ...store, pricing } });
   } catch (error) {
     console.error('Error al consultar vitrina de tienda:', error.message);
     return res.status(500).json({ ok: false, message: 'No fue posible consultar la tienda.' });
