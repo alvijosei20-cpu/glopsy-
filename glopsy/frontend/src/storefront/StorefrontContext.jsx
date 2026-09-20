@@ -9,6 +9,14 @@ export function StorefrontProvider({ children }) {
   const slug = useMemo(() => getStoreSlug(), []);
   const [store, setStore] = useState(null);
   const [ready, setReady] = useState(!slug);
+  const [locVersion, setLocVersion] = useState(0);
+
+  // Al cambiar la ubicación del usuario, se recalcula la moneda (país del visitante).
+  useEffect(() => {
+    const sync = () => setLocVersion((v) => v + 1);
+    window.addEventListener('glopsy:city-change', sync);
+    return () => window.removeEventListener('glopsy:city-change', sync);
+  }, []);
 
   useEffect(() => {
     if (!slug) {
@@ -48,7 +56,7 @@ export function StorefrontProvider({ children }) {
     return () => {
       alive = false;
     };
-  }, [slug]);
+  }, [slug, locVersion]);
 
   return (
     <StorefrontContext.Provider value={{ slug, store, ready }}>

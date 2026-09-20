@@ -7,6 +7,17 @@ const STORAGE_DATA = 'location_data';
 export const DEFAULT_CITY = 'Bogotá D.C.';
 export const CITY_EVENT = 'glopsy:city-change';
 
+// País elegido/derivado de la ubicación del usuario (manda sobre la IP).
+export const getStoredCountry = () => {
+  try {
+    const raw = localStorage.getItem(STORAGE_DATA) || sessionStorage.getItem(STORAGE_DATA) || '{}';
+    const data = JSON.parse(raw);
+    const iso = String(data?.pais || '').trim().toUpperCase();
+    if (/^[A-Z]{2}$/.test(iso)) return iso;
+  } catch {}
+  return null;
+};
+
 export const getStoredCity = () => {
   try {
     const raw = localStorage.getItem(STORAGE_DATA) || sessionStorage.getItem(STORAGE_DATA) || '{}';
@@ -20,10 +31,16 @@ export const getStoredCity = () => {
   );
 };
 
-export const saveCity = ({ city, departamento = '', source = 'manual' }) => {
+export const saveCity = ({ city, departamento = '', paisCodigo = '', source = 'manual' }) => {
   const clean = String(city || '').trim();
   if (!clean) return;
-  const data = { city: clean, departamento: String(departamento || ''), source, ts: Date.now() };
+  const data = {
+    city: clean,
+    departamento: String(departamento || ''),
+    pais: String(paisCodigo || '').toUpperCase(),
+    source,
+    ts: Date.now(),
+  };
   try {
     localStorage.setItem(STORAGE_DATA, JSON.stringify(data));
     localStorage.setItem(STORAGE_CITY, clean);

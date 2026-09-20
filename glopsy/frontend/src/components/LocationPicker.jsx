@@ -40,7 +40,7 @@ export default function LocationPicker({ className = '' }) {
   }, [supported, query]);
 
   const pick = (r) => {
-    saveCity({ city: r.ciudad_nombre, departamento: r.departamento_nombre, source: 'manual' });
+    saveCity({ city: r.ciudad_nombre, departamento: r.departamento_nombre, paisCodigo: r.pais_codigo, source: 'manual' });
     setOpen(false);
   };
 
@@ -52,7 +52,7 @@ export default function LocationPicker({ className = '' }) {
       setStatus('reverse');
       const u = await reverseCity(lat, lon);
       if (u && u.match) {
-        saveCity({ city: u.match.ciudad_nombre, departamento: u.match.departamento_nombre, source: 'geo' });
+        saveCity({ city: u.match.ciudad_nombre, departamento: u.match.departamento_nombre, paisCodigo: u.match.pais_codigo, source: 'geo' });
         setOpen(false);
         return;
       }

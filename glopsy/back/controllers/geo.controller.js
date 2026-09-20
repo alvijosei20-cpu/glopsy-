@@ -29,7 +29,8 @@ export const getFullments = async (req, res) => {
           d.id AS departamento_id,
           d.nombre AS departamento_nombre,
           p.id AS pais_id,
-          p.nombre AS pais_nombre
+          p.nombre AS pais_nombre,
+          p.codigo_iso AS pais_codigo
         FROM fullments f
         JOIN ciudades c ON f.ciudad_id = c.id
         JOIN departamentos d ON c.departamento_id = d.id
@@ -233,10 +234,12 @@ export const reverseGeocode = async (req, res) => {
     const [supportedRows, geoRes] = await Promise.all([
       query(`
         SELECT DISTINCT c.id AS ciudad_id, c.nombre AS ciudad_nombre,
-                        d.id AS departamento_id, d.nombre AS departamento_nombre
+                        d.id AS departamento_id, d.nombre AS departamento_nombre,
+                        p.id AS pais_id, p.codigo_iso AS pais_codigo
         FROM fullments f
         JOIN ciudades c ON f.ciudad_id = c.id
         JOIN departamentos d ON c.departamento_id = d.id
+        JOIN paises p ON d.pais_id = p.id
         WHERE f.estado = 'activo'
       `),
       fetch(
