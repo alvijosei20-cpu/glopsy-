@@ -64,6 +64,53 @@ const MarketConfig = () => {
   const [payoutAccount, setPayoutAccount] = useState({ banco_codigo: '', banco_nombre: '', tipo_cuenta: '', numero_cuenta: '', titular_cuenta: '', titular_documento: '' });
   const [bancos, setBancos] = useState([]);
   const [savingPayout, setSavingPayout] = useState(false);
+  const [fiscalRange, setFiscalRange] = useState({ desde: '', hasta: new Date().toISOString().slice(0, 10) });
+  const [generatingFiscal, setGeneratingFiscal] = useState(false);
+
+  const handleDownloadFiscal = async () => {
+    setGeneratingFiscal(true);
+    try {
+      const { data } = await api.get('/tienda/reportes/ba-ven-nif-12', {
+        params: { desde: fiscalRange.desde || undefined, hasta: fiscalRange.hasta || undefined },
+      });
+      if (!data?.ok) {
+        setNotice(data?.message || 'No fue posible generar el reporte.');
+        return;
+      }
+      const r = data.report;
+      const filas = (r.ventas || []).map((v) =>
+        `<tr><td>${new Date(v.fecha).toLocaleDateString('es-VE')}</td><td>${v.numero}</td><td>${v.estado}</td><td style="text-align:right">${v.monto}</td></tr>`
+      ).join('');
+      const cripto = (r.criptoactivos || []).length
+        ? r.criptoactivos.map((c) => `<li><b>${c.tipo}</b> — Intención: ${c.intencion}. Fuente de valor: ${c.fuenteValor}.</li>`).join('')
+        : '<li>No se registran criptoactivos propios.</li>';
+      const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>BA VEN-NIF 12 - ${r.emisor.nombre}</title>
+<style>body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:32px}h1{font-size:18px}h2{font-size:14px;margin-top:24px}table{width:100%;border-collapse:collapse;margin-top:8px}th,td{border:1px solid #999;padding:6px;font-size:12px}th{background:#eee}.meta{font-size:12px;color:#333}</style></head><body>
+<h1>${r.documento}</h1>
+<p class="meta"><b>Entidad:</b> ${r.emisor.nombre}<br><b>RIF/CI:</b> ${r.emisor.rif || '—'}<br><b>Moneda:</b> ${r.emisor.moneda}<br><b>Período:</b> ${r.periodo.desde} a ${r.periodo.hasta}</p>
+<h2>1. Criptoactivos propios</h2><ul>${cripto}</ul>
+<h2>2. Información a revelar</h2><ul>${(r.revelaciones || []).map((x) => `<li>${x}</li>`).join('')}</ul>
+<h2>3. Operaciones del período</h2>
+<p class="meta">Operaciones: ${r.resumen.operaciones} · Total ventas: ${r.resumen.totalVentas} ${r.emisor.moneda} · Promedio: ${r.resumen.promedio}</p>
+<table><thead><tr><th>Fecha</th><th>N° orden</th><th>Estado</th><th>Monto</th></tr></thead><tbody>${filas}</tbody></table>
+<p class="meta" style="margin-top:24px">Documento generado por Glopsy. El BA VEN-NIF N° 12 es una norma contable de la FCCPV sobre tenencia de criptoactivos; no constituye una declaración ante el SENIAT.</p>
+</body></html>`;
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `BA-VEN-NIF-12-${String(r.emisor.nombre || 'tienda').replace(/\s+/g, '_')}-${r.periodo.hasta}.html`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setNotice('Reporte BA VEN-NIF 12 generado.');
+    } catch (err) {
+      setNotice(err.response?.data?.message || 'No fue posible generar el reporte.');
+    } finally {
+      setGeneratingFiscal(false);
+    }
+  };
   const isMainStore = tienda?.isMain === true;
 
   const setMercadoPagoConfig = (updater) => {
@@ -1431,24 +1478,30 @@ const MarketConfig = () => {
                   <p>Gestiona los datos fiscales y la información de cobro de tu tienda.</p>
                 </div>
               </div>
-              <div style={{ background: '#f8fafc', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #e2e8f0', marginBottom: '2rem' }}>
-                <div className="config-form-group">
-                  <label>Razón Social / Nombre Legal</label>
-                  <input type="text" placeholder="Ej. Empresa S.A.S." defaultValue="Comercializadora Glopsy S.A.S." />
+              <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
+                  <Receipt size={20} color="#0f172a" />
+                  <div>
+                    <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>BA VEN-NIF N° 12 — Tenencia de Criptoactivos Propios</h4>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Genera el documento con las revelaciones y tus operaciones del período.</p>
+                  </div>
                 </div>
-                <div className="config-form-group">
-                  <label>NIT / RUT / Identificación Fiscal</label>
-                  <input type="text" placeholder="Ej. 900123456-1" defaultValue="901234567-8" />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+                  <div className="config-form-group" style={{ margin: 0 }}>
+                    <label>Desde</label>
+                    <input type="date" value={fiscalRange.desde} onChange={(e) => setFiscalRange({ ...fiscalRange, desde: e.target.value })} />
+                  </div>
+                  <div className="config-form-group" style={{ margin: 0 }}>
+                    <label>Hasta</label>
+                    <input type="date" value={fiscalRange.hasta} onChange={(e) => setFiscalRange({ ...fiscalRange, hasta: e.target.value })} />
+                  </div>
                 </div>
-                <div className="config-form-group">
-                  <label>Dirección Fiscal</label>
-                  <input type="text" placeholder="Dirección principal" defaultValue="Calle 100 # 15-20, Bogotá" />
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
+                  <button type="button" className="config-btn-primary" disabled={generatingFiscal} onClick={handleDownloadFiscal}>
+                    {generatingFiscal ? 'Generando…' : 'Descargar BA VEN-NIF 12'}
+                  </button>
                 </div>
-                <button className="config-btn-primary" onClick={() => { setNotice('Datos de facturación actualizados.'); setTimeout(() => setNotice(''), 3000); }}>
-                  Guardar datos fiscales
-                </button>
               </div>
-
             </div>
           )}
 

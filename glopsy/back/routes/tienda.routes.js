@@ -14,6 +14,7 @@ import {
   requestUsdActivation,
   getUsdActivation,
   saveStorefrontAppearance,
+  getFiscalReport,
   getCheckoutIntegrations,
   saveCheckoutIntegration,
   deleteCheckoutIntegration,
@@ -67,6 +68,8 @@ router.get('/usd-activation', getUsdActivation);
 router.post('/usd-activation', requestUsdActivation);
 // Apariencia de la vitrina (plantilla, tema, paleta)
 router.put('/storefront', saveStorefrontAppearance);
+// Reporte fiscal BA VEN-NIF N° 12 (criptoactivos) a partir de las ventas
+router.get('/reportes/ba-ven-nif-12', getFiscalReport);
 router.get('/checkout-integrations', getCheckoutIntegrations);
 router.post('/checkout-integrations', saveCheckoutIntegration);
 router.delete('/checkout-integrations/:provider', deleteCheckoutIntegration);

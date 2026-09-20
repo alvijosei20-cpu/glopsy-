@@ -158,6 +158,20 @@ const Market = () => {
       />
       {notice && <p className="panel__notice" role="status">{notice}</p>}
 
+      {tienda?.slug && (
+        <p className="panel__notice" role="status" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+          Tu vitrina:
+          <a
+            href={`https://${tienda.slug}.${tienda.dominio_raiz || 'glopsy.shop'}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: '#7e22ce', fontWeight: 700, textDecoration: 'underline' }}
+          >
+            {tienda.slug}.{tienda.dominio_raiz || 'glopsy.shop'}
+          </a>
+        </p>
+      )}
+
       <section className="integrations" aria-labelledby="integrations-title">
         <div className="integrations__heading">
           <div>

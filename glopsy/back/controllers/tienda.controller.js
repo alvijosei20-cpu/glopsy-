@@ -12,6 +12,9 @@ import {
   requestUsdActivation as requestUsdActivationForUser,
   getUsdActivationStatus,
   saveStorefrontAppearanceForUser,
+} from '../services/tienda.service.js';
+import { getBaVenNif12Report } from '../services/fiscalReport.service.js';
+import {
   getCheckoutIntegrationsForUser,
   saveCheckoutIntegrationForUser,
   deleteCheckoutIntegrationForUser,
@@ -397,6 +400,19 @@ export const createTiendaController = ({
     }
   },
 
+  getFiscalReport: async (req, res) => {
+    const desde = cleanString(req.query.desde, { maxLength: 10 });
+    const hasta = cleanString(req.query.hasta, { maxLength: 10 });
+    try {
+      const report = await getBaVenNif12Report(req.auth.userId, { desde, hasta });
+      if (!report) return res.status(404).json({ ok: false, message: 'No tienes una tienda registrada.' });
+      return res.json({ ok: true, report });
+    } catch (error) {
+      console.error('Error al generar el reporte fiscal:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible generar el reporte.' });
+    }
+  },
+
   getAnalytics: async (req, res) => {
     try {
       const analytics = await getStoreAnalytics(req.auth.userId);
@@ -500,6 +516,7 @@ export const {
   requestUsdActivation,
   getUsdActivation,
   saveStorefrontAppearance,
+  getFiscalReport,
   getCheckoutIntegrations,
   saveCheckoutIntegration,
   deleteCheckoutIntegration,
