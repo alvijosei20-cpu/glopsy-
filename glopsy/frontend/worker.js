@@ -374,6 +374,12 @@ export default {
 
     const backendRequest = new Request(url, request);
     backendRequest.headers.set('X-Forwarded-Host', BACKEND);
+    // País del visitante (Cloudflare lo expone en request.cf). Se reenvía al
+    // backend para personalizar avisos por país.
+    const visitorCountry = request.cf?.country || request.headers.get('cf-ipcountry') || '';
+    if (visitorCountry) {
+      backendRequest.headers.set('X-Visitor-Country', String(visitorCountry).toUpperCase());
+    }
 
     const response = await fetch(backendRequest);
 

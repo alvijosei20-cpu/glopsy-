@@ -90,6 +90,35 @@ export const getPaises = async (req, res) => {
   }
 };
 
+// País del visitante deducido por el edge (Cloudflare agrega CF-IPCountry).
+// Devuelve el ISO detectado y la lista de países donde Glopsy opera.
+export const getVisitorCountry = async (req, res) => {
+  try {
+    const raw =
+      req.headers['x-visitor-country'] ||
+      req.headers['cf-ipcountry'] ||
+      req.headers['x-vercel-ip-country'] ||
+      '';
+    const detected = String(raw).trim().toUpperCase();
+    // Cloudflare usa XX (desconocido) y T1 (red Tor): no son países reales.
+    const real = detected && detected !== 'XX' && detected !== 'T1' ? detected : null;
+    const { rows } = await query(`SELECT codigo_iso FROM paises`);
+    const supported = rows
+      .map((r) => String(r.codigo_iso || '').trim().toUpperCase())
+      .filter(Boolean);
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      detected: real,
+      supported,
+      supportedVisitor: !real || supported.length === 0 || supported.includes(real),
+    });
+  } catch (error) {
+    console.error('Error al obtener el país del visitante:', error.message);
+    res.status(500).json({ ok: false, message: 'Error al detectar el país del visitante' });
+  }
+};
+
 export const getZoomCiudades = async (req, res) => {
   try {
     const list = await getZoomCities('origen');

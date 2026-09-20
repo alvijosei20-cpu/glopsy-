@@ -12,6 +12,7 @@ import StoreHeader from './storefront/StoreHeader';
 import { getRootOrigin, getStoreSlug } from './utils/storeHost';
 import { loadGA, trackPageView } from './utils/analytics';
 import NotificationCenter from './components/NotificationCenter';
+import CountryNotice from './components/CountryNotice';
 
 const StorefrontHome = lazy(() => import('./storefront/StorefrontHome'));
 const Home = lazy(() => import('./pages/home/home'));
@@ -214,6 +215,7 @@ function MainApp() {
 
   return (
     <div className="app-shell">
+      <CountryNotice />
       {storeSlug ? <StoreHeader store={sfStore} /> : <Navbar />}
 
       <main className="app-content">
