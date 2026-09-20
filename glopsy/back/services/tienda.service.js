@@ -405,7 +405,27 @@ export const getPayoutAccountForUser = async (userId) => {
 };
 
 export const savePayoutAccountForUser = async (userId, data) => {
-  const { banco_codigo, banco_nombre, tipo_cuenta, numero_cuenta, titular_cuenta, titular_documento } = data;
+  const { banco_codigo, tipo_cuenta, numero_cuenta, titular_cuenta, titular_documento } = data;
+
+  // Validar que el banco exista en el catálogo del país de la tienda.
+  const { rows: tiendaRows } = await pool.query(
+    `SELECT pais_id FROM tiendas WHERE usrid = $1 LIMIT 1`,
+    [userId]
+  );
+  const paisId = tiendaRows[0]?.pais_id || null;
+  const { rows: bancoRows } = await pool.query(
+    `SELECT nombre FROM bancos
+     WHERE codigo = $1 AND activo = true AND ($2::int IS NULL OR pais_id = $2)
+     LIMIT 1`,
+    [banco_codigo, paisId]
+  );
+  if (!bancoRows[0]) {
+    const err = new Error('El banco seleccionado no corresponde al país de tu tienda.');
+    err.code = 'BANCO_INVALIDO';
+    throw err;
+  }
+  const banco_nombre = bancoRows[0].nombre;
+
   const { rows } = await pool.query(
     `UPDATE tiendas
      SET banco_codigo = $2, banco_nombre = $3, tipo_cuenta = $4,

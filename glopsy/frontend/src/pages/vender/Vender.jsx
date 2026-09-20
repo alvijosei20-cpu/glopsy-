@@ -15,6 +15,10 @@ export default function Vender() {
   const [paisId, setPaisId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [bancos, setBancos] = useState([]);
+  const [bank, setBank] = useState({
+    banco_codigo: '', tipo_cuenta: '', numero_cuenta: '', titular_cuenta: user?.name || '', titular_documento: '',
+  });
 
   useEffect(() => {
     let alive = true;
@@ -32,6 +36,25 @@ export default function Vender() {
       alive = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!paisId) {
+      setBancos([]);
+      return;
+    }
+    let alive = true;
+    api
+      .get('/geo/bancos', { params: { pais_id: paisId } })
+      .then(({ data }) => {
+        if (alive) setBancos(data?.bancos || []);
+      })
+      .catch(() => {
+        if (alive) setBancos([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [paisId]);
 
   const selectedPais = paises.find((p) => String(p.id) === String(paisId)) || null;
   const raiz = selectedPais?.dominio_raiz || getRootDomain();
@@ -86,6 +109,14 @@ export default function Vender() {
   const create = async (e) => {
     e.preventDefault();
     if (busy) return;
+    if (!bank.banco_codigo || !bank.tipo_cuenta || !bank.numero_cuenta || !bank.titular_cuenta) {
+      setError('Completa tu cuenta bancaria: banco, tipo, número y titular.');
+      return;
+    }
+    if (!/^\d{4,40}$/.test(bank.numero_cuenta)) {
+      setError('El número de cuenta debe tener entre 4 y 40 dígitos.');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -95,6 +126,8 @@ export default function Vender() {
         ga_id: gaId.trim() || null,
         pais_id: paisId ? Number(paisId) : undefined,
       });
+      // La tienda ya existe: se registra la cuenta donde recibirá sus pagos.
+      await api.put('/tienda/payout-account', bank);
       await refreshTienda();
       navigate('/market/config', { replace: true });
     } catch (err) {
@@ -175,6 +208,82 @@ export default function Vender() {
             </p>
           </div>
 
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-3">
+            <p className="text-xs font-bold text-slate-700">Cuenta bancaria donde recibirás tus ventas</p>
+
+            <div>
+              <label htmlFor="bank-name" className="block text-xs font-bold text-slate-600 mb-1.5">Banco</label>
+              <select
+                id="bank-name"
+                value={bank.banco_codigo}
+                onChange={(e) => setBank({ ...bank, banco_codigo: e.target.value })}
+                required
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 outline-none focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-100"
+              >
+                <option value="">{bancos.length ? 'Selecciona tu banco' : 'Cargando bancos…'}</option>
+                {bancos.map((b) => (
+                  <option key={b.codigo} value={b.codigo}>{b.nombre}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="bank-type" className="block text-xs font-bold text-slate-600 mb-1.5">Tipo de cuenta</label>
+                <select
+                  id="bank-type"
+                  value={bank.tipo_cuenta}
+                  onChange={(e) => setBank({ ...bank, tipo_cuenta: e.target.value })}
+                  required
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 outline-none focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-100"
+                >
+                  <option value="">Selecciona</option>
+                  <option value="ahorro">Ahorros</option>
+                  <option value="corriente">Corriente</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="bank-number" className="block text-xs font-bold text-slate-600 mb-1.5">Número de cuenta</label>
+                <input
+                  id="bank-number"
+                  inputMode="numeric"
+                  value={bank.numero_cuenta}
+                  onChange={(e) => setBank({ ...bank, numero_cuenta: e.target.value.replace(/\D/g, '') })}
+                  placeholder="Solo dígitos"
+                  required
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 outline-none focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-100 placeholder:text-slate-400"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="bank-holder" className="block text-xs font-bold text-slate-600 mb-1.5">Titular de la cuenta</label>
+              <input
+                id="bank-holder"
+                value={bank.titular_cuenta}
+                onChange={(e) => setBank({ ...bank, titular_cuenta: e.target.value })}
+                placeholder="Nombre o razón social"
+                required
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 outline-none focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-100 placeholder:text-slate-400"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="bank-doc" className="block text-xs font-bold text-slate-600 mb-1.5">Documento del titular (opcional)</label>
+              <input
+                id="bank-doc"
+                value={bank.titular_documento}
+                onChange={(e) => setBank({ ...bank, titular_documento: e.target.value })}
+                placeholder="NIT o cédula"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 outline-none focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-100 placeholder:text-slate-400"
+              />
+            </div>
+
+            <p className="text-[11px] text-slate-400">
+              Verificamos que el banco exista en el catálogo del país seleccionado. Esta cuenta recibirá la liquidación diaria de tus ventas.
+            </p>
+          </div>
+
           <div>
             <label htmlFor="store-ga" className="block text-xs font-bold text-slate-600 mb-1.5">
               Google Analytics de tu tienda (opcional)
@@ -200,7 +309,7 @@ export default function Vender() {
 
           <button
             type="submit"
-            disabled={busy || !name.trim() || !slug.trim()}
+            disabled={busy || !name.trim() || !slug.trim() || !bank.banco_codigo || !bank.tipo_cuenta || !bank.numero_cuenta || !bank.titular_cuenta}
             className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-bold py-3 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
             {busy ? <Loader2 size={16} className="animate-spin" /> : null}

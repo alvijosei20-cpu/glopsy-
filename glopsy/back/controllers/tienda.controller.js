@@ -293,6 +293,9 @@ export const createTiendaController = ({
       });
       return res.json({ ok: true, account, message: 'Cuenta de pagos guardada con éxito.' });
     } catch (error) {
+      if (error.code === 'BANCO_INVALIDO') {
+        return res.status(400).json({ ok: false, message: error.message });
+      }
       console.error('Error al guardar la cuenta de pagos:', error.message);
       return res.status(500).json({ ok: false, message: 'No fue posible guardar la cuenta de pagos.' });
     }
