@@ -218,7 +218,7 @@ function MainApp() {
       <CountryNotice />
       {storeSlug ? <StoreHeader store={sfStore} /> : <Navbar />}
 
-      <main className="app-content">
+      <main className={`app-content${storeSlug ? ' app-content--store' : ''}`}>
         <Suspense fallback={<ConfiguringScreen message="Cargando Glopsy ..." />}>
         <Routes>
           {/* RUTAS PÚBLICAS */}

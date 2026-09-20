@@ -16,19 +16,26 @@ html.dark .app-shell {
   padding: 0.75rem 0;
 }
 
-.app-content h1 {
+/* Vitrina de subdominios: ocupa todo el ancho (sin franjas laterales). */
+.app-content--store {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.app-content:not(.app-content--store) h1 {
   margin: 0;
   color: black;
   font-size: clamp(1.75rem, 4vw, 2.5rem);
   font-weight: 700;
 }
 
-html.dark .app-content h1 {
+html.dark .app-content:not(.app-content--store) h1 {
   color: #f1f5f9 !important;
 }
 
 @media (max-width: 640px) {
-  .app-content {
+  .app-content:not(.app-content--store) {
     width: min(100% - 1.5rem, 80rem);
     padding: 0.5rem 0;
   }
