@@ -32,44 +32,16 @@ const MarketConfig = () => {
     prefix: '',
     test_set_id: ''
   });
-  const [dianPlantilla, setDianPlantilla] = useState({
-    numeroResolucion: '', desde: '1', hasta: '5000', regimen: '48', responsabilidad: 'O-47', dv: '',
-  });
+  const [dianPlantilla, setDianPlantilla] = useState({ regimen: '48', responsabilidad: 'O-47' });
   const [generatingDian, setGeneratingDian] = useState(false);
 
   const handleDownloadDianPlantilla = async () => {
     setGeneratingDian(true);
     try {
-      const doc = String(payoutAccount?.titular_documento || '').replace(/\D/g, '');
-      const payload = {
-        VersionPlantilla: '1.0',
-        TipoDocumento: '01',
-        InformacionResolucion: {
-          NumeroResolucion: dianPlantilla.numeroResolucion,
-          Prefijo: dianConfig.prefix,
-          ConsecutivoDesde: Number(dianPlantilla.desde) || 1,
-          ConsecutivoHasta: Number(dianPlantilla.hasta) || 1,
-        },
-        Emisor: {
-          TipoIdentificacion: '31',
-          NumeroIdentificacion: doc || '900000000',
-          DV: dianPlantilla.dv || '0',
-          RazonSocial: payoutAccount?.titular_cuenta || tienda?.name || 'Mi empresa',
-          RegimenFiscal: dianPlantilla.regimen,
-          ResponsabilidadFiscal: dianPlantilla.responsabilidad,
-        },
-        DetallesFactura: {
-          FechaEmision: new Date().toISOString().slice(0, 10),
-          HoraEmision: '10:00:00-05:00',
-          Moneda: 'COP',
-          FormaPago: '1',
-          MedioPago: '10',
-        },
-        LineasDeFactura: [
-          { CodigoProducto: '1', NombreProducto: 'Producto', Cantidad: 1, UnidadMedida: '94', PrecioUnitario: 1000, PorcentajeIva: 19 },
-        ],
-      };
-      const { data } = await api.post('/tienda/dian/plantilla', payload);
+      const { data } = await api.post('/tienda/dian/plantilla/ventas', {
+        regimen: dianPlantilla.regimen,
+        responsabilidad: dianPlantilla.responsabilidad,
+      });
       if (!data?.ok) {
         setNotice((data.errors || [data.message]).filter(Boolean).join(' · '));
         return;
@@ -1562,94 +1534,39 @@ const MarketConfig = () => {
               </div>
 
               {(tienda?.paisCodigo || storePaisIso) === 'CO' && (
-                <>
-                  <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginBottom: '1.5rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
-                      <div style={{ background: '#0284c7', color: 'white', fontWeight: 900, padding: '0.5rem 0.9rem', borderRadius: '0.5rem', fontSize: '1.1rem', letterSpacing: '1px' }}>DIAN</div>
-                      <div>
-                        <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>Facturación Electrónica DIAN (Colombia)</h4>
-                        <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Configura tu software y descarga la plantilla para importar.</p>
-                      </div>
-                    </div>
-                    <form onSubmit={handleSaveDian}>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
-                        <div className="config-form-group" style={{ margin: 0 }}>
-                          <label>ID del SW</label>
-                          <input value={dianConfig.sw_id} onChange={(e) => setDianConfig({ ...dianConfig, sw_id: e.target.value })} placeholder="Software ID" />
-                        </div>
-                        <div className="config-form-group" style={{ margin: 0 }}>
-                          <label>PIN del SW</label>
-                          <input type="password" value={dianConfig.sw_pin} onChange={(e) => setDianConfig({ ...dianConfig, sw_pin: e.target.value })} placeholder="PIN" />
-                        </div>
-                        <div className="config-form-group" style={{ margin: 0 }}>
-                          <label>Prefijo</label>
-                          <input value={dianConfig.prefix} onChange={(e) => setDianConfig({ ...dianConfig, prefix: e.target.value })} placeholder="Ej. SETT" />
-                        </div>
-                        <div className="config-form-group" style={{ margin: 0 }}>
-                          <label>TestSetId</label>
-                          <input value={dianConfig.test_set_id} onChange={(e) => setDianConfig({ ...dianConfig, test_set_id: e.target.value })} placeholder="TestSetId" />
-                        </div>
-                        <div className="config-form-group" style={{ margin: 0, gridColumn: '1 / -1' }}>
-                          <label>Llave técnica</label>
-                          <textarea rows={2} value={dianConfig.technical_key} onChange={(e) => setDianConfig({ ...dianConfig, technical_key: e.target.value })} placeholder="Clave técnica proporcionada por la DIAN" />
-                        </div>
-                      </div>
-                      <div style={{ textAlign: 'right', marginTop: '1rem' }}>
-                        <button type="submit" className="config-btn-primary">Guardar configuración DIAN</button>
-                      </div>
-                    </form>
-                  </div>
-
-                  <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
-                      <Receipt size={20} color="#0f172a" />
-                      <div>
-                        <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>Plantilla DIAN (.json.dian)</h4>
-                        <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Descarga la plantilla para importar en la Solución Gratuita.</p>
-                      </div>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem' }}>
-                      <div className="config-form-group" style={{ margin: 0 }}>
-                        <label>N° Resolución</label>
-                        <input value={dianPlantilla.numeroResolucion} onChange={(e) => setDianPlantilla({ ...dianPlantilla, numeroResolucion: e.target.value })} placeholder="Ej. 187640000001" />
-                      </div>
-                      <div className="config-form-group" style={{ margin: 0 }}>
-                        <label>Consecutivo desde</label>
-                        <input type="number" value={dianPlantilla.desde} onChange={(e) => setDianPlantilla({ ...dianPlantilla, desde: e.target.value })} />
-                      </div>
-                      <div className="config-form-group" style={{ margin: 0 }}>
-                        <label>Consecutivo hasta</label>
-                        <input type="number" value={dianPlantilla.hasta} onChange={(e) => setDianPlantilla({ ...dianPlantilla, hasta: e.target.value })} />
-                      </div>
-                      <div className="config-form-group" style={{ margin: 0 }}>
-                        <label>Régimen</label>
-                        <select value={dianPlantilla.regimen} onChange={(e) => setDianPlantilla({ ...dianPlantilla, regimen: e.target.value })}>
-                          <option value="48">Responsable de IVA</option>
-                          <option value="49">No responsable de IVA</option>
-                        </select>
-                      </div>
-                      <div className="config-form-group" style={{ margin: 0 }}>
-                        <label>Responsabilidad</label>
-                        <select value={dianPlantilla.responsabilidad} onChange={(e) => setDianPlantilla({ ...dianPlantilla, responsabilidad: e.target.value })}>
-                          <option value="O-13">O-13 Gran contribuyente</option>
-                          <option value="O-15">O-15 Autorretenedor</option>
-                          <option value="O-23">O-23 Agente retención IVA</option>
-                          <option value="O-47">O-47 Régimen simple</option>
-                          <option value="R-99-PN">R-99-PN No responsable</option>
-                        </select>
-                      </div>
-                      <div className="config-form-group" style={{ margin: 0 }}>
-                        <label>DV</label>
-                        <input value={dianPlantilla.dv} onChange={(e) => setDianPlantilla({ ...dianPlantilla, dv: e.target.value.replace(/\D/g, '') })} maxLength={1} placeholder="0-9" />
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right', marginTop: '1.25rem' }}>
-                      <button type="button" className="config-btn-primary" disabled={generatingDian} onClick={handleDownloadDianPlantilla}>
-                        {generatingDian ? 'Generando…' : 'Descargar plantilla DIAN'}
-                      </button>
+                <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
+                    <div style={{ background: '#0284c7', color: 'white', fontWeight: 900, padding: '0.5rem 0.9rem', borderRadius: '0.5rem', fontSize: '1.1rem', letterSpacing: '1px' }}>DIAN</div>
+                    <div>
+                      <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>Plantilla DIAN (.json.dian)</h4>
+                      <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Se arma lista con tus ventas y datos. Solo elige régimen y responsabilidad.</p>
                     </div>
                   </div>
-                </>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                    <div className="config-form-group" style={{ margin: 0 }}>
+                      <label>Régimen</label>
+                      <select value={dianPlantilla.regimen} onChange={(e) => setDianPlantilla({ ...dianPlantilla, regimen: e.target.value })}>
+                        <option value="48">Responsable de IVA</option>
+                        <option value="49">No responsable de IVA</option>
+                      </select>
+                    </div>
+                    <div className="config-form-group" style={{ margin: 0 }}>
+                      <label>Responsabilidad</label>
+                      <select value={dianPlantilla.responsabilidad} onChange={(e) => setDianPlantilla({ ...dianPlantilla, responsabilidad: e.target.value })}>
+                        <option value="O-13">O-13 Gran contribuyente</option>
+                        <option value="O-15">O-15 Autorretenedor</option>
+                        <option value="O-23">O-23 Agente retención IVA</option>
+                        <option value="O-47">O-47 Régimen simple</option>
+                        <option value="R-99-PN">R-99-PN No responsable</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', marginTop: '1.25rem' }}>
+                    <button type="button" className="config-btn-primary" disabled={generatingDian} onClick={handleDownloadDianPlantilla}>
+                      {generatingDian ? 'Generando…' : 'Descargar plantilla DIAN'}
+                    </button>
+                  </div>
+                </div>
               )}
 
               {(tienda?.paisCodigo || storePaisIso) === 'VE' && (

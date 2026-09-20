@@ -14,6 +14,7 @@ import {
   saveStorefrontAppearanceForUser,
 } from '../services/tienda.service.js';
 import { getBaVenNif12Report } from '../services/fiscalReport.service.js';
+import { buildDianPlantillaFromStore } from '../services/dianStorePlantilla.service.js';
 import { getLibroVentasData, buildLibroVentasPdf } from '../services/libroVentas.service.js';
 import {
   getCheckoutIntegrationsForUser,
@@ -314,6 +315,21 @@ export const createTiendaController = ({
     }
   },
 
+  getDianPlantillaFromStore: async (req, res) => {
+    const regimen = cleanString(req.body?.regimen, { maxLength: 5 }) || '48';
+    const responsabilidad = cleanString(req.body?.responsabilidad, { maxLength: 10 }) || 'O-47';
+    try {
+      const result = await buildDianPlantillaFromStore(req.auth.userId, { regimen, responsabilidad });
+      if (!result.ok) {
+        return res.status(400).json({ ok: false, message: 'La plantilla tiene errores de validación.', errors: result.errors });
+      }
+      return res.json({ ok: true, filename: result.filename, content: result.content });
+    } catch (error) {
+      console.error('Error al generar la plantilla DIAN desde ventas:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible generar la plantilla DIAN.' });
+    }
+  },
+
   getLedger: async (req, res) => {
     try {
       const moneda = cleanString(req.query.moneda, { maxLength: 10 }) || 'COP';
@@ -526,6 +542,7 @@ export const {
   getDian, 
   saveDian,
   generateDianPlantilla,
+  getDianPlantillaFromStore,
   getPayoutAccount,
   savePayoutAccount,
   getLedger,
