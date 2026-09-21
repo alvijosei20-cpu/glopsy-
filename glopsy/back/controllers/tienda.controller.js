@@ -144,7 +144,7 @@ export const createTiendaController = ({
           ip: req.ip,
           forwardedFor: req.get('x-forwarded-for'),
           userAgent: req.get('user-agent'),
-          language: req.get('accept-language'),
+          language: req.get('accept-language') || terms.language,
           timezone: terms.timezone,
           country: visitorCountry,
           latitude: terms.latitude,

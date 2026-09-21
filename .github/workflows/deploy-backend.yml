@@ -21,10 +21,11 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
           RAILWAY_ENVIRONMENT_ID: ${{ secrets.RAILWAY_ENVIRONMENT_ID }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
           response=$(curl -s -X POST "https://backboard.railway.com/graphql/v2" \
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"query\":\"mutation { serviceInstanceDeployV2(serviceId:\\\"$RAILWAY_SERVICE_ID\\\", environmentId:\\\"$RAILWAY_ENVIRONMENT_ID\\\") }\"}")
+            -d "{\"query\":\"mutation { serviceInstanceDeployV2(serviceId:\\\"$RAILWAY_SERVICE_ID\\\", environmentId:\\\"$RAILWAY_ENVIRONMENT_ID\\\", commitSha:\\\"$COMMIT_SHA\\\") }\"}")
           echo "$response"
           echo "$response" | grep -q '"serviceInstanceDeployV2"' || { echo "No se pudo disparar el deploy"; exit 1; }
