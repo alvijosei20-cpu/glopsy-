@@ -1,4 +1,4 @@
-const BACKEND = 'glopsy-back.onrender.com';
+const BACKEND = 'glopsy-back-production.up.railway.app';
 
 // ---------- Open Graph dinámico para crawlers (redes sociales / bots) ----------
 // Los crawlers (WhatsApp, Facebook, Telegram, LinkedIn, X…) NO ejecutan JavaScript,
