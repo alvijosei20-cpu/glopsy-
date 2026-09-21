@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Store, Loader2, Globe } from 'lucide-react';
+import { Store, Loader2, Globe, ShieldCheck, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../services/api';
 import { getRootOrigin, getRootDomain } from '../../utils/storeHost';
+import { requestGeolocation } from '../../utils/location';
+import { TERMS_VERSION, TERMS_SECTIONS } from '../../utils/termsContent';
 
 // Subdominios reservados por la plataforma (no se pueden usar como tienda).
 const RESERVED_SLUGS = new Set([
@@ -26,6 +28,7 @@ export default function Vender() {
   const [paisId, setPaisId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [showTerms, setShowTerms] = useState(false);
   const [bancos, setBancos] = useState([]);
   const [bancosError, setBancosError] = useState('');
   const [bank, setBank] = useState({
@@ -136,7 +139,8 @@ export default function Vender() {
     );
   }
 
-  const create = async (e) => {
+  // Valida el formulario y abre el modal de Términos y Condiciones.
+  const create = (e) => {
     e.preventDefault();
     if (busy) return;
     if (slugReservado) {
@@ -161,21 +165,64 @@ export default function Vender() {
         : 'El número de cuenta debe tener entre 4 y 40 dígitos.');
       return;
     }
+    setError('');
+    setShowTerms(true);
+  };
+
+  // Reúne la metadata de aceptación (coordenadas best-effort + navegador).
+  const collectTermsMetadata = async () => {
+    let coords = { latitude: null, longitude: null };
+    try {
+      const geo = await Promise.race([
+        requestGeolocation(),
+        new Promise((resolve) => setTimeout(() => resolve(null), 6000)),
+      ]);
+      if (geo) coords = { latitude: geo.lat, longitude: geo.lon };
+    } catch {
+      // Permiso denegado o no soportado: la aceptación se registra sin coordenadas.
+    }
+    let screen = null;
+    let timezone = null;
+    try {
+      screen = `${window.screen.width}x${window.screen.height}`;
+    } catch {}
+    try {
+      timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+    } catch {}
+    return {
+      accepted: true,
+      version: TERMS_VERSION,
+      ...coords,
+      timezone,
+      language: typeof navigator !== 'undefined' ? navigator.language || null : null,
+      platform: typeof navigator !== 'undefined' ? navigator.platform || null : null,
+      screen,
+      referrer: typeof document !== 'undefined' ? document.referrer || null : null,
+    };
+  };
+
+  // Acepta los términos y crea la tienda (llamado desde el botón del modal).
+  const confirmCreate = async () => {
+    if (busy) return;
     setBusy(true);
     setError('');
     try {
+      const terms = await collectTermsMetadata();
       await api.post('/tienda', {
         name: name.trim(),
         slug: slug.trim().toLowerCase(),
         ga_id: gaId.trim() || null,
         pais_id: paisId ? Number(paisId) : undefined,
+        terms,
       });
       // La tienda ya existe: se registra la cuenta donde recibirá sus pagos.
       await api.put('/tienda/payout-account', bank);
+      setShowTerms(false);
       await refreshTienda();
       navigate('/market/config', { replace: true });
     } catch (err) {
       setError(err.response?.data?.message || 'No fue posible crear la tienda. Intenta de nuevo.');
+      setShowTerms(false);
     } finally {
       setBusy(false);
     }
@@ -386,6 +433,84 @@ export default function Vender() {
           </a>
         </form>
       </div>
+
+      {showTerms && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => !busy && setShowTerms(false)}
+          />
+          <div className="relative w-full max-w-2xl max-h-[85vh] bg-white rounded-2xl shadow-2xl border border-fuchsia-100 flex flex-col overflow-hidden">
+            <div className="flex items-start gap-3 p-5 border-b border-slate-100">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-fuchsia-600 to-pink-600 text-white flex items-center justify-center shrink-0">
+                <ShieldCheck size={20} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-base font-extrabold text-slate-800">Términos, Condiciones y Contrato de Mandato</h2>
+                <p className="text-[11px] text-slate-500">
+                  Debes aceptarlos para crear tu tienda. Versión {TERMS_VERSION}.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => !busy && setShowTerms(false)}
+                disabled={busy}
+                aria-label="Cerrar"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              {TERMS_SECTIONS.map((section) => (
+                <div key={section.title}>
+                  <h3 className="text-xs font-bold text-slate-800 mb-1">{section.title}</h3>
+                  <div className="space-y-1.5">
+                    {section.body.map((paragraph, i) => (
+                      <p key={i} className="text-[11px] text-slate-500 leading-relaxed">{paragraph}</p>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <p className="text-[11px] text-slate-400">
+                Al aceptar, se registrará tu usuario, fecha y hora, dirección IP, navegador,
+                dispositivo y coordenadas (si las autorizas) como constancia de la aceptación.
+              </p>
+            </div>
+
+            <div className="p-5 border-t border-slate-100 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+              <a
+                href="/terminos"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] font-semibold text-fuchsia-600 hover:underline"
+              >
+                Ver términos completos
+              </a>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowTerms(false)}
+                  disabled={busy}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-bold hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmCreate}
+                  disabled={busy}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-bold px-5 py-2.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                  {busy ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+                  {busy ? 'Creando tienda…' : 'Acepto y crear tienda'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

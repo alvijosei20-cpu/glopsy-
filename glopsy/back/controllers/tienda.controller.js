@@ -1,6 +1,7 @@
 import { 
   getTiendaForUser, 
   ensureTiendaForUser,
+  recordTiendaTermsAcceptance,
   updateTiendaForUser,
   updateTiendaStatus, 
   getProductionIntegrationsForUser,
@@ -108,6 +109,20 @@ export const createTiendaController = ({
       const slug = cleanString(req.body?.slug, { maxLength: 63 });
       const gaRaw = req.body?.ga_id;
       const paisRaw = req.body?.pais_id;
+
+      // Aceptación de Términos y Condiciones (y Contrato de Mandato): obligatoria.
+      const terms = req.body?.terms && typeof req.body.terms === 'object' && !Array.isArray(req.body.terms)
+        ? req.body.terms
+        : {};
+      if (terms.accepted !== true) {
+        return res.status(400).json({
+          ok: false,
+          code: 'TERMS_REQUIRED',
+          message: 'Debes aceptar los Términos y Condiciones y el Contrato de Mandato para crear tu tienda.',
+        });
+      }
+      const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
+
       const tienda = await ensureTienda(req.auth.userId, {
         name,
         slug,
@@ -117,6 +132,35 @@ export const createTiendaController = ({
       if (!tienda) {
         return res.status(400).json({ ok: false, message: 'No fue posible crear la tienda.' });
       }
+
+      // Trazabilidad clara de la aceptación: usuario, IP, timestamp, navegador,
+      // dispositivo, país, idioma y coordenadas. No bloquea la creación si falla.
+      try {
+        const visitorCountry = String(req.get('x-visitor-country') || req.get('cf-ipcountry') || '').trim();
+        await recordTiendaTermsAcceptance({
+          userId: req.auth.userId,
+          tiendaUsrid: req.auth.userId,
+          termsVersion,
+          ip: req.ip,
+          forwardedFor: req.get('x-forwarded-for'),
+          userAgent: req.get('user-agent'),
+          language: req.get('accept-language'),
+          timezone: terms.timezone,
+          country: visitorCountry,
+          latitude: terms.latitude,
+          longitude: terms.longitude,
+          referrer: terms.referrer || req.get('referer'),
+          metadata: {
+            screen: terms.screen || null,
+            platform: terms.platform || null,
+            visitorCountry: visitorCountry || null,
+            acceptLanguage: req.get('accept-language') || null,
+          },
+        });
+      } catch (auditError) {
+        console.error('Error al registrar la aceptación de términos:', auditError.message);
+      }
+
       await invalidateCatalogCache().catch(() => {});
       return res.json({ ok: true, tienda });
     } catch (error) {

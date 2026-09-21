@@ -197,6 +197,115 @@ export const ensureTiendaForUser = async (userId, { name = '', slug = null, ga_i
   }
 };
 
+// Parsea un User-Agent a { browser, browserVersion, os, device } (heurística simple).
+export const parseUserAgent = (ua = '') => {
+  const s = String(ua || '');
+  const browsers = [
+    [/Edg\/?([\d.]+)/, 'Edge'],
+    [/OPR\/?([\d.]+)|Opera[\/ ]([\d.]+)/, 'Opera'],
+    [/SamsungBrowser\/?([\d.]+)/, 'Samsung Internet'],
+    [/YaBrowser\/?([\d.]+)/, 'Yandex'],
+    [/CriOS\/?([\d.]+)/, 'Chrome'],
+    [/Chrome\/?([\d.]+)/, 'Chrome'],
+    [/FxiOS\/?([\d.]+)/, 'Firefox'],
+    [/Firefox\/?([\d.]+)/, 'Firefox'],
+    [/MSIE ([\d.]+)|Trident\/.*rv:([\d.]+)/, 'Internet Explorer'],
+    [/Version\/?([\d.]+).*Safari/, 'Safari'],
+  ];
+  let browser = null;
+  let browserVersion = null;
+  for (const [re, label] of browsers) {
+    const m = s.match(re);
+    if (m) {
+      browser = label;
+      browserVersion = m[1] || m[2] || null;
+      break;
+    }
+  }
+  let os = null;
+  if (/Windows NT 10/.test(s)) os = 'Windows 10/11';
+  else if (/Windows/.test(s)) os = 'Windows';
+  else if (/Android/.test(s)) os = 'Android';
+  else if (/iPhone|iPad|iPod/.test(s)) os = 'iOS';
+  else if (/Mac OS X/.test(s)) os = 'macOS';
+  else if (/Linux/.test(s)) os = 'Linux';
+  let device = 'desktop';
+  if (/iPad|Tablet/.test(s)) device = 'tablet';
+  else if (/Mobi|Android|iPhone/.test(s)) device = 'mobile';
+  return { browser, browserVersion, os, device };
+};
+
+// Registra la aceptación de Términos y Condiciones (y Contrato de Mandato) al
+// crear una tienda. Deja trazabilidad: usuario, IP, timestamp, navegador,
+// dispositivo, país, idioma, coordenadas y metadata adicional.
+export const recordTiendaTermsAcceptance = async ({
+  userId,
+  tiendaUsrid,
+  termsVersion,
+  ip,
+  forwardedFor,
+  userAgent,
+  language,
+  timezone,
+  country,
+  latitude,
+  longitude,
+  referrer,
+  metadata,
+} = {}) => {
+  const uid = Number(userId);
+  if (!uid) {
+    const err = new Error('userId requerido para registrar la aceptación.');
+    err.code = 400;
+    throw err;
+  }
+  const version = String(termsVersion || '').trim().slice(0, 30) || 'v1';
+  const ua = userAgent ? String(userAgent).slice(0, 2000) : null;
+  const parsed = parseUserAgent(ua || '');
+  const latNum = Number(latitude);
+  const lonNum = Number(longitude);
+  const lat = Number.isFinite(latNum) ? latNum : null;
+  const lon = Number.isFinite(lonNum) ? lonNum : null;
+  const usrid = Number(tiendaUsrid) || uid;
+
+  const { rows } = await pool.query(
+    `INSERT INTO tienda_aceptaciones (
+       tienda_usrid, user_id, terms_version, accepted, ip, forwarded_for,
+       user_agent, browser, browser_version, os, device, language, timezone,
+       country, latitude, longitude, referrer, metadata
+     ) VALUES ($1,$2,$3,true,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+     RETURNING id, accepted_at`,
+    [
+      usrid,
+      uid,
+      version,
+      ip ? String(ip).slice(0, 64) : null,
+      forwardedFor ? String(forwardedFor).slice(0, 500) : null,
+      ua,
+      parsed.browser,
+      parsed.browserVersion,
+      parsed.os,
+      parsed.device,
+      language ? String(language).slice(0, 60) : null,
+      timezone ? String(timezone).slice(0, 60) : null,
+      country ? String(country).slice(0, 2).toUpperCase() : null,
+      lat,
+      lon,
+      referrer ? String(referrer).slice(0, 500) : null,
+      metadata && typeof metadata === 'object' ? JSON.stringify(metadata) : '{}',
+    ]
+  );
+
+  await pool
+    .query(
+      `UPDATE tiendas SET terms_version = $2, terms_accepted_at = now() WHERE usrid = $1`,
+      [usrid, version]
+    )
+    .catch(() => {});
+
+  return { id: rows[0]?.id, acceptedAt: rows[0]?.accepted_at, version };
+};
+
 // Actualiza nombre/subdominio/GA de la tienda del usuario (valores null/undefined = no tocar;
 // ga_id '' o null explícito limpia el GA de la tienda).
 export const updateTiendaForUser = async (userId, { name = null, slug = null, ga_id = undefined, pais_id = undefined, zoom_origen_codciudad = undefined, international_dispatch_provider = undefined } = {}) => {
