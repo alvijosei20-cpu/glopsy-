@@ -6,7 +6,15 @@ import api from '../../services/api';
 import { getRootOrigin, getRootDomain } from '../../utils/storeHost';
 import { requestGeolocation } from '../../utils/location';
 import { TERMS_VERSION, TERMS_SECTIONS } from '../../utils/termsContent';
-import { getDocumentTypesForCountry } from '../../utils/documentTypes';
+import {
+  getDocumentTypesForCountry,
+  getDocumentType,
+  getPhoneConfigForCountry,
+  isValidDocumentNumber,
+  isValidPhoneForCountry,
+  normalizePhone,
+  isValidEmail,
+} from '../../utils/countryFields';
 
 // Subdominios reservados por la plataforma (no se pueden usar como tienda).
 const RESERVED_SLUGS = new Set([
@@ -35,6 +43,8 @@ export default function Vender() {
   const [bank, setBank] = useState({
     banco_codigo: '', tipo_cuenta: '', numero_cuenta: '', titular_cuenta: user?.name || '', tipo_documento: '', titular_documento: '',
   });
+  const [contactEmail, setContactEmail] = useState(user?.email || '');
+  const [contactPhone, setContactPhone] = useState('');
 
   useEffect(() => {
     let alive = true;
@@ -88,7 +98,10 @@ export default function Vender() {
   }, [user?.name]);
 
   const selectedPais = paises.find((p) => String(p.id) === String(paisId)) || null;
-  const tiposDocumento = getDocumentTypesForCountry(selectedPais?.codigo_iso);
+  const paisIso = selectedPais?.codigo_iso || null;
+  const tiposDocumento = getDocumentTypesForCountry(paisIso);
+  const phoneCfg = getPhoneConfigForCountry(paisIso);
+  const selectedDocType = getDocumentType(paisIso, bank.tipo_documento);
   const raiz = selectedPais?.dominio_raiz || getRootDomain();
   const slugNorm = slug.trim().toLowerCase();
   const slugReservado = RESERVED_SLUGS.has(slugNorm);
@@ -145,6 +158,10 @@ export default function Vender() {
   const create = (e) => {
     e.preventDefault();
     if (busy) return;
+    if (!name.trim() || name.trim().length < 3) {
+      setError('El nombre de la tienda debe tener al menos 3 caracteres.');
+      return;
+    }
     if (slugReservado) {
       setError(`El subdominio "${slug}" está reservado. Elige otro.`);
       return;
@@ -153,12 +170,24 @@ export default function Vender() {
       setError('El subdominio debe tener 2 a 63 caracteres, solo minúsculas, números y guiones, y no empezar/terminar con guion.');
       return;
     }
+    if (!isValidEmail(contactEmail)) {
+      setError('Ingresa un correo de contacto válido.');
+      return;
+    }
+    if (!isValidPhoneForCountry(paisIso, contactPhone)) {
+      setError(`Ingresa un teléfono de contacto válido (${phoneCfg.hint}).`);
+      return;
+    }
     if (!bank.banco_codigo || !bank.tipo_cuenta || !bank.numero_cuenta || !bank.titular_cuenta) {
       setError('Completa tu cuenta bancaria: banco, tipo, número y titular.');
       return;
     }
     if (!bank.tipo_documento || !bank.titular_documento.trim()) {
       setError('Indica el tipo y número de documento del titular de la cuenta.');
+      return;
+    }
+    if (!isValidDocumentNumber(paisIso, bank.tipo_documento, bank.titular_documento)) {
+      setError(`El número de documento no es válido (${selectedDocType?.hint || 'revisa el formato'}).`);
       return;
     }
     const esBinance = bank.banco_codigo === 'BINANCE_PAY';
@@ -219,6 +248,8 @@ export default function Vender() {
         slug: slug.trim().toLowerCase(),
         ga_id: gaId.trim() || null,
         pais_id: paisId ? Number(paisId) : undefined,
+        contacto_email: contactEmail.trim(),
+        contacto_telefono: normalizePhone(paisIso, contactPhone) || contactPhone.trim(),
         terms,
       });
       // La tienda ya existe: se registra la cuenta donde recibirá sus pagos.
@@ -319,6 +350,43 @@ export default function Vender() {
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-3">
+            <p className="text-xs font-bold text-slate-700">Datos de contacto de tu tienda</p>
+
+            <div>
+              <label htmlFor="contact-email" className="block text-xs font-bold text-slate-600 mb-1.5">Correo de contacto</label>
+              <input
+                id="contact-email"
+                type="email"
+                value={contactEmail}
+                onChange={(e) => setContactEmail(e.target.value)}
+                placeholder="tucorreo@ejemplo.com"
+                required
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 outline-none focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-100 placeholder:text-slate-400"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="contact-phone" className="block text-xs font-bold text-slate-600 mb-1.5">Teléfono de contacto</label>
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 focus-within:border-fuchsia-400 focus-within:ring-2 focus-within:ring-fuchsia-100">
+                <span className="text-sm font-semibold text-slate-500 shrink-0">{phoneCfg.dialCode}</span>
+                <input
+                  id="contact-phone"
+                  type="tel"
+                  inputMode="numeric"
+                  value={contactPhone}
+                  onChange={(e) => setContactPhone(e.target.value.replace(/[^\d]/g, ''))}
+                  placeholder={phoneCfg.example}
+                  required
+                  className="w-full py-2.5 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
+                />
+              </div>
+              <p className="mt-1 text-[11px] text-slate-400">
+                {phoneCfg.hint} para {selectedPais?.nombre || 'el país seleccionado'} ({phoneCfg.dialCode}).
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-3">
             <p className="text-xs font-bold text-slate-700">Cuenta bancaria donde recibirás tus ventas</p>
 
             <div>
@@ -412,6 +480,11 @@ export default function Vender() {
                 />
               </div>
             </div>
+            {selectedDocType && (
+              <p className="text-[11px] text-slate-400">
+                {selectedDocType.label}: {selectedDocType.hint}.
+              </p>
+            )}
 
             <p className="text-[11px] text-slate-400">
               Verificamos que el banco exista en el catálogo del país seleccionado. Esta cuenta recibirá la liquidación diaria de tus ventas.
@@ -443,7 +516,7 @@ export default function Vender() {
 
           <button
             type="submit"
-            disabled={busy || !name.trim() || !slugFormatoOk || slugReservado || !!bancosError || !bank.banco_codigo || !bank.tipo_cuenta || !bank.numero_cuenta || !bank.titular_cuenta || !bank.tipo_documento || !bank.titular_documento.trim()}
+            disabled={busy || !name.trim() || name.trim().length < 3 || !slugFormatoOk || slugReservado || !!bancosError || !isValidEmail(contactEmail) || !isValidPhoneForCountry(paisIso, contactPhone) || !bank.banco_codigo || !bank.tipo_cuenta || !bank.numero_cuenta || !bank.titular_cuenta || !bank.tipo_documento || !isValidDocumentNumber(paisIso, bank.tipo_documento, bank.titular_documento)}
             className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-bold py-3 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
             {busy ? <Loader2 size={16} className="animate-spin" /> : null}

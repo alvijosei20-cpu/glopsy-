@@ -3,7 +3,7 @@ import { Truck, Tag, Receipt, Warehouse, CreditCard, Plus, CheckCircle, Trash2, 
 import { useAuth } from '../../context/AuthContext';
 import { useMoney } from '../../utils/money';
 import api from '../../services/api';
-import { getDocumentTypesForCountry } from '../../utils/documentTypes';
+import { getDocumentTypesForCountry, getDocumentType, isValidDocumentNumber } from '../../utils/countryFields';
 import './marketConfig.css';
 
 const MarketConfig = () => {
@@ -561,6 +561,14 @@ const MarketConfig = () => {
     }
     if (!payoutAccount.tipo_documento || !String(payoutAccount.titular_documento || '').trim()) {
       setNotice('Error: el tipo y número de documento del titular son obligatorios.');
+      return;
+    }
+    const payoutPaisIso = tienda?.paisCodigo
+      || paises.find((p) => Number(p.id) === Number(tienda?.paisId))?.codigo_iso
+      || 'CO';
+    if (!isValidDocumentNumber(payoutPaisIso, payoutAccount.tipo_documento, payoutAccount.titular_documento)) {
+      const doc = getDocumentType(payoutPaisIso, payoutAccount.tipo_documento);
+      setNotice(`Error: número de documento inválido${doc ? ` (${doc.hint})` : ''}.`);
       return;
     }
     setSavingPayout(true);
@@ -2260,6 +2268,11 @@ const MarketConfig = () => {
                           <input value={payoutAccount.titular_documento || ''} onChange={(e) => setPayoutAccount({ ...payoutAccount, titular_documento: e.target.value })} placeholder="Número del titular" />
                         </div>
                       </div>
+                      {getDocumentType(tienda?.paisCodigo || storePaisIso, payoutAccount.tipo_documento) && (
+                        <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b' }}>
+                          {getDocumentType(tienda?.paisCodigo || storePaisIso, payoutAccount.tipo_documento).label}: {getDocumentType(tienda?.paisCodigo || storePaisIso, payoutAccount.tipo_documento).hint}.
+                        </p>
+                      )}
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
                       <button type="submit" className="config-btn-primary" disabled={savingPayout}>

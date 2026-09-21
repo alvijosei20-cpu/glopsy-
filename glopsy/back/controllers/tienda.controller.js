@@ -29,7 +29,7 @@ import { getStoreLedgerForUser } from '../services/ledger.service.js';
 import { pool } from '../db.js';
 import { getShippingOptionsFromEnvia } from '../services/envia.service.js';
 import { cleanString, isAllowedEnum } from '../utils/validation.js';
-import { isValidDocumentType } from '../utils/documentTypes.js';
+import { getDocumentType, isValidDocumentNumber, isValidPhoneForCountry, normalizePhone, isValidEmail } from '../utils/countryFields.js';
 import { invalidateEdgeCache } from '../utils/cacheInvalidate.js';
 import { invalidateCatalogCache, invalidateProductDetailCachesForStore } from '../services/product.service.js';
 
@@ -110,6 +110,37 @@ export const createTiendaController = ({
       const slug = cleanString(req.body?.slug, { maxLength: 63 });
       const gaRaw = req.body?.ga_id;
       const paisRaw = req.body?.pais_id;
+      const contactoEmail = cleanString(req.body?.contacto_email, { maxLength: 160 });
+      const contactoTelefonoRaw = cleanString(req.body?.contacto_telefono, { maxLength: 30 });
+
+      // Validación de campos según la información solicitada.
+      if (!name || String(name).trim().length < 3) {
+        return res.status(400).json({ ok: false, message: 'El nombre de la tienda debe tener al menos 3 caracteres.' });
+      }
+      if (!slug || String(slug).trim() === '') {
+        return res.status(400).json({ ok: false, message: 'El subdominio de la tienda es obligatorio.' });
+      }
+
+      // País de operación (para validar teléfono y documento).
+      const paisIdNum = paisRaw !== undefined && paisRaw !== null && String(paisRaw).trim() !== ''
+        ? Number(paisRaw)
+        : null;
+      let paisCodigo = 'CO';
+      if (paisIdNum) {
+        const { rows: pr } = await pool.query(`SELECT codigo_iso FROM paises WHERE id = $1 LIMIT 1`, [paisIdNum]);
+        if (!pr[0]) {
+          return res.status(400).json({ ok: false, message: 'País no válido.' });
+        }
+        paisCodigo = pr[0].codigo_iso;
+      }
+
+      if (!isValidEmail(contactoEmail)) {
+        return res.status(400).json({ ok: false, message: 'Ingresa un correo de contacto válido.' });
+      }
+      if (!isValidPhoneForCountry(paisCodigo, contactoTelefonoRaw)) {
+        return res.status(400).json({ ok: false, message: 'Ingresa un teléfono de contacto válido para el país de tu tienda.' });
+      }
+      const contactoTelefono = normalizePhone(paisCodigo, contactoTelefonoRaw);
 
       // Aceptación de Términos y Condiciones (y Contrato de Mandato): obligatoria.
       const terms = req.body?.terms && typeof req.body.terms === 'object' && !Array.isArray(req.body.terms)
@@ -128,7 +159,9 @@ export const createTiendaController = ({
         name,
         slug,
         ga_id: gaRaw !== undefined && gaRaw !== null ? String(gaRaw).trim().slice(0, 40) : null,
-        pais_id: paisRaw !== undefined && paisRaw !== null && String(paisRaw).trim() !== '' ? Number(paisRaw) : null,
+        pais_id: paisIdNum,
+        contacto_email: contactoEmail,
+        contacto_telefono: contactoTelefono,
       });
       if (!tienda) {
         return res.status(400).json({ ok: false, message: 'No fue posible crear la tienda.' });
@@ -335,14 +368,15 @@ export const createTiendaController = ({
     if (!isAllowedEnum(tipo_cuenta, ['ahorro', 'corriente'])) {
       return res.status(400).json({ ok: false, message: 'El tipo de cuenta debe ser ahorro o corriente.' });
     }
-    if (!/^[A-Za-z0-9.-]{4,40}$/.test(titular_documento)) {
-      return res.status(400).json({ ok: false, message: 'El número de documento del titular no es válido (4 a 40 caracteres).' });
-    }
-    // El tipo de documento debe corresponder al país donde opera la tienda.
+    // El tipo y el número de documento deben corresponder al país donde opera la tienda.
     const tiendaActual = await getTiendaForUser(req.auth.userId);
     const paisCodigo = tiendaActual?.paisCodigo || 'CO';
-    if (!isValidDocumentType(paisCodigo, tipo_documento)) {
+    const docType = getDocumentType(paisCodigo, tipo_documento);
+    if (!docType) {
       return res.status(400).json({ ok: false, message: 'Selecciona un tipo de documento válido para el país de tu tienda.' });
+    }
+    if (!isValidDocumentNumber(paisCodigo, tipo_documento, titular_documento)) {
+      return res.status(400).json({ ok: false, message: `El número de documento no es válido (${docType.hint}).` });
     }
     const esBinance = banco_codigo === 'BINANCE_PAY';
     const cuentaValida = esBinance

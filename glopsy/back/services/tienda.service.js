@@ -31,6 +31,8 @@ const mapTienda = (row) => ({
   storefrontPalette: row.storefront_palette || 'fucsia',
   storefrontColor: row.storefront_color || null,
   storefrontBanner: row.storefront_banner || null,
+  contactoEmail: row.contacto_email || null,
+  contactoTelefono: row.contacto_telefono || null,
 });
 
 // ------------------------------------------------------------------ Subdominio (slug)
@@ -92,7 +94,8 @@ const STORE_COLUMNS = `
   t.zoom_origen_codciudad AS t_zoom_origen,
   t.international_dispatch_provider AS t_international_dispatch_provider,
   t.storefront_template, t.storefront_theme, t.storefront_palette,
-  t.storefront_color, t.storefront_banner
+  t.storefront_color, t.storefront_banner,
+  t.contacto_email, t.contacto_telefono
 `;
 const STORE_JOIN = `
   LEFT JOIN paises pa ON pa.id = t.pais_id
@@ -121,7 +124,7 @@ export const getTiendaForUser = async (userId) => {
 // Crea la tienda de un usuario si aún no existe (idempotente). Un mismo usuario
 // siempre tiene UNA tienda; otro usuario crea la suya sin afectar las demás.
 // name/slug/ga_id opcionales (slug = subdominio). Lanza error 409 si el slug está ocupado.
-export const ensureTiendaForUser = async (userId, { name = '', slug = null, ga_id = null, pais_id = null } = {}) => {
+export const ensureTiendaForUser = async (userId, { name = '', slug = null, ga_id = null, pais_id = null, contacto_email = null, contacto_telefono = null } = {}) => {
   const uid = Number(userId);
   const storeName =
     String(name || '').trim().slice(0, 100) || `Tienda de Usuario ${uid}`;
@@ -129,6 +132,8 @@ export const ensureTiendaForUser = async (userId, { name = '', slug = null, ga_i
   const storeGa = ga_id === null || ga_id === undefined || String(ga_id).trim() === ''
     ? null
     : String(ga_id).trim().slice(0, 40);
+  const storeContactoEmail = contacto_email ? String(contacto_email).trim().slice(0, 160) : null;
+  const storeContactoTelefono = contacto_telefono ? String(contacto_telefono).trim().slice(0, 30) : null;
 
   // País de operación de la tienda (multicountry). Si no se indica, Colombia.
   let storePais = null;
@@ -168,11 +173,11 @@ export const ensureTiendaForUser = async (userId, { name = '', slug = null, ga_i
 
   try {
     const { rows } = await pool.query(
-      `INSERT INTO tiendas (usrid, nombres, slug, ga_id, pais_id, activa)
-       VALUES ($1, $2, $3, $4, $5, false)
+      `INSERT INTO tiendas (usrid, nombres, slug, ga_id, pais_id, activa, contacto_email, contacto_telefono)
+       VALUES ($1, $2, $3, $4, $5, false, $6, $7)
        ON CONFLICT (usrid) DO NOTHING
        RETURNING hashid`,
-      [uid, storeName, storeSlug, storeGa, storePais]
+      [uid, storeName, storeSlug, storeGa, storePais, storeContactoEmail, storeContactoTelefono]
     );
 
     await redisClient.del(cacheKey(uid)).catch(() => {});
