@@ -93,7 +93,7 @@ export const googleCallback = async (req, res) => {
       provider_id: googleUser.id,
     });
 
-    // El callback corre en el dominio del backend (p. ej. glopsy-back.onrender.com),
+    // El callback corre en el dominio del backend (p. ej. glopsy-back-production.up.railway.app),
     // distinto del dominio de la app. La cookie httpOnly no puede saltar de dominio:
     // se entrega un código de un solo uso y la app lo canjea por la cookie en su dominio.
     const oauthCode = await createOAuthCode(token);
