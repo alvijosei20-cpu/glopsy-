@@ -6,6 +6,7 @@ import api from '../../services/api';
 import { getRootOrigin, getRootDomain } from '../../utils/storeHost';
 import { requestGeolocation } from '../../utils/location';
 import { TERMS_VERSION, TERMS_SECTIONS } from '../../utils/termsContent';
+import { getDocumentTypesForCountry } from '../../utils/documentTypes';
 
 // Subdominios reservados por la plataforma (no se pueden usar como tienda).
 const RESERVED_SLUGS = new Set([
@@ -32,7 +33,7 @@ export default function Vender() {
   const [bancos, setBancos] = useState([]);
   const [bancosError, setBancosError] = useState('');
   const [bank, setBank] = useState({
-    banco_codigo: '', tipo_cuenta: '', numero_cuenta: '', titular_cuenta: user?.name || '', titular_documento: '',
+    banco_codigo: '', tipo_cuenta: '', numero_cuenta: '', titular_cuenta: user?.name || '', tipo_documento: '', titular_documento: '',
   });
 
   useEffect(() => {
@@ -75,9 +76,9 @@ export default function Vender() {
     };
   }, [paisId]);
 
-  // Al cambiar de país, el banco de otro país deja de ser válido: se limpia.
+  // Al cambiar de país, el banco y el tipo de documento de otro país dejan de ser válidos.
   useEffect(() => {
-    setBank((b) => (b.banco_codigo ? { ...b, banco_codigo: '', numero_cuenta: '' } : b));
+    setBank((b) => ({ ...b, banco_codigo: '', numero_cuenta: '', tipo_documento: '', titular_documento: '' }));
   }, [paisId]);
 
   // Si el nombre del usuario carga después, se prellena el titular.
@@ -87,6 +88,7 @@ export default function Vender() {
   }, [user?.name]);
 
   const selectedPais = paises.find((p) => String(p.id) === String(paisId)) || null;
+  const tiposDocumento = getDocumentTypesForCountry(selectedPais?.codigo_iso);
   const raiz = selectedPais?.dominio_raiz || getRootDomain();
   const slugNorm = slug.trim().toLowerCase();
   const slugReservado = RESERVED_SLUGS.has(slugNorm);
@@ -153,6 +155,10 @@ export default function Vender() {
     }
     if (!bank.banco_codigo || !bank.tipo_cuenta || !bank.numero_cuenta || !bank.titular_cuenta) {
       setError('Completa tu cuenta bancaria: banco, tipo, número y titular.');
+      return;
+    }
+    if (!bank.tipo_documento || !bank.titular_documento.trim()) {
+      setError('Indica el tipo y número de documento del titular de la cuenta.');
       return;
     }
     const esBinance = bank.banco_codigo === 'BINANCE_PAY';
@@ -378,15 +384,33 @@ export default function Vender() {
               />
             </div>
 
-            <div>
-              <label htmlFor="bank-doc" className="block text-xs font-bold text-slate-600 mb-1.5">Documento del titular (opcional)</label>
-              <input
-                id="bank-doc"
-                value={bank.titular_documento}
-                onChange={(e) => setBank({ ...bank, titular_documento: e.target.value })}
-                placeholder="NIT o cédula"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 outline-none focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-100 placeholder:text-slate-400"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="bank-doc-type" className="block text-xs font-bold text-slate-600 mb-1.5">Tipo de documento</label>
+                <select
+                  id="bank-doc-type"
+                  value={bank.tipo_documento}
+                  onChange={(e) => setBank({ ...bank, tipo_documento: e.target.value })}
+                  required
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 outline-none focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-100"
+                >
+                  <option value="">Selecciona</option>
+                  {tiposDocumento.map((d) => (
+                    <option key={d.code} value={d.code}>{d.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="bank-doc" className="block text-xs font-bold text-slate-600 mb-1.5">Número de documento</label>
+                <input
+                  id="bank-doc"
+                  value={bank.titular_documento}
+                  onChange={(e) => setBank({ ...bank, titular_documento: e.target.value })}
+                  placeholder="Número del titular"
+                  required
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 outline-none focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-100 placeholder:text-slate-400"
+                />
+              </div>
             </div>
 
             <p className="text-[11px] text-slate-400">
@@ -419,7 +443,7 @@ export default function Vender() {
 
           <button
             type="submit"
-            disabled={busy || !name.trim() || !slugFormatoOk || slugReservado || !!bancosError || !bank.banco_codigo || !bank.tipo_cuenta || !bank.numero_cuenta || !bank.titular_cuenta}
+            disabled={busy || !name.trim() || !slugFormatoOk || slugReservado || !!bancosError || !bank.banco_codigo || !bank.tipo_cuenta || !bank.numero_cuenta || !bank.titular_cuenta || !bank.tipo_documento || !bank.titular_documento.trim()}
             className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-bold py-3 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
             {busy ? <Loader2 size={16} className="animate-spin" /> : null}

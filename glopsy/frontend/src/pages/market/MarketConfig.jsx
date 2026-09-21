@@ -3,6 +3,7 @@ import { Truck, Tag, Receipt, Warehouse, CreditCard, Plus, CheckCircle, Trash2, 
 import { useAuth } from '../../context/AuthContext';
 import { useMoney } from '../../utils/money';
 import api from '../../services/api';
+import { getDocumentTypesForCountry } from '../../utils/documentTypes';
 import './marketConfig.css';
 
 const MarketConfig = () => {
@@ -118,7 +119,7 @@ const MarketConfig = () => {
   const [initialBoldConfig, setInitialBoldConfig] = useState({ access_token: '', public_key: '', webhook_secret: '', is_default: false });
   const [usdStatus, setUsdStatus] = useState({ usd_activation_status: 'none' });
   const [requestingUsd, setRequestingUsd] = useState(false);
-  const [payoutAccount, setPayoutAccount] = useState({ banco_codigo: '', banco_nombre: '', tipo_cuenta: '', numero_cuenta: '', titular_cuenta: '', titular_documento: '' });
+  const [payoutAccount, setPayoutAccount] = useState({ banco_codigo: '', banco_nombre: '', tipo_cuenta: '', numero_cuenta: '', titular_cuenta: '', tipo_documento: '', titular_documento: '' });
   const [bancos, setBancos] = useState([]);
   const [savingPayout, setSavingPayout] = useState(false);
   const [fiscalRange, setFiscalRange] = useState({ desde: '', hasta: new Date().toISOString().slice(0, 10) });
@@ -556,6 +557,10 @@ const MarketConfig = () => {
     e.preventDefault();
     if (!payoutAccount.banco_codigo || !payoutAccount.tipo_cuenta || !payoutAccount.numero_cuenta || !payoutAccount.titular_cuenta) {
       setNotice('Error: Banco, tipo de cuenta, número de cuenta y titular son obligatorios.');
+      return;
+    }
+    if (!payoutAccount.tipo_documento || !String(payoutAccount.titular_documento || '').trim()) {
+      setNotice('Error: el tipo y número de documento del titular son obligatorios.');
       return;
     }
     setSavingPayout(true);
@@ -2237,9 +2242,23 @@ const MarketConfig = () => {
                         <label style={{ color: '#334155', fontWeight: 600 }}>Titular</label>
                         <input value={payoutAccount.titular_cuenta} onChange={(e) => setPayoutAccount({ ...payoutAccount, titular_cuenta: e.target.value })} placeholder="Nombre o razón social" />
                       </div>
-                      <div className="config-form-group" style={{ margin: 0 }}>
-                        <label style={{ color: '#334155', fontWeight: 600 }}>Documento del titular</label>
-                        <input value={payoutAccount.titular_documento} onChange={(e) => setPayoutAccount({ ...payoutAccount, titular_documento: e.target.value })} placeholder="NIT o cédula" />
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+                        <div className="config-form-group" style={{ margin: 0 }}>
+                          <label style={{ color: '#334155', fontWeight: 600 }}>Tipo de documento</label>
+                          <select
+                            value={payoutAccount.tipo_documento || ''}
+                            onChange={(e) => setPayoutAccount({ ...payoutAccount, tipo_documento: e.target.value })}
+                          >
+                            <option value="">Selecciona</option>
+                            {getDocumentTypesForCountry(tienda?.paisCodigo || storePaisIso).map((d) => (
+                              <option key={d.code} value={d.code}>{d.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="config-form-group" style={{ margin: 0 }}>
+                          <label style={{ color: '#334155', fontWeight: 600 }}>Número de documento</label>
+                          <input value={payoutAccount.titular_documento || ''} onChange={(e) => setPayoutAccount({ ...payoutAccount, titular_documento: e.target.value })} placeholder="Número del titular" />
+                        </div>
                       </div>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>

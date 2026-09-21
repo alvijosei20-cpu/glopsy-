@@ -29,6 +29,7 @@ import { getStoreLedgerForUser } from '../services/ledger.service.js';
 import { pool } from '../db.js';
 import { getShippingOptionsFromEnvia } from '../services/envia.service.js';
 import { cleanString, isAllowedEnum } from '../utils/validation.js';
+import { isValidDocumentType } from '../utils/documentTypes.js';
 import { invalidateEdgeCache } from '../utils/cacheInvalidate.js';
 import { invalidateCatalogCache, invalidateProductDetailCachesForStore } from '../services/product.service.js';
 
@@ -326,12 +327,22 @@ export const createTiendaController = ({
     const numero_cuenta = cleanString(req.body.numero_cuenta, { maxLength: 40 });
     const titular_cuenta = cleanString(req.body.titular_cuenta, { maxLength: 150 });
     const titular_documento = cleanString(req.body.titular_documento, { maxLength: 40 });
+    const tipo_documento = cleanString(req.body.tipo_documento, { maxLength: 20 });
 
-    if (!banco_codigo || !tipo_cuenta || !numero_cuenta || !titular_cuenta) {
-      return res.status(400).json({ ok: false, message: 'Banco, tipo de cuenta, número de cuenta y titular son obligatorios.' });
+    if (!banco_codigo || !tipo_cuenta || !numero_cuenta || !titular_cuenta || !titular_documento || !tipo_documento) {
+      return res.status(400).json({ ok: false, message: 'Banco, tipo de cuenta, número de cuenta, titular, tipo y número de documento son obligatorios.' });
     }
     if (!isAllowedEnum(tipo_cuenta, ['ahorro', 'corriente'])) {
       return res.status(400).json({ ok: false, message: 'El tipo de cuenta debe ser ahorro o corriente.' });
+    }
+    if (!/^[A-Za-z0-9.-]{4,40}$/.test(titular_documento)) {
+      return res.status(400).json({ ok: false, message: 'El número de documento del titular no es válido (4 a 40 caracteres).' });
+    }
+    // El tipo de documento debe corresponder al país donde opera la tienda.
+    const tiendaActual = await getTiendaForUser(req.auth.userId);
+    const paisCodigo = tiendaActual?.paisCodigo || 'CO';
+    if (!isValidDocumentType(paisCodigo, tipo_documento)) {
+      return res.status(400).json({ ok: false, message: 'Selecciona un tipo de documento válido para el país de tu tienda.' });
     }
     const esBinance = banco_codigo === 'BINANCE_PAY';
     const cuentaValida = esBinance
@@ -348,7 +359,7 @@ export const createTiendaController = ({
 
     try {
       const account = await savePayoutAccountForUser(req.auth.userId, {
-        banco_codigo, banco_nombre, tipo_cuenta, numero_cuenta, titular_cuenta, titular_documento,
+        banco_codigo, banco_nombre, tipo_cuenta, numero_cuenta, titular_cuenta, titular_documento, tipo_documento,
       });
       return res.json({ ok: true, account, message: 'Cuenta de pagos guardada con éxito.' });
     } catch (error) {
