@@ -17,6 +17,8 @@ import {
   FileSignature,
 } from 'lucide-react';
 import api from '../services/api';
+import IvaNoticeCard from './IvaNoticeCard';
+import { resolveIva } from '../utils/iva';
 import { compressToWebp, MAX_IMAGES } from '../utils/imageCompress';
 
 const inputStyle = {
@@ -69,6 +71,8 @@ export default function ManualProductForm({
   selectedPerfilEnvioId,
   onPerfilChange,
   categories = [],
+  paisCodigo = null,
+  responsableIva = false,
   publishing = false,
   publishError = '',
   onPublish,
@@ -245,6 +249,15 @@ export default function ManualProductForm({
   const perfilesDelCentro = perfilesEnvio.filter(
     (p) => String(p.fullment_id) === String(selectedFullmentId)
   );
+
+  const categoriaNombre = categories.find((c) => String(c.id) === String(form.categoriaId))?.nombre || '';
+  const ivaInfo = resolveIva({
+    paisCodigo,
+    responsableIva,
+    name: form.name,
+    description: form.description,
+    categoria: categoriaNombre,
+  });
 
   return (
     <form
@@ -473,6 +486,10 @@ export default function ManualProductForm({
           {fieldErrors.stockTotal && <span style={errorStyle}>{fieldErrors.stockTotal}</span>}
         </div>
       </div>
+
+      {ivaInfo.aplica && (
+        <IvaNoticeCard porcentaje={ivaInfo.porcentaje} paisCodigo={paisCodigo} />
+      )}
 
       {/* Variantes / tallas */}
       <div style={{ background: '#f8fafc', padding: '1.2rem', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>

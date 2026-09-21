@@ -3,6 +3,8 @@ import { Search, AlertCircle, Save, CheckCircle2, DollarSign, Tag, Layers, Image
 import { useNavigate } from 'react-router-dom';
 import { ApiLoadingModal } from '../../components/LoadingScreen';
 import ManualProductForm from '../../components/ManualProductForm';
+import IvaNoticeCard from '../../components/IvaNoticeCard';
+import { resolveIva } from '../../utils/iva';
 import api from '../../services/api';
 import '../panel/panel.css';
 
@@ -22,6 +24,7 @@ export default function Publish() {
   const [publishingManual, setPublishingManual] = useState(false);
   const [tienda, setTienda] = useState(null);
   const [categories, setCategories] = useState([]);
+  const [responsableIva, setResponsableIva] = useState(false);
 
   const isManual = selectedProvider === MANUAL_PROVIDER.id;
 
@@ -56,17 +59,19 @@ export default function Publish() {
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
-        const [intRes, fullRes, perfilesRes, tiendaRes, catRes] = await Promise.all([
+        const [intRes, fullRes, perfilesRes, tiendaRes, catRes, payoutRes] = await Promise.all([
           api.get('/tienda/integraciones'),
           api.get('/geo/fullments/mine'),
           api.get('/tienda/perfiles-envio').catch(() => ({ data: { perfiles: [] } })),
           api.get('/tienda').catch(() => ({ data: {} })),
-          api.get('/product/categories').catch(() => ({ data: { categories: [] } }))
+          api.get('/product/categories').catch(() => ({ data: { categories: [] } })),
+          api.get('/tienda/payout-account').catch(() => ({ data: {} }))
         ]);
 
         if (tiendaRes.data?.tienda) {
           setTienda(tiendaRes.data.tienda);
         }
+        setResponsableIva(payoutRes.data?.account?.responsable_iva === true || payoutRes.data?.account?.responsable_iva === 'true');
         if (catRes.data?.categories) {
           setCategories(catRes.data.categories);
         }
@@ -274,6 +279,13 @@ export default function Publish() {
 
   const providerOptions = [MANUAL_PROVIDER, ...integrations];
 
+  const ivaInfo = resolveIva({
+    paisCodigo: tienda?.paisCodigo,
+    responsableIva,
+    name: editableProduct.name,
+    description: editableProduct.description,
+  });
+
   return (
     <section className="panel" aria-labelledby="publish-title">
       <ApiLoadingModal
@@ -383,6 +395,8 @@ export default function Publish() {
             selectedPerfilEnvioId={selectedPerfilEnvioId}
             onPerfilChange={setSelectedPerfilEnvioId}
             categories={categories}
+            paisCodigo={tienda?.paisCodigo}
+            responsableIva={responsableIva}
             publishing={publishingManual || apiStatus === 'loading'}
             publishError={manualError}
             onPublish={handleManualPublish}
@@ -536,6 +550,10 @@ export default function Publish() {
               />
             </div>
           </div>
+
+          {ivaInfo.aplica && (
+            <IvaNoticeCard porcentaje={ivaInfo.porcentaje} paisCodigo={tienda?.paisCodigo} />
+          )}
 
           {/* Información adicional de Mastershop (Vendedor y Stock Total) */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fdf4ff', padding: '0.75rem 1rem', borderRadius: '8px', border: '1px solid #f5d0fe', fontSize: '0.9rem', color: '#701a75', flexWrap: 'wrap', gap: '8px' }}>
