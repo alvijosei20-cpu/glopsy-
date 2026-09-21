@@ -8,6 +8,11 @@ import { createPool } from '../utils/db-config.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = path.resolve(__dirname, '../migrations');
 
+// 00_base_schema.sql es un snapshot (pg_dump). Solo las migraciones con fecha
+// igual o anterior a esta ya están incluidas en él; las posteriores deben
+// ejecutarse. Si se regenera el snapshot, actualizar esta fecha.
+const BASE_SNAPSHOT_THROUGH = '20260821';
+
 const pool = createPool();
 
 const client = await pool.connect();
@@ -47,9 +52,11 @@ try {
       }
       await client.query('INSERT INTO public.schema_migrations (name) VALUES ($1)', [file]);
       if (isBase) {
-        // El snapshot base ya contiene todas las migraciones previas del repo.
+        // Marcar solo las migraciones ya incluidas en el snapshot base.
+        // Las posteriores (fecha > BASE_SNAPSHOT_THROUGH) quedan pendientes
+        // para ejecutarse en el bucle normal.
         for (const f of files) {
-          if (f !== file) {
+          if (f !== file && f <= BASE_SNAPSHOT_THROUGH) {
             await client.query(
               'INSERT INTO public.schema_migrations (name) VALUES ($1) ON CONFLICT DO NOTHING',
               [f]
