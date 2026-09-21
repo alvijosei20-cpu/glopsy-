@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../services/api';
+import { SkeletonList } from '../../components/SkeletonLoader';
 
 export default function AuthSuccess() {
   const { login } = useAuth();
@@ -24,5 +25,11 @@ export default function AuthSuccess() {
     })();
   }, [login, navigate]);
 
-  return <p>Completando inicio de sesión…</p>;
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <SkeletonList count={8} />
+      </div>
+    </div>
+  );
 }
