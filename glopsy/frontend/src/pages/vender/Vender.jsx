@@ -42,6 +42,7 @@ export default function Vender() {
   const [bancosError, setBancosError] = useState('');
   const [bank, setBank] = useState({
     banco_codigo: '', tipo_cuenta: '', numero_cuenta: '', titular_cuenta: user?.name || '', tipo_documento: '', titular_documento: '',
+    tipo_proveedor: '', responsable_iva: false,
   });
   const [contactEmail, setContactEmail] = useState(user?.email || '');
   const [contactPhone, setContactPhone] = useState('');
@@ -188,6 +189,10 @@ export default function Vender() {
     }
     if (!isValidDocumentNumber(paisIso, bank.tipo_documento, bank.titular_documento)) {
       setError(`El número de documento no es válido (${selectedDocType?.hint || 'revisa el formato'}).`);
+      return;
+    }
+    if (!bank.tipo_proveedor) {
+      setError('Indica si vendes como persona natural o jurídica.');
       return;
     }
     const esBinance = bank.banco_codigo === 'BINANCE_PAY';
@@ -387,6 +392,52 @@ export default function Vender() {
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-3">
+            <p className="text-xs font-bold text-slate-700">Tipo de proveedor</p>
+
+            <div>
+              <label htmlFor="tipo-proveedor" className="block text-xs font-bold text-slate-600 mb-1.5">
+                ¿Vendes como persona natural o jurídica?
+              </label>
+              <select
+                id="tipo-proveedor"
+                value={bank.tipo_proveedor}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setBank((b) => ({
+                    ...b,
+                    tipo_proveedor: value,
+                    responsable_iva: value === 'juridica' ? true : value === 'natural' ? b.responsable_iva : false,
+                  }));
+                }}
+                required
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 outline-none focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-100"
+              >
+                <option value="">Selecciona</option>
+                <option value="natural">Persona natural</option>
+                <option value="juridica">Persona jurídica</option>
+              </select>
+            </div>
+
+            {bank.tipo_proveedor === 'natural' && (
+              <label className="flex items-center gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={bank.responsable_iva === true}
+                  onChange={(e) => setBank((b) => ({ ...b, responsable_iva: e.target.checked }))}
+                  className="w-4 h-4 rounded border-slate-300 text-fuchsia-600 focus:ring-fuchsia-400"
+                />
+                <span className="text-sm text-slate-700">Soy responsable de IVA</span>
+              </label>
+            )}
+
+            {bank.tipo_proveedor === 'juridica' && (
+              <p className="text-[11px] text-slate-400">
+                Las personas jurídicas se registran como responsables de IVA.
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-3">
             <p className="text-xs font-bold text-slate-700">Cuenta bancaria donde recibirás tus ventas</p>
 
             <div>
@@ -516,7 +567,7 @@ export default function Vender() {
 
           <button
             type="submit"
-            disabled={busy || !name.trim() || name.trim().length < 3 || !slugFormatoOk || slugReservado || !!bancosError || !isValidEmail(contactEmail) || !isValidPhoneForCountry(paisIso, contactPhone) || !bank.banco_codigo || !bank.tipo_cuenta || !bank.numero_cuenta || !bank.titular_cuenta || !bank.tipo_documento || !isValidDocumentNumber(paisIso, bank.tipo_documento, bank.titular_documento)}
+            disabled={busy || !name.trim() || name.trim().length < 3 || !slugFormatoOk || slugReservado || !!bancosError || !isValidEmail(contactEmail) || !isValidPhoneForCountry(paisIso, contactPhone) || !bank.banco_codigo || !bank.tipo_cuenta || !bank.numero_cuenta || !bank.titular_cuenta || !bank.tipo_documento || !bank.tipo_proveedor || !isValidDocumentNumber(paisIso, bank.tipo_documento, bank.titular_documento)}
             className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-bold py-3 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
             {busy ? <Loader2 size={16} className="animate-spin" /> : null}

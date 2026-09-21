@@ -555,15 +555,15 @@ export const saveDianConfigForUser = async (userId, data) => {
 // Cuenta bancaria donde el proveedor recibe su liquidación.
 export const getPayoutAccountForUser = async (userId) => {
   const { rows } = await pool.query(
-    `SELECT banco_codigo, banco_nombre, tipo_cuenta, numero_cuenta, titular_cuenta, titular_documento, tipo_documento
+    `SELECT banco_codigo, banco_nombre, tipo_cuenta, numero_cuenta, titular_cuenta, titular_documento, tipo_documento, tipo_proveedor, responsable_iva
      FROM tiendas WHERE usrid = $1 LIMIT 1`,
     [userId]
   );
-  return rows[0] || { banco_codigo: '', banco_nombre: '', tipo_cuenta: '', numero_cuenta: '', titular_cuenta: '', titular_documento: '', tipo_documento: '' };
+  return rows[0] || { banco_codigo: '', banco_nombre: '', tipo_cuenta: '', numero_cuenta: '', titular_cuenta: '', titular_documento: '', tipo_documento: '', tipo_proveedor: '', responsable_iva: false };
 };
 
 export const savePayoutAccountForUser = async (userId, data) => {
-  const { banco_codigo, tipo_cuenta, numero_cuenta, titular_cuenta, titular_documento, tipo_documento } = data;
+  const { banco_codigo, tipo_cuenta, numero_cuenta, titular_cuenta, titular_documento, tipo_documento, tipo_proveedor, responsable_iva } = data;
 
   // Validar que el banco exista en el catálogo del país de la tienda.
   const { rows: tiendaRows } = await pool.query(
@@ -587,10 +587,11 @@ export const savePayoutAccountForUser = async (userId, data) => {
   const { rows } = await pool.query(
     `UPDATE tiendas
      SET banco_codigo = $2, banco_nombre = $3, tipo_cuenta = $4,
-         numero_cuenta = $5, titular_cuenta = $6, titular_documento = $7, tipo_documento = $8
+         numero_cuenta = $5, titular_cuenta = $6, titular_documento = $7, tipo_documento = $8,
+         tipo_proveedor = $9, responsable_iva = $10
      WHERE usrid = $1
-     RETURNING banco_codigo, banco_nombre, tipo_cuenta, numero_cuenta, titular_cuenta, titular_documento, tipo_documento`,
-    [userId, banco_codigo, banco_nombre, tipo_cuenta, numero_cuenta, titular_cuenta, titular_documento, tipo_documento || null]
+     RETURNING banco_codigo, banco_nombre, tipo_cuenta, numero_cuenta, titular_cuenta, titular_documento, tipo_documento, tipo_proveedor, responsable_iva`,
+    [userId, banco_codigo, banco_nombre, tipo_cuenta, numero_cuenta, titular_cuenta, titular_documento, tipo_documento || null, tipo_proveedor || null, responsable_iva === true]
   );
   await redisClient.del(cacheKey(userId)).catch(() => {});
   return rows[0];

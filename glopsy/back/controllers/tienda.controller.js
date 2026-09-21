@@ -361,10 +361,18 @@ export const createTiendaController = ({
     const titular_cuenta = cleanString(req.body.titular_cuenta, { maxLength: 150 });
     const titular_documento = cleanString(req.body.titular_documento, { maxLength: 40 });
     const tipo_documento = cleanString(req.body.tipo_documento, { maxLength: 20 });
+    const tipo_proveedor = cleanString(req.body.tipo_proveedor, { maxLength: 20 });
 
     if (!banco_codigo || !tipo_cuenta || !numero_cuenta || !titular_cuenta || !titular_documento || !tipo_documento) {
       return res.status(400).json({ ok: false, message: 'Banco, tipo de cuenta, número de cuenta, titular, tipo y número de documento son obligatorios.' });
     }
+    if (!isAllowedEnum(tipo_proveedor, ['natural', 'juridica'])) {
+      return res.status(400).json({ ok: false, message: 'Selecciona si eres persona natural o jurídica.' });
+    }
+    // La persona jurídica siempre es responsable de IVA; la natural lo declara.
+    const responsable_iva = tipo_proveedor === 'juridica'
+      ? true
+      : req.body.responsable_iva === true || req.body.responsable_iva === 'true';
     if (!isAllowedEnum(tipo_cuenta, ['ahorro', 'corriente'])) {
       return res.status(400).json({ ok: false, message: 'El tipo de cuenta debe ser ahorro o corriente.' });
     }
@@ -394,6 +402,7 @@ export const createTiendaController = ({
     try {
       const account = await savePayoutAccountForUser(req.auth.userId, {
         banco_codigo, banco_nombre, tipo_cuenta, numero_cuenta, titular_cuenta, titular_documento, tipo_documento,
+        tipo_proveedor, responsable_iva,
       });
       return res.json({ ok: true, account, message: 'Cuenta de pagos guardada con éxito.' });
     } catch (error) {

@@ -119,7 +119,7 @@ const MarketConfig = () => {
   const [initialBoldConfig, setInitialBoldConfig] = useState({ access_token: '', public_key: '', webhook_secret: '', is_default: false });
   const [usdStatus, setUsdStatus] = useState({ usd_activation_status: 'none' });
   const [requestingUsd, setRequestingUsd] = useState(false);
-  const [payoutAccount, setPayoutAccount] = useState({ banco_codigo: '', banco_nombre: '', tipo_cuenta: '', numero_cuenta: '', titular_cuenta: '', tipo_documento: '', titular_documento: '' });
+  const [payoutAccount, setPayoutAccount] = useState({ banco_codigo: '', banco_nombre: '', tipo_cuenta: '', numero_cuenta: '', titular_cuenta: '', tipo_documento: '', titular_documento: '', tipo_proveedor: '', responsable_iva: false });
   const [bancos, setBancos] = useState([]);
   const [savingPayout, setSavingPayout] = useState(false);
   const [fiscalRange, setFiscalRange] = useState({ desde: '', hasta: new Date().toISOString().slice(0, 10) });
@@ -561,6 +561,10 @@ const MarketConfig = () => {
     }
     if (!payoutAccount.tipo_documento || !String(payoutAccount.titular_documento || '').trim()) {
       setNotice('Error: el tipo y número de documento del titular son obligatorios.');
+      return;
+    }
+    if (!payoutAccount.tipo_proveedor) {
+      setNotice('Error: indica si vendes como persona natural o jurídica.');
       return;
     }
     const payoutPaisIso = tienda?.paisCodigo
@@ -2250,6 +2254,39 @@ const MarketConfig = () => {
                         <label style={{ color: '#334155', fontWeight: 600 }}>Titular</label>
                         <input value={payoutAccount.titular_cuenta} onChange={(e) => setPayoutAccount({ ...payoutAccount, titular_cuenta: e.target.value })} placeholder="Nombre o razón social" />
                       </div>
+                      <div className="config-form-group" style={{ margin: 0 }}>
+                        <label style={{ color: '#334155', fontWeight: 600 }}>Tipo de proveedor</label>
+                        <select
+                          value={payoutAccount.tipo_proveedor || ''}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setPayoutAccount((prev) => ({
+                              ...prev,
+                              tipo_proveedor: value,
+                              responsable_iva: value === 'juridica' ? true : value === 'natural' ? prev.responsable_iva : false,
+                            }));
+                          }}
+                        >
+                          <option value="">Selecciona</option>
+                          <option value="natural">Persona natural</option>
+                          <option value="juridica">Persona jurídica</option>
+                        </select>
+                      </div>
+                      {payoutAccount.tipo_proveedor === 'natural' && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#334155', fontWeight: 600 }}>
+                          <input
+                            type="checkbox"
+                            checked={payoutAccount.responsable_iva === true}
+                            onChange={(e) => setPayoutAccount((prev) => ({ ...prev, responsable_iva: e.target.checked }))}
+                          />
+                          Soy responsable de IVA
+                        </label>
+                      )}
+                      {payoutAccount.tipo_proveedor === 'juridica' && (
+                        <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b' }}>
+                          Las personas jurídicas se registran como responsables de IVA.
+                        </p>
+                      )}
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
                         <div className="config-form-group" style={{ margin: 0 }}>
                           <label style={{ color: '#334155', fontWeight: 600 }}>Tipo de documento</label>
