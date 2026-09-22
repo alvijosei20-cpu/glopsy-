@@ -15,7 +15,7 @@ import geoRoutes from './routes/geo.routes.js';
 import healthRoutes from './routes/health.routes.js';
 import mastershopWebhookRoutes from './routes/mastershopWebhook.routes.js';
 import mercadopagoWebhookRoutes from './routes/mercadopagoWebhook.routes.js';
-import boldWebhookRoutes from './routes/boldWebhook.routes.js';
+import epaycoRoutes from './routes/epayco.routes.js';
 import returnsRoutes from './routes/returns.routes.js';
 import statsRoutes from './routes/stats.routes.js';
 import notificationsRoutes from './routes/notifications.routes.js';
@@ -50,7 +50,7 @@ app.use(cors({
   },
   credentials: true,
 }));
-// Se conserva el cuerpo crudo para verificar firmas de webhooks (Bold, etc.).
+// Se conserva el cuerpo crudo para verificar firmas de webhooks.
 app.use(express.json({
   limit: '2mb',
   verify: (req, res, buf) => { req.rawBody = buf; },
@@ -68,7 +68,7 @@ app.use('/api/geo', geoRoutes);
 app.use('/api/health', healthRoutes);
 app.use('/api/webhooks', mastershopWebhookRoutes);
 app.use('/api/payments', mercadopagoWebhookRoutes);
-app.use('/api/payments', boldWebhookRoutes);
+app.use('/api/payments', epaycoRoutes);
 app.use('/api/returns', returnsRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/notifications', notificationsRoutes);

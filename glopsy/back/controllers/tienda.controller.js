@@ -582,7 +582,7 @@ export const createTiendaController = ({
     const webhook_secret = cleanString(req.body.webhook_secret, { maxLength: 2048 });
     const is_default = req.body.is_default === true;
 
-    if (!provider || !isAllowedEnum(provider, ['mercadopago', 'envia', 'bold'])) {
+    if (!provider || !isAllowedEnum(provider, ['mercadopago', 'envia', 'epayco'])) {
       return res.status(400).json({ ok: false, message: 'Proveedor no válido.' });
     }
 
@@ -601,6 +601,9 @@ export const createTiendaController = ({
     if (provider === 'mercadopago' && !cleanPublicKey) {
       return res.status(400).json({ ok: false, message: 'La Public Key es obligatoria para Mercado Pago.' });
     }
+    if (provider === 'epayco' && !cleanPublicKey) {
+      return res.status(400).json({ ok: false, message: 'La Public Key es obligatoria para ePayco.' });
+    }
 
     // Permitir explícitamente guiones (-), underscores, puntos y caracteres válidos de credenciales (ej. Mercado Pago APP_USR-)
     const credentialPattern = /^[a-zA-Z0-9_\-\.\+\=\/\:\s]+$/;
@@ -618,7 +621,7 @@ export const createTiendaController = ({
         webhookSecret: cleanWebhookSecret || undefined,
         isDefault: is_default,
       });
-      const provName = provider === 'mercadopago' ? 'Mercado Pago' : 'ENVIA';
+      const provName = provider === 'mercadopago' ? 'Mercado Pago' : provider === 'epayco' ? 'ePayco' : 'ENVIA';
       const modeName = integrationMode === 'prueba' ? 'Prueba' : 'Producción';
       return res.json({ ok: true, integration: saved, message: `Configuración de ${provName} (${modeName}) guardada con éxito.` });
     } catch (error) {
@@ -630,7 +633,7 @@ export const createTiendaController = ({
   deleteCheckoutIntegration: async (req, res) => {
     const provider = cleanString(req.params.provider, { maxLength: 50 });
     const mode = cleanString(req.query.mode || req.body?.mode, { maxLength: 20 });
-    if (!provider || !isAllowedEnum(provider, ['mercadopago', 'envia', 'bold'])) {
+    if (!provider || !isAllowedEnum(provider, ['mercadopago', 'envia', 'epayco'])) {
       return res.status(400).json({ ok: false, message: 'Proveedor no válido.' });
     }
 
@@ -641,7 +644,7 @@ export const createTiendaController = ({
       if (!deleted) {
         return res.status(404).json({ ok: false, message: 'No se encontró la configuración para eliminar.' });
       }
-      const provName = provider === 'mercadopago' ? 'Mercado Pago' : 'ENVIA';
+      const provName = provider === 'mercadopago' ? 'Mercado Pago' : provider === 'epayco' ? 'ePayco' : 'ENVIA';
       const modeName = integrationMode === 'prueba' ? 'Prueba' : 'Producción';
       return res.json({ ok: true, message: `Configuración de ${provName} (${modeName}) eliminada con éxito.` });
     } catch (error) {

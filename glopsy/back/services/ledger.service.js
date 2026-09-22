@@ -1,9 +1,9 @@
 // ==========================================
 // Sistema contable (ledger de doble entrada)
 //
-// La plataforma recibe los pagos en una cuenta central (Bold, Binance)
-// y liquida a cada proveedor. Los saldos se derivan de los asientos, no
-// se guardan mutables.
+// Los pagos en línea ingresan por la cuenta central de ePayco y se liquidan
+// a cada proveedor. Los saldos se derivan de los asientos, no se guardan
+// mutables.
 //
 // Buckets del proveedor:
 //   provider_deferred  -> ventas aún no entregadas o en ventana de reclamo
@@ -138,7 +138,7 @@ export const resolveCommissionRate = async (client, { productoId, categoriaId, t
 // ------------------------------------------------------------------
 
 export const recordSaleForOrder = async (orderId, {
-  provider = 'bold',
+  provider = 'epayco',
   moneda = 'COP',
   processorFee = 0,
   withholding = 0,

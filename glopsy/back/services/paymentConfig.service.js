@@ -5,22 +5,26 @@
 
 import { pool } from '../db.js';
 import { decryptSecret } from '../utils/crypto.js';
-import { setBoldCredentials } from './bold.service.js';
+import { setEpaycoCredentials } from './epayco.service.js';
 
-export const loadBoldCredentials = async () => {
+// ePayco: public_key (checkout.js), access_token = P_KEY (firma del webhook)
+// y webhook_secret = P_CUST_ID_CLIENTE.
+export const loadEpaycoCredentials = async () => {
   const { rows } = await pool.query(
-    `SELECT access_token, webhook_secret
+    `SELECT public_key, access_token, webhook_secret, mode
      FROM checkout_integrations
-     WHERE provider = 'bold'
+     WHERE provider = 'epayco'
      ORDER BY (mode = 'produccion') DESC, updated_at DESC NULLS LAST
      LIMIT 1`
   );
   const r = rows[0];
-  if (!r?.access_token) return null;
+  if (!r?.public_key || !r?.access_token) return null;
   const creds = {
-    apiKey: decryptSecret(r.access_token),
-    secretKey: r.webhook_secret ? decryptSecret(r.webhook_secret) : '',
+    publicKey: r.public_key,
+    privateKey: decryptSecret(r.access_token),
+    customerId: r.webhook_secret ? decryptSecret(r.webhook_secret) : '',
+    test: r.mode !== 'produccion',
   };
-  setBoldCredentials(creds);
+  setEpaycoCredentials(creds);
   return creds;
 };

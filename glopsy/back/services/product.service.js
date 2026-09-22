@@ -2194,7 +2194,7 @@ export const recordPurchaseForUser = async (userId, items, options = {}) => {
   return { orderId, orderNumber, orderHash, totalAmount, tiendaId };
 };
 
-// Crea la orden en estado 'pending' ANTES de cobrar (checkout transparente Bold):
+// Crea la orden en estado 'pending' ANTES de cobrar (checkout Onpage ePayco):
 // reserva stock, valida una sola tienda y deja la orden lista para asociarle el pago.
 export const createPendingOrderForCart = async (userId, items, options = {}) => {
   await reserveStockForSession(items, options.guestHash || `user_${userId}`);
@@ -2202,7 +2202,7 @@ export const createPendingOrderForCart = async (userId, items, options = {}) => 
   return recordPurchaseForUser(userId, items, {
     ...options,
     status: 'pending',
-    payloadExtra: { ...(options.payloadExtra || {}), pending_reason: 'bold_checkout' }
+    payloadExtra: { ...(options.payloadExtra || {}), pending_reason: 'epayco_checkout' }
   });
 };
 

@@ -2,7 +2,7 @@
 // Moneda de cobro del checkout.
 //
 // Tiendas habilitadas en USD: un visitante del mismo país paga en su moneda
-// local (p. ej. COP con Bold); el resto paga en USD.
+// local (p. ej. COP con ePayco); el resto paga en USD.
 // ==========================================
 
 import { pool } from '../db.js';
