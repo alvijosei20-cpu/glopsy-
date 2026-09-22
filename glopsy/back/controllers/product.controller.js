@@ -1,7 +1,7 @@
 import { obtenerProductoPorId } from '../services/mastershopService.js';
 import { uploadProductImage, isR2Configured } from '../services/r2.service.js';
 import { visitorCountryFromReq } from '../services/checkoutCurrency.service.js';
-import { saveProductForUser, getProductsForUser, getProductsForUserManagement, setProductStatusForUser, deleteProductForUser, addProductImagesForUser, updateProductNameForUser, searchQueryProductsCached, getCategories, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, getMainStoreId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, cancelOrderForUser, updateOrderAddressForUser, getProductReviews, getUserReviewStatus, getOrderReviewsStatus, addProductReview, updateProductReview, deleteProductReview } from '../services/product.service.js';
+import { saveProductForUser, getProductsForUser, getProductsForUserManagement, setProductStatusForUser, deleteProductForUser, addProductImagesForUser, updateProductNameForUser, searchQueryProductsCached, getCategories, getGlobalCommission, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, getMainStoreId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, cancelOrderForUser, updateOrderAddressForUser, getProductReviews, getUserReviewStatus, getOrderReviewsStatus, addProductReview, updateProductReview, deleteProductReview } from '../services/product.service.js';
 import { validatePaymentBiometricNonce } from '../services/auth.service.js';
 import { getInternationalShippingOptions } from '../services/internationalShipping.service.js';
 import { pool } from '../db.js';
@@ -253,8 +253,11 @@ export const searchProducts = async (req, res) => {
 
 export const getCategoriesController = async (req, res) => {
   try {
-    const categories = await getCategories();
-    res.json({ ok: true, categories });
+    const [categories, commissionGlobal] = await Promise.all([
+      getCategories(),
+      getGlobalCommission().catch(() => null),
+    ]);
+    res.json({ ok: true, categories, commissionGlobal });
   } catch (error) {
     console.error('Error al obtener categorías:', error.message);
     res.status(500).json({ ok: false, message: 'Error al obtener categorías' });

@@ -598,10 +598,24 @@ export const getCategories = async () => {
   const cached = await redisClient.get('categorias').catch(() => null);
   if (cached) return JSON.parse(cached);
   const { rows } = await pool.query(
-    `SELECT id, nombre, descripcion FROM categorias ORDER BY nombre`
+    `SELECT c.id, c.nombre, c.descripcion, r.porcentaje AS comision
+     FROM categorias c
+     LEFT JOIN commission_rules r
+       ON r.scope = 'categoria' AND r.scope_id = c.id AND r.tienda_id IS NULL AND r.activo = true
+     ORDER BY c.nombre`
   );
   await redisClient.set('categorias', JSON.stringify(rows), { EX: 300 }).catch(() => {});
   return rows;
+};
+
+// Comisión global de respaldo (cuando el producto no tiene categoría).
+export const getGlobalCommission = async () => {
+  const { rows } = await pool.query(
+    `SELECT porcentaje FROM commission_rules
+     WHERE scope = 'global' AND scope_id IS NULL AND tienda_id IS NULL AND activo = true
+     ORDER BY id LIMIT 1`
+  );
+  return rows[0] ? Number(rows[0].porcentaje) : null;
 };
 
 export const autoCategorizeUncategorizedProducts = async () => {

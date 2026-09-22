@@ -18,7 +18,9 @@ import {
 } from 'lucide-react';
 import api from '../services/api';
 import IvaNoticeCard from './IvaNoticeCard';
+import PriceBreakdown from './PriceBreakdown';
 import { resolveIva } from '../utils/iva';
+import { calculatePublishedPrice } from '../utils/pricing';
 import { compressToWebp, MAX_IMAGES } from '../utils/imageCompress';
 
 const inputStyle = {
@@ -73,6 +75,7 @@ export default function ManualProductForm({
   categories = [],
   paisCodigo = null,
   responsableIva = false,
+  commissionGlobal = 15,
   publishing = false,
   publishError = '',
   onPublish,
@@ -213,12 +216,23 @@ export default function ManualProductForm({
         stock: v.stock === '' ? 0 : Number(v.stock),
       }));
 
+    const categoriaNombreSubmit = categories.find((c) => String(c.id) === String(form.categoriaId))?.nombre || '';
+    const categoriaComisionSubmit = categories.find((c) => String(c.id) === String(form.categoriaId))?.comision;
+    const glopsyPctSubmit = categoriaComisionSubmit != null ? Number(categoriaComisionSubmit) : (Number(commissionGlobal) || 0);
+    const ivaSubmit = resolveIva({ paisCodigo, responsableIva, name: form.name, description: form.description, categoria: categoriaNombreSubmit });
+    const breakdownSubmit = calculatePublishedPrice({
+      salePrice: Number(form.suggestedPrice),
+      paisCodigo,
+      ivaAplica: ivaSubmit.aplica,
+      glopsyPorcentaje: glopsyPctSubmit,
+    });
+
     const payload = {
       provider: 'manual',
       name: form.name.trim(),
       description: form.description.replace(/\r?\n/g, '<br/>'),
       basePrice: Number(form.basePrice),
-      suggestedPrice: Number(form.suggestedPrice),
+      suggestedPrice: breakdownSubmit.total,
       baseCurrencyPrice: currency,
       stockTotal: Number(form.stockTotal),
       images: form.images.map((img) => img.url),
@@ -257,6 +271,15 @@ export default function ManualProductForm({
     name: form.name,
     description: form.description,
     categoria: categoriaNombre,
+  });
+
+  const categoriaComision = categories.find((c) => String(c.id) === String(form.categoriaId))?.comision;
+  const glopsyPorcentaje = categoriaComision != null ? Number(categoriaComision) : (Number(commissionGlobal) || 0);
+  const priceBreakdown = calculatePublishedPrice({
+    salePrice: form.suggestedPrice,
+    paisCodigo,
+    ivaAplica: ivaInfo.aplica,
+    glopsyPorcentaje,
   });
 
   return (
@@ -434,7 +457,7 @@ export default function ManualProductForm({
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
         <div>
           <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '6px', color: '#db2777' }}>
-            <Tag size={16} /> Precio de Venta *
+            <Tag size={16} /> Precio de Venta ({currency}) *
           </label>
           <input
             type="number"
@@ -625,6 +648,8 @@ export default function ManualProductForm({
         </label>
         {fieldErrors.acceptTerms && <span style={errorStyle}>{fieldErrors.acceptTerms}</span>}
       </div>
+
+      <PriceBreakdown breakdown={priceBreakdown} currency={currency} />
 
       {/* Publicar */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginTop: '1rem' }}>

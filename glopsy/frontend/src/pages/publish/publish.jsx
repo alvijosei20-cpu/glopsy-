@@ -4,7 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import { ApiLoadingModal } from '../../components/LoadingScreen';
 import ManualProductForm from '../../components/ManualProductForm';
 import IvaNoticeCard from '../../components/IvaNoticeCard';
+import PriceBreakdown from '../../components/PriceBreakdown';
 import { resolveIva } from '../../utils/iva';
+import { calculatePublishedPrice } from '../../utils/pricing';
 import api from '../../services/api';
 import '../panel/panel.css';
 
@@ -25,6 +27,7 @@ export default function Publish() {
   const [tienda, setTienda] = useState(null);
   const [categories, setCategories] = useState([]);
   const [responsableIva, setResponsableIva] = useState(false);
+  const [commissionGlobal, setCommissionGlobal] = useState(15);
 
   const isManual = selectedProvider === MANUAL_PROVIDER.id;
 
@@ -74,6 +77,9 @@ export default function Publish() {
         setResponsableIva(payoutRes.data?.account?.responsable_iva === true || payoutRes.data?.account?.responsable_iva === 'true');
         if (catRes.data?.categories) {
           setCategories(catRes.data.categories);
+        }
+        if (catRes.data?.commissionGlobal != null) {
+          setCommissionGlobal(Number(catRes.data.commissionGlobal));
         }
 
         if (intRes.data && intRes.data.integraciones) {
@@ -216,12 +222,31 @@ export default function Publish() {
       return;
     }
 
+    const precioVenta = Number(editableProduct.suggestedPrice);
+    if (!Number.isFinite(precioVenta) || precioVenta <= 0) {
+      setPublishError('Ingresa un Precio de Venta mayor a 0 para calcular el precio total.');
+      return;
+    }
+
+    const ivaSubmit = resolveIva({
+      paisCodigo: tienda?.paisCodigo,
+      responsableIva,
+      name: editableProduct.name,
+      description: editableProduct.description,
+    });
+    const breakdown = calculatePublishedPrice({
+      salePrice: precioVenta,
+      paisCodigo: tienda?.paisCodigo,
+      ivaAplica: ivaSubmit.aplica,
+      glopsyPorcentaje: commissionGlobal,
+    });
+
     const payloadToPublish = {
       idProduct: editableProduct.idProduct,
       idVariant: editableProduct.selectedVariantId,
       name: editableProduct.name,
       basePrice: editableProduct.basePrice,
-      suggestedPrice: editableProduct.suggestedPrice,
+      suggestedPrice: breakdown.total,
       baseCurrencyPrice: editableProduct.baseCurrencyPrice,
       urlImageProduct: editableProduct.urlImageProduct,
       description: editableProduct.description,
@@ -284,6 +309,13 @@ export default function Publish() {
     responsableIva,
     name: editableProduct.name,
     description: editableProduct.description,
+  });
+
+  const priceBreakdown = calculatePublishedPrice({
+    salePrice: editableProduct.suggestedPrice,
+    paisCodigo: tienda?.paisCodigo,
+    ivaAplica: ivaInfo.aplica,
+    glopsyPorcentaje: commissionGlobal,
   });
 
   return (
@@ -397,6 +429,7 @@ export default function Publish() {
             categories={categories}
             paisCodigo={tienda?.paisCodigo}
             responsableIva={responsableIva}
+            commissionGlobal={commissionGlobal}
             publishing={publishingManual || apiStatus === 'loading'}
             publishError={manualError}
             onPublish={handleManualPublish}
@@ -539,7 +572,7 @@ export default function Publish() {
 
             <div>
               <label style={{ color: '#27272a', fontWeight: 600, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px', color: '#db2777' }}>
-                <Tag size={16} /> Precio de Venta
+                <Tag size={16} /> Precio de Venta ({tienda?.moneda || 'COP'})
               </label>
               <input
                 type="text"
@@ -658,6 +691,8 @@ export default function Publish() {
               />
             </div>
           </div>
+
+          <PriceBreakdown breakdown={priceBreakdown} currency={tienda?.moneda || 'COP'} />
 
           {/* Botón de Publicar Producto */}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginTop: '1rem' }}>

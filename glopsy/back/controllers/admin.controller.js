@@ -1,6 +1,7 @@
 import { pool } from '../db.js';
 import { cleanString, cleanEmail, toInt, isAllowedEnum } from '../utils/validation.js';
 import { approveUsdActivation } from '../services/tienda.service.js';
+import { redisClient } from '../services/redis.service.js';
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
@@ -132,6 +133,7 @@ export const saveCommission = async (req, res) => {
        RETURNING id, scope, scope_id, porcentaje, activo`,
       [scope, scopeId, round2(porcentaje), activo]
     );
+    await redisClient.del('categorias').catch(() => {});
     return res.json({ ok: true, rule: { ...rows[0], porcentaje: Number(rows[0].porcentaje) } });
   } catch (error) {
     console.error('Error guardando comisión:', error.message);
@@ -146,6 +148,7 @@ export const deleteCommission = async (req, res) => {
     if (!id) return res.status(400).json({ ok: false, message: 'Id inválido.' });
     const { rowCount } = await pool.query(`DELETE FROM commission_rules WHERE id = $1`, [id]);
     if (!rowCount) return res.status(404).json({ ok: false, message: 'Regla no encontrada.' });
+    await redisClient.del('categorias').catch(() => {});
     return res.json({ ok: true });
   } catch (error) {
     console.error('Error eliminando comisión:', error.message);
