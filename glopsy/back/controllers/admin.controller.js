@@ -1,6 +1,8 @@
 import { pool } from '../db.js';
-import { cleanString, cleanEmail } from '../utils/validation.js';
+import { cleanString, cleanEmail, toInt, isAllowedEnum } from '../utils/validation.js';
 import { approveUsdActivation } from '../services/tienda.service.js';
+
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
 // GET /api/admin/sellers?q=&limit= -> usuarios con su estado de vendedor y tienda.
 export const listUsersForAdmin = async (req, res) => {
@@ -58,6 +60,96 @@ export const setUserCanSell = async (req, res) => {
   } catch (error) {
     console.error('Error actualizando can_sell:', error.message);
     return res.status(500).json({ ok: false, message: 'No fue posible actualizar el usuario.' });
+  }
+};
+
+// GET /api/admin/commissions -> regla global + comisión por categoría.
+export const listCommissions = async (req, res) => {
+  try {
+    const { rows: globalRows } = await pool.query(
+      `SELECT id, porcentaje, activo
+       FROM commission_rules
+       WHERE scope = 'global' AND scope_id IS NULL AND tienda_id IS NULL
+       ORDER BY id LIMIT 1`
+    );
+    const { rows } = await pool.query(
+      `SELECT c.id, c.nombre,
+              r.id AS rule_id, r.porcentaje, r.activo
+       FROM categorias c
+       LEFT JOIN commission_rules r
+         ON r.scope = 'categoria' AND r.scope_id = c.id AND r.tienda_id IS NULL
+       WHERE c.tienda_id IS NULL
+       ORDER BY c.nombre`
+    );
+    const g = globalRows[0];
+    return res.json({
+      ok: true,
+      global: g
+        ? { id: g.id, porcentaje: Number(g.porcentaje), activo: g.activo === true }
+        : { id: null, porcentaje: null, activo: true },
+      categorias: rows.map((r) => ({
+        id: r.id,
+        nombre: r.nombre,
+        ruleId: r.rule_id || null,
+        porcentaje: r.porcentaje != null ? Number(r.porcentaje) : null,
+        activo: r.activo === true,
+      })),
+    });
+  } catch (error) {
+    console.error('Error listando comisiones:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible listar las comisiones.' });
+  }
+};
+
+// POST /api/admin/commissions { scope, scope_id?, porcentaje, activo? }
+export const saveCommission = async (req, res) => {
+  try {
+    const scope = cleanString(req.body?.scope, { maxLength: 20 });
+    if (!isAllowedEnum(scope, ['global', 'categoria', 'producto'])) {
+      return res.status(400).json({ ok: false, message: 'Alcance no válido.' });
+    }
+    const porcentaje = Number(req.body?.porcentaje);
+    if (!Number.isFinite(porcentaje) || porcentaje < 0 || porcentaje > 100) {
+      return res.status(400).json({ ok: false, message: 'El porcentaje debe estar entre 0 y 100.' });
+    }
+    const activo = req.body?.activo !== false;
+    const scopeId = scope === 'global' ? null : toInt(req.body?.scope_id, { min: 1 });
+    if (scope !== 'global' && !scopeId) {
+      return res.status(400).json({ ok: false, message: 'Falta el elemento al que aplica la comisión.' });
+    }
+    if (scope === 'categoria') {
+      const { rows: cat } = await pool.query(
+        `SELECT 1 FROM categorias WHERE id = $1 AND tienda_id IS NULL LIMIT 1`,
+        [scopeId]
+      );
+      if (!cat[0]) return res.status(404).json({ ok: false, message: 'Categoría no encontrada.' });
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO commission_rules (scope, scope_id, tienda_id, porcentaje, activo)
+       VALUES ($1, $2, NULL, $3, $4)
+       ON CONFLICT (scope, COALESCE(scope_id, 0), COALESCE(tienda_id, 0))
+       DO UPDATE SET porcentaje = EXCLUDED.porcentaje, activo = EXCLUDED.activo, updated_at = NOW()
+       RETURNING id, scope, scope_id, porcentaje, activo`,
+      [scope, scopeId, round2(porcentaje), activo]
+    );
+    return res.json({ ok: true, rule: { ...rows[0], porcentaje: Number(rows[0].porcentaje) } });
+  } catch (error) {
+    console.error('Error guardando comisión:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible guardar la comisión.' });
+  }
+};
+
+// DELETE /api/admin/commissions/:id
+export const deleteCommission = async (req, res) => {
+  try {
+    const id = toInt(req.params.id, { min: 1 });
+    if (!id) return res.status(400).json({ ok: false, message: 'Id inválido.' });
+    const { rowCount } = await pool.query(`DELETE FROM commission_rules WHERE id = $1`, [id]);
+    if (!rowCount) return res.status(404).json({ ok: false, message: 'Regla no encontrada.' });
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('Error eliminando comisión:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible eliminar la comisión.' });
   }
 };
 
