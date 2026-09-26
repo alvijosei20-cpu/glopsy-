@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Heart, ShoppingCart, Star, Truck, Filter, ChevronDown, X, Check, Share2, Flame } from 'lucide-react';
+import { Search, Heart, ShoppingCart, Star, Truck, Filter, ChevronDown, X, Check, Share2, Flame, Globe } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
 import { isLoggedIn } from '../../utils/session';
@@ -45,6 +45,10 @@ export default function Listpr() {
   });
   const [onlyDeals, setOnlyDeals] = useState(() => {
     const v = searchParams.get('ofertas');
+    return v === 'true' || v === '1';
+  });
+  const [internacional, setInternacional] = useState(() => {
+    const v = searchParams.get('internacional');
     return v === 'true' || v === '1';
   });
   const [filtersOpen, setFiltersOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024);
@@ -180,6 +184,7 @@ export default function Listpr() {
           min_rating: minRating > 0 ? minRating : undefined,
           envio_gratis: freeShipping || undefined,
           solo_ofertas: onlyDeals || undefined,
+          internacional: internacional || undefined,
         },
       });
 
@@ -218,14 +223,14 @@ export default function Listpr() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [limit, userCity, sortBy, priceMin, priceMax, minRating, freeShipping, onlyDeals]);
+  }, [limit, userCity, sortBy, priceMin, priceMax, minRating, freeShipping, onlyDeals, internacional]);
 
   // Carga inicial y al cambiar búsqueda, categoría, orden o filtros
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
     setOffset(0);
     fetchProducts(submittedQuery, selectedCategory, 0, false);
-  }, [submittedQuery, selectedCategory, sortBy, priceMin, priceMax, minRating, freeShipping, onlyDeals, fetchProducts]);
+  }, [submittedQuery, selectedCategory, sortBy, priceMin, priceMax, minRating, freeShipping, onlyDeals, internacional, fetchProducts]);
 
   // Manejo de Infinite Scroll (al llegar al final del scroll)
   useEffect(() => {
@@ -295,7 +300,7 @@ export default function Listpr() {
   // Ordenamiento ahora se aplica en el servidor (respeta paginación)
   const sortedProducts = products;
 
-  const hasActiveFilters = Boolean(submittedQuery || selectedCategory || priceMin || priceMax || minRating > 0 || freeShipping || onlyDeals);
+  const hasActiveFilters = Boolean(submittedQuery || selectedCategory || priceMin || priceMax || minRating > 0 || freeShipping || onlyDeals || internacional);
 
   const clearFilters = () => {
     setQuery('');
@@ -306,6 +311,7 @@ export default function Listpr() {
     setMinRating(0);
     setFreeShipping(false);
     setOnlyDeals(false);
+    setInternacional(false);
     setSortBy('relevance');
   };
 
@@ -466,6 +472,24 @@ export default function Listpr() {
             {onlyDeals && <Check size={14} />}
           </button>
 
+          {/* Compra internacional */}
+          <button
+            type="button"
+            onClick={() => setInternacional(!internacional)}
+            className={`w-full flex items-center justify-between gap-2 h-9 px-3 rounded-lg border text-xs font-semibold transition-all ${
+              internacional
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:text-blue-600'
+            }`}
+            title="Muestra las tiendas habilitadas para vender al exterior"
+          >
+            <span className="flex items-center gap-2">
+              <Globe size={14} />
+              Compra internacional
+            </span>
+            {internacional && <Check size={14} />}
+          </button>
+
           {/* Ordenar */}
           <div>
             <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block mb-2">Ordenar por</label>
@@ -618,6 +642,21 @@ export default function Listpr() {
             >
               <Flame size={14} />
               Solo ofertas
+            </button>
+
+            {/* Compra internacional */}
+            <button
+              type="button"
+              onClick={() => setInternacional(!internacional)}
+              className={`flex items-center gap-2 h-9 px-3 rounded-lg border text-xs font-semibold transition-all ${
+                internacional
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:text-blue-600'
+              }`}
+              title="Muestra las tiendas habilitadas para vender al exterior"
+            >
+              <Globe size={14} />
+              Compra internacional
             </button>
 
             {/* Ordenar */}

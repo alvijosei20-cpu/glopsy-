@@ -768,7 +768,7 @@ const getStoreIdBySlug = async (slug) => {
   return rows[0] ? Number(rows[0].usrid) : null;
 };
 
-export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadName, categoriaId, sortBy, priceMin, priceMax, envioGratis, minRating, tienda, soloOfertas }) => {
+export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadName, categoriaId, sortBy, priceMin, priceMax, envioGratis, minRating, tienda, soloOfertas, internacional }) => {
   const lim = Math.max(1, parseInt(limit, 10) || 12);
   const off = Math.max(0, parseInt(offset, 10) || 0);
   const search = q ? String(q).trim() : null;
@@ -778,17 +778,27 @@ export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadNam
   const pMax = priceMax !== undefined && priceMax !== null && priceMax !== '' ? Number(priceMax) : null;
   const freeShip = envioGratis === 'true' || envioGratis === true;
   const onlyDeals = soloOfertas === 'true' || soloOfertas === true;
+  const internacionalOn = internacional === 'true' || internacional === true;
   const minRate = minRating !== undefined && minRating !== null && minRating !== '' ? Number(minRating) : null;
   const orderBy = SORT_CLAUSES[sortBy] || SORT_CLAUSES.relevance;
 
   // Aislamiento: sin tienda explícita el catálogo público es SOLO de la tienda principal.
   // Las demás tiendas solo se ven en su subdominio (endpoint /storefront/:slug).
+  // Con "compra internacional" activo, se muestran los catálogos de TODAS las
+  // tiendas habilitadas para vender al exterior (USD aprobado + despacho intl).
   let scopeClause = '';
   const scopeSlug = tienda ? String(tienda).trim().slice(0, 63) : null;
   if (scopeSlug) {
     const scopeId = await getStoreIdBySlug(scopeSlug);
     if (!scopeId) return { products: [], total: 0, limit: lim, offset: off };
     scopeClause = `p.tienda_id = ${scopeId}`;
+  } else if (internacionalOn) {
+    scopeClause = `p.tienda_id IN (
+      SELECT usrid FROM tiendas t
+      WHERE t.activa = true
+        AND t.usd_activation_status = 'approved'
+        AND COALESCE(t.international_dispatch_provider, '') <> ''
+    )`;
   } else {
     const mainId = await resolveMainStoreId();
     if (mainId) scopeClause = `p.tienda_id = ${mainId}`;
@@ -907,6 +917,7 @@ export const searchQueryProductsCached = async (params) => {
       priceMax: params.priceMax ?? null,
       envioGratis: params.envioGratis ?? false,
       soloOfertas: params.soloOfertas ?? false,
+      internacional: params.internacional ?? false,
       minRating: params.minRating ?? null,
       tienda: params.tienda ?? null,
     }))
