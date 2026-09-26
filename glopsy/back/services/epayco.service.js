@@ -24,6 +24,7 @@ const customerId = () => runtimeCreds?.customerId || process.env.EPAYCO_CUSTOMER
 
 export const isEpaycoConfigured = () => Boolean(publicKey() && privateKey());
 export const getEpaycoPublicKey = () => publicKey();
+export const getEpaycoPrivateKey = () => privateKey();
 export const getEpaycoCustomerId = () => customerId();
 export const isEpaycoTest = () => runtimeCreds?.test !== false;
 

@@ -13,14 +13,63 @@
 // ==========================================
 
 import axios from 'axios';
+import { isEpaycoConfigured, getEpaycoPublicKey, getEpaycoPrivateKey } from './epayco.service.js';
+import { loadEpaycoCredentials } from './paymentConfig.service.js';
 
 const isEnabled = () => String(process.env.EPAYCO_PAYOUTS_ENABLED || '').toLowerCase() === 'true';
 export const isEpaycoPayoutsEnabled = isEnabled;
 
+const apifyUrl = () => (process.env.EPAYCO_APIFY_URL || 'https://api.epayco.co').replace(/\/$/, '');
 const baseUrl = () => (process.env.EPAYCO_PAYOUTS_BASE_URL || 'https://apiflow.epayco.io').replace(/\/$/, '');
-const token = () => process.env.EPAYCO_PAYOUTS_TOKEN || '';
 const idEpayco = () => process.env.EPAYCO_ID_EPAYCO || '';
 const idPlan = () => process.env.EPAYCO_ID_PLAN || '';
+
+// Token de apiflow. El ideal es el token_apify obtenido por login, pero permite
+// un override manual por env (útil para depurar o cuando el producto exige otro token).
+const hardcodedToken = () => process.env.EPAYCO_PAYOUTS_TOKEN || '';
+
+let cachedToken = null;
+let cachedTokenExp = 0;
+const getApifyToken = async () => {
+  if (hardcodedToken()) return hardcodedToken();
+  if (cachedToken && Date.now() < cachedTokenExp) return cachedToken;
+
+  if (!isEpaycoConfigured()) {
+    await loadEpaycoCredentials().catch(() => {});
+  }
+  const pk = getEpaycoPublicKey();
+  const pKey = getEpaycoPrivateKey();
+  if (!pk || !pKey) {
+    const err = new Error('ePayco Payouts: no hay PUBLIC_KEY/PRIVATE_KEY configuradas (tarjeta ePayco en Payments y checkout).');
+    err.code = 'EPAYCO_PAYOUTS_CONFIG';
+    throw err;
+  }
+
+  const basic = Buffer.from(`${pk}:${pKey}`).toString('base64');
+  const res = await axios.post(
+    `${apifyUrl()}/login`,
+    '',
+    {
+      headers: {
+        Authorization: `Basic ${basic}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: Number(process.env.EPAYCO_PAYOUTS_TIMEOUT || 15000),
+    }
+  );
+  const token = res.data?.token || res.data?.access_token;
+  if (!token) {
+    const e = new Error('ePayco Payouts: el login no devolvió token.');
+    e.code = 'EPAYCO_PAYOUTS_REJECTED';
+    e.status = 200;
+    e.data = res.data;
+    throw e;
+  }
+  const exp = Number(res.data?.expires_in) || Number(res.data?.exp || 0);
+  cachedToken = token;
+  cachedTokenExp = exp > 0 ? Date.now() + exp * 1000 : Date.now() + 55 * 60 * 1000;
+  return token;
+};
 
 // Tipos de documento que acepta el payload de proveedores de ePayco Payouts.
 const DOC_LABEL = {
@@ -41,11 +90,6 @@ const digito = (value) => String(value || '').replace(/\D/g, '');
 
 // Valida que el backend tenga todo lo necesario para operar el alta.
 export const assertEpaycoPayoutsConfig = () => {
-  if (!token()) {
-    const err = new Error('ePayco Payouts: falta EPAYCO_PAYOUTS_TOKEN. Configura el token de apiflow antes de activar el alta de proveedores.');
-    err.code = 'EPAYCO_PAYOUTS_CONFIG';
-    throw err;
-  }
   if (!idEpayco() || !idPlan()) {
     const err = new Error('ePayco Payouts: faltan EPAYCO_ID_EPAYCO y/o EPAYCO_ID_PLAN (panel ePayco Payouts).');
     err.code = 'EPAYCO_PAYOUTS_CONFIG';
@@ -100,11 +144,12 @@ export const registerEpaycoProvider = async ({ tienda, account } = {}) => {
   };
 
   const url = `${baseUrl()}/payouts/api/v2/providers`;
+  const apifyToken = await getApifyToken();
   let res;
   try {
     res = await axios.post(url, payload, {
       headers: {
-        Authorization: `Bearer ${token()}`,
+        Authorization: `Bearer ${apifyToken}`,
         'Content-Type': 'application/json',
       },
       timeout: Number(process.env.EPAYCO_PAYOUTS_TIMEOUT || 15000),
