@@ -1,5 +1,10 @@
 /* Vista "Mi tienda": estructura minimalista y responsive. */
 
+@keyframes glopsy-spin {
+  to { transform: rotate(360deg); }
+}
+.spin { animation: glopsy-spin 0.9s linear infinite; }
+
 .market {
   display: flex;
   flex-direction: column;

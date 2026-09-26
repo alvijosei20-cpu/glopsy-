@@ -99,6 +99,12 @@ export const startEpaycoCheckout = async (userId, {
     await pool.query(`UPDATE orders SET currency = $2 WHERE id = $1`, [order.orderId, currency]);
   }
 
+  // Venta al exterior (comprador fuera del país, tienda habilitada en USD):
+  // bien excluido de IVA (art. 481 E.T.). Se marca en la orden.
+  if (String(currency).toUpperCase() === 'USD') {
+    await pool.query(`UPDATE orders SET es_exportacion = TRUE WHERE id = $1`, [order.orderId]);
+  }
+
   const checkout = epayco.buildOnpageData({
     invoice: order.orderNumber,
     amount: chargeAmount,

@@ -81,6 +81,30 @@ test('aplica descuento antes de impuestos', () => {
   assert.equal(plantilla.Totales.TotalFactura, 95200);
 });
 
+test('facturación en nombre y por cuenta de tercero (mandato)', () => {
+  const input = baseInput();
+  input.FacturaPorCuentaDe = {
+    TipoIdentificacion: '31',
+    NumeroIdentificacion: '900999999',
+    DV: '5',
+    RazonSocial: 'MASTERSHOP S.A.S.',
+  };
+  const { ok, errors } = validateDianPlantilla(input);
+  assert.equal(ok, true, errors.join(' | '));
+
+  const { plantilla } = buildDianPlantilla(input);
+  assert.equal(plantilla.FacturaPorCuentaDe.RazonSocial, 'MASTERSHOP S.A.S.');
+  assert.equal(plantilla.FacturaPorCuentaDe.NumeroIdentificacion, '900999999');
+  assert.match(plantilla.DetallesFactura.Observaciones, /EN NOMBRE Y POR CUENTA DE TERCERO/);
+  assert.match(plantilla.DetallesFactura.Observaciones, /MASTERSHOP S\.A\.S\./);
+});
+
+test('rechaza mandato sin datos del tercero', () => {
+  const input = baseInput();
+  input.FacturaPorCuentaDe = { RazonSocial: 'X', NumeroIdentificacion: '123' };
+  assert.equal(validateDianPlantilla(input).ok, false);
+});
+
 test('rechaza tipo de documento inválido', () => {
   const input = baseInput();
   input.TipoDocumento = '99';

@@ -18,6 +18,7 @@ import {
 import { getBaVenNif12Report } from '../services/fiscalReport.service.js';
 import { buildDianPlantillaFromStore } from '../services/dianStorePlantilla.service.js';
 import { getLibroVentasData, buildLibroVentasPdf } from '../services/libroVentas.service.js';
+import { buildMandateReport, buildMandateReportPdf } from '../services/mandateReport.service.js';
 import {
   getCheckoutIntegrationsForUser,
   saveCheckoutIntegrationForUser,
@@ -25,14 +26,16 @@ import {
   getStoreAnalytics
 } from '../services/tienda.service.js';
 import { generateDianPlantillaFile } from '../services/dianPlantilla.service.js';
-import { getStoreLedgerForUser } from '../services/ledger.service.js';
+import { getStoreLedgerForUser, listPayoutsForStore, approvePayout, confirmPayoutPaid as confirmPayoutPaidFlow } from '../services/ledger.service.js';
+import { getAccountBalances as getBoldAccountBalances } from '../services/bold.service.js';
 import { pool } from '../db.js';
 import { getShippingOptionsFromEnvia } from '../services/envia.service.js';
 import { cleanString, isAllowedEnum } from '../utils/validation.js';
 import { getDocumentType, isValidDocumentNumber, isValidPhoneForCountry, normalizePhone, isValidEmail } from '../utils/countryFields.js';
+
+const roundCurrency = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 import { invalidateEdgeCache } from '../utils/cacheInvalidate.js';
 import { invalidateCatalogCache, invalidateProductDetailCachesForStore } from '../services/product.service.js';
-import { registerEpaycoProvider, isEpaycoPayoutsEnabled } from '../services/epaycoPayouts.service.js';
 
 export const createTiendaController = ({
   getShippingCosts = async (req, res) => {
@@ -157,7 +160,7 @@ export const createTiendaController = ({
 const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
 
       // Cuenta de pagos del vendedor (se envía en el formulario de registro de /vender).
-      // Es opcional en la petición, pero obligatoria si el alta de proveedores en ePayco está activo.
+      // Es opcional en la petición.
       const bankRaw = req.body?.bank && typeof req.body.bank === 'object' && !Array.isArray(req.body.bank) ? req.body.bank : {};
       const bank = {
         banco_codigo: cleanString(bankRaw.banco_codigo, { maxLength: 20 }),
@@ -203,8 +206,6 @@ const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
               : 'El número de cuenta debe tener entre 4 y 40 dígitos.',
           });
         }
-      } else if (isEpaycoPayoutsEnabled() && String(paisCodigo).toUpperCase() === 'CO') {
-        return res.status(400).json({ ok: false, message: 'Debes registrar tu cuenta de pagos (banco, cuenta y titular) al crear la tienda.' });
       }
 
       const { rows: existingTienda } = await pool.query(`SELECT usrid FROM tiendas WHERE usrid = $1 LIMIT 1`, [req.auth.userId]);
@@ -223,10 +224,9 @@ const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
       }
 
       // Guarda la cuenta de pagos del vendedor (mismos datos del registro de /vender).
-      let savedAccount = null;
       if (bankProvided) {
         try {
-          savedAccount = await savePayoutAccountForUser(req.auth.userId, {
+          await savePayoutAccountForUser(req.auth.userId, {
             ...bank,
             responsable_iva,
           });
@@ -237,31 +237,6 @@ const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
             message: saveErr.code === 'BANCO_INVALIDO' ? saveErr.message : 'No fue posible guardar la cuenta de pagos.',
           });
         }
-      }
-
-      // Alta automática del vendedor como proveedor en ePayco Payouts.
-      // Cuando el producto está activo, el alta es obligatoria: si falla se rechaza
-      // la creación de la tienda (y se borra la tienda recién creada).
-      try {
-        const provResult = await registerEpaycoProvider({
-          tienda: { ...tienda, paisCodigo, contacto_email: tienda.contacto_email || contactoEmail, contacto_telefono: tienda.contacto_telefono || contactoTelefono },
-          account: savedAccount || bank,
-        });
-        if (provResult.ok && provResult.data) {
-          console.log(`[ePayco Payouts] proveedor registrado para tienda ${tienda.usrid || tienda.hashid || req.auth.userId}`);
-        } else if (provResult.skipped && provResult.reason !== 'epayco_payouts_inactivo') {
-          console.log(`[ePayco Payouts] sin alta (${provResult.reason}) para tienda ${req.auth.userId}`);
-        }
-      } catch (provErr) {
-        console.error('[ePayco Payouts] alta de proveedor fallida:', provErr.message);
-        if (!hadStore) {
-          await pool.query(`DELETE FROM tiendas WHERE usrid = $1`, [req.auth.userId]).catch(() => {});
-        }
-        return res.status(502).json({
-          ok: false,
-          code: 'PROVIDER_REGISTRATION_FAILED',
-          message: 'No fue posible registrar tu tienda como proveedor en ePayco. Revisa tus datos bancarios y contacta al administrador.',
-        });
       }
 
       // Trazabilidad clara de la aceptación: usuario, IP, timestamp, navegador,
@@ -518,10 +493,15 @@ const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
     const direccion_fiscal = cleanString(req.body?.direccion_fiscal, { maxLength: 200 });
     const regimen = cleanString(req.body?.regimen, { maxLength: 5 });
     const responsabilidad = cleanString(req.body?.responsabilidad, { maxLength: 10 });
+    const mandato_activo = req.body?.mandato_activo === true || req.body?.mandato_activo === 'true';
+    const mandato_tercero_nombre = cleanString(req.body?.mandato_tercero_nombre, { maxLength: 150 });
+    const mandato_tercero_tipo_documento = cleanString(req.body?.mandato_tercero_tipo_documento, { maxLength: 10 });
+    const mandato_tercero_documento = cleanString(req.body?.mandato_tercero_documento, { maxLength: 20 });
     try {
       const fiscal = await saveDianFiscalForUser(req.auth.userId, {
         numero_resolucion, resolucion_fecha_desde, resolucion_fecha_hasta,
         direccion_fiscal, regimen, responsabilidad,
+        mandato_activo, mandato_tercero_nombre, mandato_tercero_tipo_documento, mandato_tercero_documento,
       });
       return res.json({ ok: true, fiscal, message: 'Datos fiscales DIAN guardados.' });
     } catch (error) {
@@ -533,8 +513,9 @@ const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
   getDianPlantillaFromStore: async (req, res) => {
     const regimen = cleanString(req.body?.regimen, { maxLength: 5 }) || '48';
     const responsabilidad = cleanString(req.body?.responsabilidad, { maxLength: 10 }) || 'O-47';
+    const exportacion = req.body?.exportacion === true || req.body?.exportacion === 'true' || req?.body?.exportacion === 1;
     try {
-      const result = await buildDianPlantillaFromStore(req.auth.userId, { regimen, responsabilidad });
+      const result = await buildDianPlantillaFromStore(req.auth.userId, { regimen, responsabilidad, exportacion });
       if (!result.ok) {
         return res.status(400).json({ ok: false, message: 'La plantilla tiene errores de validación.', errors: result.errors });
       }
@@ -671,6 +652,110 @@ const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
     }
   },
 
+  getStorePayouts: async (req, res) => {
+    const estado = cleanString(req.query.estado, { maxLength: 20 });
+    try {
+      const payouts = await listPayoutsForStore(req.auth.userId, { estado: estado || null });
+      return res.json({ ok: true, payouts });
+    } catch (error) {
+      console.error('Error al consultar las liquidaciones:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible consultar las liquidaciones.' });
+    }
+  },
+
+  getPayoutBalances: async (req, res) => {
+    const moneda = cleanString(req.query.moneda, { maxLength: 10 }) || 'COP';
+    try {
+      const ledger = await getStoreLedgerForUser(req.auth.userId, moneda.toUpperCase());
+      const retenidas = await listPayoutsForStore(req.auth.userId, { estado: 'retenido', limit: 500 });
+      const retenidoTotal = roundCurrency(retenidas.reduce((a, p) => a + Number(p.total || 0), 0));
+      const bold = await getBoldAccountBalances();
+      return res.json({
+        ok: true,
+        moneda: ledger.moneda,
+        ledger: { ...ledger.saldo, retenidoEnLiquidaciones: retenidoTotal },
+        bold,
+        payoutsEnRetencion: retenidas.map((p) => ({ id: p.id, total: p.total, motivo: p.metadata?.motivo, metadata: p.metadata })),
+      });
+    } catch (error) {
+      console.error('Error al consultar los saldos:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible consultar los saldos.' });
+    }
+  },
+
+  payPayout: async (req, res) => {
+    const payoutId = parseInt(req.params.id, 10);
+    const referencia = cleanString(req.body?.referencia, { maxLength: 200 });
+    if (!Number.isInteger(payoutId) || payoutId < 1) {
+      return res.status(400).json({ ok: false, message: 'Liquidación inválida.' });
+    }
+    try {
+      const result = await approvePayout({ payoutId, tiendaId: req.auth.userId });
+      if (!result.updated) {
+        const mensajes = {
+          ya_pagado: 'Esa liquidación ya fue pagada.',
+          ya_enviando: 'Esa liquidación ya está en proceso de envío.',
+          verificacion_pendiente: 'No se liberan fondos: la pasarela está sin configurar o no responde la verificación de disputas. Los fondos quedaron retenidos.',
+          verificacion_fallida: 'No se pudo verificar en la pasarela si hay disputas. Los fondos quedaron retenidos.',
+          disputa: 'Se detectó una disputa o contracargo en la pasarela. Los fondos NO se liberan hasta que se resuelva.',
+          envio_fallido: 'La pasarela rechazó la dispersión. Los fondos quedaron retenidos.',
+          balance_error: 'No se pudo consultar el saldo en Bold para conciliar. Los retiros quedaron congelados.',
+          descuadre: 'Descuadre al conciliar: el dinero en Bold no cubre lo que el ledger adeuda. Retiros congelados hasta revisar.',
+          no_enviando: 'La liquidación debe estar "enviando" para confirmarla.',
+        };
+        return res.status(result.reason === 'disputa' ? 409 : 400).json({
+          ok: false,
+          code: result.reason,
+          message: mensajes[result.reason] || 'No fue posible liberar la liquidación.',
+        });
+      }
+      if (result.pending) {
+        return res.json({ ok: true, pending: true, payoutId: result.payoutId, message: 'Verificación limpia. La dispersión quedó en proceso y se confirmará al llegar al proveedor.' });
+      }
+      return res.json({ ok: true, payoutId: result.payoutId, message: 'Liquidación liberada y dispersada por el sistema.' });
+    } catch (error) {
+      console.error('Error al aprobar la liquidación:', error.message);
+      return res.status(error.message === 'Payout no encontrado.' ? 404 : 500).json({
+        ok: false,
+        message: error.message === 'Payout no encontrado.' ? 'Liquidación no encontrada.' : 'No fue posible aprobar la liquidación.',
+      });
+    }
+  },
+
+  confirmPayoutPaid: async (req, res) => {
+    const payoutId = parseInt(req.params.id, 10);
+    const referencia = cleanString(req.body?.referencia, { maxLength: 200 });
+    if (!Number.isInteger(payoutId) || payoutId < 1) {
+      return res.status(400).json({ ok: false, message: 'Liquidación inválida.' });
+    }
+    try {
+      const result = await confirmPayoutPaidFlow({ payoutId, tiendaId: req.auth.userId, referencia: referencia || null });
+      if (!result.updated) {
+        return res.status(400).json({ ok: false, message: result.reason === 'ya_pagado' ? 'Esa liquidación ya fue pagada.' : 'La liquidación debe estar en proceso de envío para confirmarla.' });
+      }
+      return res.json({ ok: true, payoutId: result.payoutId, message: 'Liquidación confirmada como entregada.' });
+    } catch (error) {
+      console.error('Error al confirmar la liquidación:', error.message);
+      return res.status(500).json({ ok: false, message: error.message === 'Payout no encontrado.' ? 'Liquidación no encontrada.' : 'No fue posible confirmar la liquidación.' });
+    }
+  },
+
+  getMandateReportPdf: async (req, res) => {
+    const desde = cleanString(req.query.desde, { maxLength: 10 });
+    const hasta = cleanString(req.query.hasta, { maxLength: 10 });
+    try {
+      const data = await buildMandateReport(req.auth.userId, { desde, hasta });
+      if (!data.ok) return res.status(404).json({ ok: false, message: 'No tienes una tienda registrada.' });
+      const pdf = await buildMandateReportPdf(data);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="informe-mandato-${data.periodo.hasta}.pdf"`);
+      return res.send(pdf);
+    } catch (error) {
+      console.error('Error al generar el informe de mandato:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible generar el informe de mandato.' });
+    }
+  },
+
   saveCheckoutIntegration: async (req, res) => {
     const provider = cleanString(req.body.provider, { maxLength: 50 });
     const mode = cleanString(req.body.mode, { maxLength: 20 });
@@ -771,6 +856,11 @@ export const {
   saveStorefrontAppearance,
   getFiscalReport,
   getLibroVentasPdf,
+  getMandateReportPdf,
+  getStorePayouts,
+  getPayoutBalances,
+  payPayout,
+  confirmPayoutPaid,
   getCheckoutIntegrations,
   saveCheckoutIntegration,
   deleteCheckoutIntegration,

@@ -23,6 +23,8 @@ import {
   buildPayoutPostings,
   buildPayoutPaidPostings,
 } from '../utils/ledgerMath.js';
+import * as bold from './bold.service.js';
+import { createNotification } from './notifications.service.js';
 
 export {
   distribute,
@@ -474,10 +476,18 @@ export const createPayout = async ({ providerRef, moneda, metodo = 'transferenci
   return { created: true, payoutId, total };
 });
 
-export const markPayoutPaid = async (payoutId, { referencia = null } = {}) => withTransaction(async (client) => {
+export const markPayoutPaid = async (payoutId, { referencia = null, tiendaId = null } = {}) => withTransaction(async (client) => {
+  const guard = tiendaId
+    ? ` AND p.provider_ref IN (
+         SELECT 'tienda:' || o.tienda_id::text FROM orders o WHERE o.tienda_id = $2
+         UNION
+         SELECT s.idbusiness FROM order_shipments s JOIN orders o ON o.id = s.order_id WHERE o.tienda_id = $2 AND s.idbusiness IS NOT NULL
+       )`
+    : '';
+  const params = tiendaId ? [payoutId, tiendaId] : [payoutId];
   const { rows } = await client.query(
-    `SELECT id, moneda, total, estado FROM payouts WHERE id = $1 FOR UPDATE`,
-    [payoutId]
+    `SELECT p.id, p.moneda, p.total, p.estado FROM payouts p WHERE p.id = $1${guard} FOR UPDATE`,
+    params
   );
   if (!rows[0]) throw new Error('Payout no encontrado.');
   if (rows[0].estado === 'pagado') return { updated: false, reason: 'ya_pagado' };
@@ -495,3 +505,240 @@ export const markPayoutPaid = async (payoutId, { referencia = null } = {}) => wi
   );
   return { updated: true, payoutId };
 });
+
+const setPayoutState = async (payoutId, estado, extra = {}) => {
+  const { rows } = await pool.query(
+    `UPDATE payouts SET estado = $2, metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb, updated_at = NOW()
+     WHERE id = $1 RETURNING id, estado`,
+    [payoutId, estado, JSON.stringify(extra)]
+  );
+  return rows[0] || null;
+};
+
+const getPayoutOrders = async (payoutId) => {
+  const { rows } = await pool.query(
+    `SELECT o.id AS order_id, o.order_number, o.es_exportacion,
+            o.payload->>'epayco_ref_payco' AS ref_payco
+     FROM payout_items pi
+     JOIN orders o ON o.id = pi.order_id
+     WHERE pi.payout_id = $1`,
+    [payoutId]
+  );
+  return rows;
+};
+
+// Flujo de liberación: el dueño de la tienda solo APRUEBA; el sistema verifica
+// en la pasarela (Bold) que no existan disputas/contracargos sobre los pagos y,
+// si está limpio, ordena la dispersión al proveedor. Si la pasarela no está
+// configurada o responde error, los fondos quedan RETENIDOS (no se liberan).
+export const approvePayout = async ({ payoutId, tiendaId }) => withTransaction(async (client) => {
+  const guard = tiendaId
+    ? ` AND p.provider_ref IN (
+         SELECT 'tienda:' || o.tienda_id::text FROM orders o WHERE o.tienda_id = $2
+         UNION
+         SELECT s.idbusiness FROM order_shipments s JOIN orders o ON o.id = s.order_id WHERE o.tienda_id = $2 AND s.idbusiness IS NOT NULL
+       )`
+    : '';
+  const params = tiendaId ? [payoutId, tiendaId] : [payoutId];
+  const { rows } = await client.query(
+    `SELECT id, moneda, total, estado FROM payouts p WHERE p.id = $1${guard} FOR UPDATE`,
+    params
+  );
+  const payout = rows[0];
+  if (!payout) throw new Error('Payout no encontrado.');
+  if (payout.estado === 'pagado') return { updated: false, reason: 'ya_pagado' };
+  if (payout.estado === 'enviando') return { updated: false, reason: 'ya_enviando' };
+
+  const orders = await getPayoutOrders(payout.id);
+  const orderLabels = orders.map((o) => o.order_number || `Orden ${o.order_id}`).join(', ') || `Liquidación ${payout.id}`;
+
+  // 1) Conciliación antes de liberar: lo que el ledger debe a proveedores debe
+  //    estar respaldado por el saldo disponible/congelado en la cuenta Bold.
+  const bal = await bold.getAccountBalances();
+  if (bal.error) {
+    await setPayoutState(payout.id, 'retenido', { motivo: 'balance_error', detalle: bal.error });
+    await createNotification({
+      title: '⚠️ Descudre al liberar liquidación',
+      message: `No se pudo consultar el saldo en Bold para la liquidación #${payout.id} (${orderLabels}). Los retiros quedaron congelados hasta revisar. Error: ${bal.error}`,
+      type: 'aviso',
+      target: 'user',
+      userId: tiendaId,
+    }).catch(() => {});
+    return { updated: false, reason: 'balance_error', detalle: bal.error };
+  }
+  if (bal.configured) {
+    const { rows: owedRows } = await client.query(
+      `SELECT COALESCE(SUM(balance), 0) AS total
+       FROM ledger_account_balances
+       WHERE bucket IN ('provider_deferred', 'provider_available', 'withholding', 'payout_pending')`
+    );
+    const esperado = round2(Number(owedRows[0]?.total) || 0);
+    const enBold = round2(Number(bal.available) + Number(bal.frozen) + Number(bal.dispute));
+    if (Math.abs(enBold - esperado) > 1) {
+      const detalle = {
+        motivo: 'descuadre',
+        esperado,
+        enBold,
+        disponible: Number(bal.available),
+        congelado: Number(bal.frozen),
+        disputa: Number(bal.dispute),
+        moneda: bal.currency,
+        payout: payout.id,
+        facturas: orders.map((o) => o.order_number || `Orden ${o.order_id}`),
+      };
+      await setPayoutState(payout.id, 'retenido', detalle);
+      await createNotification({
+        title: '🚨 Descuadre detectado — retiros congelados',
+        message: `Al consiliar antes de liberar ${orderLabels} hay diferencia: el ledger adeuda ${esperado} y en Bold hay ${enBold} (${bal.currency}). No se libera ni se dispersa hasta revisar.`,
+        type: 'aviso',
+        target: 'user',
+        userId: tiendaId,
+      }).catch(() => {});
+      return { updated: false, reason: 'descuadre', esperado, enBold, detalle };
+    }
+  }
+
+  let check;
+  try {
+    check = await bold.checkPayoutDisputes({
+      orders: orders.map((o) => ({ orderId: o.order_id, refPayco: o.ref_payco })),
+    });
+  } catch (err) {
+    check = { configured: true, disputes: null, error: String(err?.message || 'error_bold') };
+  }
+
+  if (check.error) {
+    await setPayoutState(payout.id, 'retenido', { motivo: 'verificacion_fallida', detalle: check.error });
+    return { updated: false, reason: 'verificacion_fallida', detalle: check.error };
+  }
+  if (!check.configured) {
+    await setPayoutState(payout.id, 'retenido', { motivo: 'verificacion_pendiente', detalle: 'Pasarela Bold sin configuración para verificar disputas.' });
+    return { updated: false, reason: 'verificacion_pendiente' };
+  }
+  if (check.disputes && check.disputes.length > 0) {
+    await setPayoutState(payout.id, 'retenido', { motivo: 'disputa', disputas: check.disputes });
+    await createNotification({
+      title: '⚠️ Reclamo/contracargo en pago',
+      message: `La liquidación #${payout.id} (${orderLabels}) tiene una disputa o contracargo abierto en Bold. Los fondos NO se liberan. Revisa el pago en cuestión y resuélvelo.`,
+      type: 'aviso',
+      target: 'user',
+      userId: tiendaId,
+    }).catch(() => {});
+    return { updated: false, reason: 'disputa', disputas: check.disputes };
+  }
+
+  // Pago limpio: ordenar la dispersión al proveedor por el sistema.
+  const { rows: pr } = await client.query(`SELECT provider_ref FROM payouts WHERE id = $1`, [payout.id]);
+  const providerRef = pr[0]?.provider_ref;
+  const realSend = await bold.sendPayout({
+    providerRef,
+    amount: Number(payout.total),
+    currency: payout.moneda || 'COP',
+    reference: `P${payout.id}`,
+  });
+
+  if (!realSend.configured) {
+    await setPayoutState(payout.id, 'enviando', { motivo: 'envio_manual_pendiente', detalle: 'Dispersión pendiente de procesar por la pasarela.' });
+    return { updated: true, pending: true, reason: 'envio_manual_pendiente' };
+  }
+  if (!realSend.ok) {
+    await setPayoutState(payout.id, 'retenido', { motivo: 'envio_fallido', detalle: realSend.error });
+    return { updated: false, reason: 'envio_fallido', detalle: realSend.error };
+  }
+
+  await client.query(
+    `UPDATE payouts SET estado = 'pagado', paid_at = NOW(), referencia = COALESCE($2, referencia), metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb
+     WHERE id = $1`,
+    [payout.id, realSend.externalRef, JSON.stringify({ externalRef: realSend.externalRef })],
+  );
+  await insertTransaction(client, {
+    tipo: 'payout',
+    moneda: payout.moneda || 'COP',
+    descripcion: `Pago liquidación ${payout.id}`,
+    metadata: { payoutId: payout.id, externalRef: realSend.externalRef },
+  }, buildPayoutPaidPostings({ amount: Number(payout.total) }));
+
+  return { updated: true, paid: true, payoutId: payout.id, externalRef: realSend.externalRef };
+});
+
+// Confirmación final cuando el envío quedó "enviando" (pipeline sin API de
+// confirmación): el sistema registra la dispersión como entregada.
+export const confirmPayoutPaid = async ({ payoutId, tiendaId, referencia = null }) => withTransaction(async (client) => {
+  const guard = tiendaId
+    ? ` AND p.provider_ref IN (
+         SELECT 'tienda:' || o.tienda_id::text FROM orders o WHERE o.tienda_id = $2
+         UNION
+         SELECT s.idbusiness FROM order_shipments s JOIN orders o ON o.id = s.order_id WHERE o.tienda_id = $2 AND s.idbusiness IS NOT NULL
+       )`
+    : '';
+  const params = tiendaId ? [payoutId, tiendaId] : [payoutId];
+  const { rows } = await client.query(
+    `SELECT id, moneda, total, estado FROM payouts p WHERE p.id = $1${guard} FOR UPDATE`,
+    params
+  );
+  const payout = rows[0];
+  if (!payout) throw new Error('Payout no encontrado.');
+  if (payout.estado === 'pagado') return { updated: false, reason: 'ya_pagado' };
+  if (payout.estado !== 'enviando') return { updated: false, reason: 'no_enviando' };
+
+  await insertTransaction(client, {
+    tipo: 'payout',
+    moneda: payout.moneda,
+    descripcion: `Pago liquidación ${payout.id}`,
+    metadata: { payoutId: payout.id, referencia },
+  }, buildPayoutPaidPostings({ amount: Number(payout.total) }));
+
+  await client.query(
+    `UPDATE payouts SET estado = 'pagado', paid_at = NOW(), referencia = COALESCE($2, referencia) WHERE id = $1`,
+    [payout.id, referencia]
+  );
+  return { updated: true, payoutId: payout.id };
+});
+
+// Payouts de una tienda (los proveedores que le facturan: la propia tienda o
+// los idbusiness de sus envíos) con sus órdenes asociadas.
+export const listPayoutsForStore = async (tiendaId, { estado = null, limit = 200 } = {}) => {
+  const { rows } = await pool.query(
+    `SELECT p.id, p.provider_ref, p.moneda, p.total, p.estado, p.metodo, p.referencia,
+            p.metadata, p.created_at, p.paid_at
+     FROM payouts p
+     WHERE p.provider_ref IN (
+       SELECT 'tienda:' || o.tienda_id::text FROM orders o WHERE o.tienda_id = $1
+       UNION
+       SELECT s.idbusiness
+       FROM order_shipments s
+       JOIN orders o ON o.id = s.order_id
+       WHERE o.tienda_id = $1 AND s.idbusiness IS NOT NULL
+     )
+       AND ($2::text IS NULL OR p.estado = $2)
+     ORDER BY p.created_at DESC
+     LIMIT $3`,
+    [tiendaId, estado || null, Math.min(500, Math.max(1, limit))]
+  );
+
+  for (const payout of rows) {
+    const { rows: items } = await pool.query(
+      `SELECT pi.order_id, pi.monto, o.order_number,
+              COALESCE(o.customer_name, 'Cliente') AS cliente,
+              o.es_exportacion
+       FROM payout_items pi
+       LEFT JOIN orders o ON o.id = pi.order_id
+       WHERE pi.payout_id = $1
+       ORDER BY pi.id ASC`,
+      [payout.id]
+    );
+    payout.items = items.map((it) => ({
+      orderId: it.order_id,
+      orderNumber: it.order_number || null,
+      cliente: it.cliente,
+      monto: round2(Number(it.monto) || 0),
+      es_exportacion: it.es_exportacion === true,
+    }));
+    try {
+      payout.metadata = typeof payout.metadata === 'object' ? payout.metadata : JSON.parse(payout.metadata || '{}');
+    } catch {
+      payout.metadata = {};
+    }
+  }
+  return rows;
+};

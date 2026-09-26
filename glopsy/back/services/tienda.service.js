@@ -491,7 +491,9 @@ export const getDianConfigForUser = async (userId) => {
   const { rows } = await pool.query(
     `SELECT sw_id, sw_pin, technical_key, prefix, test_set_id,
             numero_resolucion, resolucion_fecha_desde, resolucion_fecha_hasta,
-            direccion_fiscal, regimen, responsabilidad
+            direccion_fiscal, regimen, responsabilidad,
+            mandato_activo, mandato_tercero_nombre, mandato_tercero_tipo_documento,
+            mandato_tercero_documento
      FROM tienda_dian
      WHERE tienda_id = $1
      LIMIT 1`,
@@ -501,6 +503,7 @@ export const getDianConfigForUser = async (userId) => {
     sw_id: '', sw_pin: '', technical_key: '', prefix: '', test_set_id: '',
     numero_resolucion: '', resolucion_fecha_desde: null, resolucion_fecha_hasta: null,
     direccion_fiscal: '', regimen: '', responsabilidad: '',
+    mandato_activo: false, mandato_tercero_nombre: '', mandato_tercero_tipo_documento: '', mandato_tercero_documento: '',
   };
 };
 
@@ -509,6 +512,7 @@ export const saveDianFiscalForUser = async (userId, data) => {
   const {
     numero_resolucion, resolucion_fecha_desde, resolucion_fecha_hasta,
     direccion_fiscal, regimen, responsabilidad,
+    mandato_activo, mandato_tercero_nombre, mandato_tercero_tipo_documento, mandato_tercero_documento,
   } = data;
   const { rows } = await pool.query(
     `INSERT INTO tienda_dian (
@@ -523,11 +527,19 @@ export const saveDianFiscalForUser = async (userId, data) => {
        direccion_fiscal = EXCLUDED.direccion_fiscal,
        regimen = EXCLUDED.regimen,
        responsabilidad = EXCLUDED.responsabilidad,
+       mandato_activo = COALESCE($8, mandato_activo),
+       mandato_tercero_nombre = COALESCE($9, mandato_tercero_nombre),
+       mandato_tercero_tipo_documento = COALESCE($10, mandato_tercero_tipo_documento),
+       mandato_tercero_documento = COALESCE($11, mandato_tercero_documento),
        updated_at = NOW()
      RETURNING numero_resolucion, resolucion_fecha_desde, resolucion_fecha_hasta,
-               direccion_fiscal, regimen, responsabilidad`,
+               direccion_fiscal, regimen, responsabilidad,
+               mandato_activo, mandato_tercero_nombre, mandato_tercero_tipo_documento,
+               mandato_tercero_documento`,
     [userId, numero_resolucion || null, resolucion_fecha_desde || null, resolucion_fecha_hasta || null,
-      direccion_fiscal || null, regimen || null, responsabilidad || null]
+      direccion_fiscal || null, regimen || null, responsabilidad || null,
+      mandato_activo === true || mandato_activo === 'true' ? true : null,
+      mandato_tercero_nombre || null, mandato_tercero_tipo_documento || null, mandato_tercero_documento || null]
   );
   await redisClient.del(cacheKey(userId)).catch(() => {});
   return rows[0];

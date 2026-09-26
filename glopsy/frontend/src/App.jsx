@@ -28,6 +28,7 @@ const MarketConfig = lazy(() => import('./pages/market/MarketConfig'));
 const Analytics = lazy(() => import('./pages/market/Analytics'));
 const ProductsManage = lazy(() => import('./pages/market/ProductsManage'));
 const Marketing = lazy(() => import('./pages/market/Marketing'));
+const Liquidaciones = lazy(() => import('./pages/market/Liquidaciones'));
 const Publish = lazy(() => import('./pages/publish/publish'));
 const Listpr = lazy(() => import('./pages/listpr/listpr'));
 const Favorites = lazy(() => import('./pages/favorites/favorites'));
@@ -276,6 +277,7 @@ function MainApp() {
           <Route path="/market/products" element={<StoreRoute><ProductsManage /></StoreRoute>} />
           <Route path="/market/marketing" element={<StoreRoute><Marketing /></StoreRoute>} />
           <Route path="/publish" element={<StoreRoute><Publish /></StoreRoute>} />
+          <Route path="/market/liquidaciones" element={<StoreRoute><Liquidaciones /></StoreRoute>} />
 
           
          <Route 

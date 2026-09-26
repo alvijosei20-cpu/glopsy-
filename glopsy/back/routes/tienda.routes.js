@@ -18,6 +18,11 @@ import {
   saveStorefrontAppearance,
   getFiscalReport,
   getLibroVentasPdf,
+  getMandateReportPdf,
+  getStorePayouts,
+  getPayoutBalances,
+  payPayout,
+  confirmPayoutPaid,
   getCheckoutIntegrations,
   saveCheckoutIntegration,
   deleteCheckoutIntegration,
@@ -79,10 +84,17 @@ router.put('/storefront', saveStorefrontAppearance);
 router.get('/reportes/ba-ven-nif-12', getFiscalReport);
 // Libro de Ventas (SENIAT) en PDF
 router.get('/reportes/libro-ventas.pdf', getLibroVentasPdf);
+// Informe de Recaudos por Mandato (soporte DIAN para dinero de terceros)
+router.get('/reportes/mandato.pdf', getMandateReportPdf);
 router.get('/checkout-integrations', getCheckoutIntegrations);
 router.post('/checkout-integrations', saveCheckoutIntegration);
 router.delete('/checkout-integrations/:provider', deleteCheckoutIntegration);
 // Perfiles de envío
+// Liquidaciones (payouts): saldos, aprobar liberación (verifica disputas y dispersa).
+router.get('/payouts', getStorePayouts);
+router.get('/payouts/balance', getPayoutBalances);
+router.post('/payouts/:id/pay', payPayout);
+router.post('/payouts/:id/confirm', confirmPayoutPaid);
 router.get('/perfiles-envio', getPerfilesForUser);
 router.post('/perfiles-envio', createPerfilForUser);
 router.delete('/perfiles-envio/:id', deletePerfilForUser);

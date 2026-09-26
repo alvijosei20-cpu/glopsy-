@@ -80,6 +80,29 @@ export const validateDianPlantilla = (input) => {
   // Emisor
   errors.push(...validateParte(input.Emisor, 'Emisor', { obligatorio: true }));
 
+  // Facturación en nombre y por cuenta de un tercero (operación bajo mandato).
+  // Opcional: solo aplica cuando una tienda intermediaria recauda por cuenta de
+  // un proveedor/mandante.
+  if (input.FacturaPorCuentaDe !== undefined && input.FacturaPorCuentaDe !== null) {
+    const tercero = input.FacturaPorCuentaDe;
+    if (!isPlainObject(tercero)) {
+      errors.push('FacturaPorCuentaDe: debe ser un objeto.');
+    } else {
+      const nombre = str(tercero.RazonSocial) || str(tercero.NombreCompleto) || str(tercero.PrimerNombre);
+      pushIf(errors, 'FacturaPorCuentaDe.RazonSocial', !nombre, 'debe indicar el nombre o razón social del tercero.');
+      const numero = digits(tercero.NumeroIdentificacion);
+      pushIf(errors, 'FacturaPorCuentaDe.NumeroIdentificacion', numero.length < 5 || numero.length > 20,
+        'debe tener entre 5 y 20 dígitos.');
+      pushIf(errors, 'FacturaPorCuentaDe.TipoIdentificacion',
+        !str(tercero.TipoIdentificacion) || !codigoValido(TIPOS_IDENTIFICACION, str(tercero.TipoIdentificacion)),
+        'código inválido (13, 31, 41, 42, ...).');
+      if (digits(tercero.NumeroIdentificacion) && isNit(str(tercero.TipoIdentificacion))) {
+        pushIf(errors, 'FacturaPorCuentaDe.DV', !/^\d$/.test(str(tercero.DV)),
+          'es obligatorio (un dígito) cuando el tipo de identificación es NIT.');
+      }
+    }
+  }
+
   // Adquirente (opcional en la plantilla; el portal permite completarlo al emitir)
   if (input.AdquirentePredeterminado !== undefined && input.AdquirentePredeterminado !== null) {
     errors.push(...validateParte(input.AdquirentePredeterminado, 'AdquirentePredeterminado', { obligatorio: false }));
@@ -241,6 +264,20 @@ export const buildDianPlantilla = (input) => {
   const det = input.DetallesFactura;
   const lineas = input.LineasDeFactura.map(normLinea);
 
+  // Observaciones: conserva las del usuario y agrega la cláusula de mandato si
+  // la factura se emite en nombre y por cuenta de un tercero.
+  const observaciones = [];
+  if (str(det.Observaciones)) observaciones.push(str(det.Observaciones));
+  if (isPlainObject(input.FacturaPorCuentaDe)) {
+    const tercero = input.FacturaPorCuentaDe;
+    const nombreTercero = str(tercero.RazonSocial) || str(tercero.NombreCompleto) || `${str(tercero.PrimerNombre)} ${str(tercero.PrimerApellido)}`.trim();
+    const tipoTercero = str(tercero.TipoIdentificacion) || '31';
+    const numTercero = digits(tercero.NumeroIdentificacion);
+    observaciones.push(
+      `Factura electrónica expedida EN NOMBRE Y POR CUENTA DE TERCERO (${nombreTercero}, identificación ${tipoTercero} ${numTercero}) conforme al contrato de mandato regulado por los artículos 1262 y siguientes del Código de Comercio. El valor facturado corresponde a recaudos por cuenta del tercero; solo la comisión pactada constituye ingreso del emisor.`
+    );
+  }
+
   const subtotalSinImpuestos = round2(lineas.reduce((a, l) => a + l.SubtotalLinea, 0));
   const totalDescuentos = round2(lineas.reduce((a, l) => a + l.Descuento, 0));
   const totalImpuestos = round2(lineas.reduce((a, l) => a + l.Impuestos.reduce((b, x) => b + x.ValorImpuesto, 0), 0));
@@ -258,6 +295,7 @@ export const buildDianPlantilla = (input) => {
     },
     Emisor: normParte(input.Emisor),
     AdquirentePredeterminado: normParte(input.AdquirentePredeterminado) ?? null,
+    FacturaPorCuentaDe: normParte(input.FacturaPorCuentaDe) ?? null,
     DetallesFactura: {
       FechaEmision: str(det.FechaEmision),
       HoraEmision: str(det.HoraEmision),
@@ -265,7 +303,7 @@ export const buildDianPlantilla = (input) => {
       FormaPago: String(det.FormaPago),
       MedioPago: String(det.MedioPago ?? det.MetodoPago),
       PlazoDias: str(det.FormaPago) === '2' ? intOf(det.PlazoDias) : null,
-      Observaciones: str(det.Observaciones) || null,
+      Observaciones: observaciones.length ? observaciones.join(' | ') : null,
     },
     LineasDeFactura: lineas,
     Totales: {

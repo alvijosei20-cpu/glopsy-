@@ -167,6 +167,7 @@ const Market = () => {
         onAnalytics={() => navigate('/market/analytics')}
         onProducts={() => navigate('/market/products')}
         onMarketing={() => navigate('/market/marketing')}
+        onLiquidaciones={() => navigate('/market/liquidaciones')}
       />
       {notice && <p className="panel__notice" role="status">{notice}</p>}
 

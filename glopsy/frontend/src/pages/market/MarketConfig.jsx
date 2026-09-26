@@ -38,6 +38,11 @@ const MarketConfig = () => {
     direccion_fiscal: '',
     regimen: '48',
     responsabilidad: 'O-47',
+    mandato_activo: false,
+    mandato_tercero_nombre: '',
+    mandato_tercero_tipo_documento: '31',
+    mandato_tercero_documento: '',
+    plantilla_exportacion: false,
   });
   const [savingDianFiscal, setSavingDianFiscal] = useState(false);
 
@@ -52,6 +57,10 @@ const MarketConfig = () => {
         direccion_fiscal: dianConfig.direccion_fiscal,
         regimen: dianConfig.regimen,
         responsabilidad: dianConfig.responsabilidad,
+        mandato_activo: dianConfig.mandato_activo,
+        mandato_tercero_nombre: dianConfig.mandato_tercero_nombre,
+        mandato_tercero_tipo_documento: dianConfig.mandato_tercero_tipo_documento,
+        mandato_tercero_documento: dianConfig.mandato_tercero_documento,
       });
       setNotice(res.data?.message || 'Datos fiscales DIAN guardados.');
     } catch (err) {
@@ -68,6 +77,7 @@ const MarketConfig = () => {
       const { data } = await api.post('/tienda/dian/plantilla/ventas', {
         regimen: dianConfig.regimen,
         responsabilidad: dianConfig.responsabilidad,
+        exportacion: dianConfig.plantilla_exportacion === true,
       });
       if (!data?.ok) {
         setNotice((data.errors || [data.message]).filter(Boolean).join(' · '));
@@ -88,6 +98,31 @@ const MarketConfig = () => {
       setNotice(Array.isArray(errors) ? errors.join(' · ') : (err.response?.data?.message || 'No fue posible generar la plantilla DIAN.'));
     } finally {
       setGeneratingDian(false);
+    }
+  };
+  const [mandateRange, setMandateRange] = useState({ desde: '', hasta: '' });
+  const [generatingMandate, setGeneratingMandate] = useState(false);
+
+  const handleDownloadMandateReport = async () => {
+    setGeneratingMandate(true);
+    try {
+      const params = new URLSearchParams();
+      if (mandateRange.desde) params.set('desde', mandateRange.desde);
+      if (mandateRange.hasta) params.set('hasta', mandateRange.hasta);
+      const res = await api.get(`/tienda/reportes/mandato.pdf?${params.toString()}`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `informe-mandato-${mandateRange.hasta || 'todas'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setNotice('Informe de mandato (PDF) generado.');
+    } catch (err) {
+      setNotice(err.response?.data?.message || 'No fue posible generar el informe de mandato.');
+    } finally {
+      setGeneratingMandate(false);
     }
   };
   const [mpMode, setMpMode] = useState('prueba');
@@ -358,6 +393,7 @@ const MarketConfig = () => {
             responsabilidad: d.responsabilidad || prev.responsabilidad || 'O-47',
             resolucion_fecha_desde: d.resolucion_fecha_desde ? String(d.resolucion_fecha_desde).slice(0, 10) : '',
             resolucion_fecha_hasta: d.resolucion_fecha_hasta ? String(d.resolucion_fecha_hasta).slice(0, 10) : '',
+            mandato_activo: d.mandato_activo === true || d.mandato_activo === 'true',
           }));
         }
         if (resCheckout.data && resCheckout.data.integrations) {
@@ -1647,9 +1683,64 @@ const MarketConfig = () => {
                         </select>
                       </div>
                     </div>
+                    <div style={{ marginTop: '1.25rem', border: '1px solid #e2e8f0', borderRadius: '0.75rem', padding: '1rem', background: '#f8fafc' }}>
+                      <label className="config-checkbox-row" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={dianConfig.mandato_activo === true}
+                          onChange={(e) => setDianConfig({ ...dianConfig, mandato_activo: e.target.checked })}
+                          style={{ width: '1rem', height: '1rem' }}
+                        />
+                        <span style={{ fontWeight: 700, color: '#0f172a' }}>Operación bajo mandato (intermediación / dinero de terceros)</span>
+                      </label>
+                      <p style={{ margin: '0.4rem 0 0', fontSize: '0.78rem', color: '#64748b' }}>
+                        Actívalo si vendes productos de terceros (dropshipping) y el dinero llega completo a tu cuenta de pagos.
+                        La plantilla se emitirá <strong>"en nombre y por cuenta de"</strong> ese tercero (arts. 1262 C.Co.) y podrás
+                        descargar el informe de recaudos por mandato como soporte ante la DIAN.
+                      </p>
+                      {dianConfig.mandato_activo && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
+                          <div className="config-form-group" style={{ margin: 0, gridColumn: '1 / -1' }}>
+                            <label>Razón social del tercero (mandante)</label>
+                            <input value={dianConfig.mandato_tercero_nombre} onChange={(e) => setDianConfig({ ...dianConfig, mandato_tercero_nombre: e.target.value })} placeholder="Ej: Mastershop S.A.S." maxLength={150} />
+                          </div>
+                          <div className="config-form-group" style={{ margin: 0 }}>
+                            <label>Tipo de documento</label>
+                            <select value={dianConfig.mandato_tercero_tipo_documento} onChange={(e) => setDianConfig({ ...dianConfig, mandato_tercero_tipo_documento: e.target.value })}>
+                              <option value="31">NIT</option>
+                              <option value="13">Cédula de ciudadanía</option>
+                              <option value="22">Cédula de extranjería</option>
+                              <option value="41">Pasaporte</option>
+                              <option value="42">Doc. extranjero</option>
+                            </select>
+                          </div>
+                          <div className="config-form-group" style={{ margin: 0 }}>
+                            <label>Número de identificación</label>
+                            <input value={dianConfig.mandato_tercero_documento} onChange={(e) => setDianConfig({ ...dianConfig, mandato_tercero_documento: e.target.value.replace(/\D/g, '') })} placeholder="Solo dígitos" maxLength={20} />
+                          </div>
+                          <div className="config-form-group" style={{ margin: 0 }}>
+                            <label>Informe: desde</label>
+                            <input type="date" value={mandateRange.desde} onChange={(e) => setMandateRange((r) => ({ ...r, desde: e.target.value }))} />
+                          </div>
+                          <div className="config-form-group" style={{ margin: 0 }}>
+                            <label>Informe: hasta</label>
+                            <input type="date" value={mandateRange.hasta} onChange={(e) => setMandateRange((r) => ({ ...r, hasta: e.target.value }))} />
+                          </div>
+                        </div>
+                      )}
+                    </div>
                     <p style={{ margin: '0.75rem 0 0', fontSize: '0.78rem', color: '#64748b' }}>
                       El DV del NIT y el departamento/municipio (DANE) se calculan solos desde tu NIT y tu ciudad.
                     </p>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginTop: '1rem', cursor: 'pointer', fontSize: '0.85rem', color: '#0f172a', fontWeight: 600 }}>
+                      <input
+                        type="checkbox"
+                        checked={dianConfig.plantilla_exportacion === true}
+                        onChange={(e) => setDianConfig({ ...dianConfig, plantilla_exportacion: e.target.checked })}
+                        style={{ width: '1rem', height: '1rem' }}
+                      />
+                      Exportación (IVA excluido, 0% — art. 481 E.T.): emite en USD sin IVA
+                    </label>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem', flexWrap: 'wrap' }}>
                       <button type="submit" className="config-btn-primary" disabled={savingDianFiscal}>
                         {savingDianFiscal ? 'Guardando…' : 'Guardar datos fiscales'}
@@ -1657,6 +1748,11 @@ const MarketConfig = () => {
                       <button type="button" className="config-btn-primary" disabled={generatingDian} onClick={handleDownloadDianPlantilla}>
                         {generatingDian ? 'Generando…' : 'Descargar plantilla DIAN'}
                       </button>
+                      {dianConfig.mandato_activo && (
+                        <button type="button" className="config-btn-primary" disabled={generatingMandate} onClick={handleDownloadMandateReport}>
+                          {generatingMandate ? 'Generando…' : 'Descargar informe de mandato (PDF)'}
+                        </button>
+                      )}
                     </div>
                   </form>
                 </div>
