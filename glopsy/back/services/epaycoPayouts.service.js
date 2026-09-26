@@ -13,19 +13,20 @@
 // ==========================================
 
 import axios from 'axios';
-import { isEpaycoConfigured, getEpaycoPublicKey, getEpaycoPrivateKey } from './epayco.service.js';
+import { isEpaycoConfigured, getEpaycoPublicKey, getEpaycoPrivateKey, getEpaycoCustomerId } from './epayco.service.js';
 import { loadEpaycoCredentials } from './paymentConfig.service.js';
 
 const isEnabled = () => String(process.env.EPAYCO_PAYOUTS_ENABLED || '').toLowerCase() === 'true';
 export const isEpaycoPayoutsEnabled = isEnabled;
 
-const apifyUrl = () => (process.env.EPAYCO_APIFY_URL || 'https://api.epayco.co').replace(/\/$/, '');
 const baseUrl = () => (process.env.EPAYCO_PAYOUTS_BASE_URL || 'https://apiflow.epayco.io').replace(/\/$/, '');
-const idEpayco = () => process.env.EPAYCO_ID_EPAYCO || '';
+// El id del comercio en ePayco (id_epayco) coincide con P_CUST_ID_CLIENTE; si no se
+// define en env se deriva de la cuenta configurada en la tarjeta ePayco.
+const idEpayco = () => process.env.EPAYCO_ID_EPAYCO || getEpaycoCustomerId() || '';
 const idPlan = () => process.env.EPAYCO_ID_PLAN || '';
 
-// Token de apiflow. El ideal es el token_apify obtenido por login, pero permite
-// un override manual por env (útil para depurar o cuando el producto exige otro token).
+// Token de apiflow: login OAuth 2.0 client_credentials contra apiflow
+// (POST /authentication/api/v2/login). Permite un override manual por env.
 const hardcodedToken = () => process.env.EPAYCO_PAYOUTS_TOKEN || '';
 
 let cachedToken = null;
@@ -45,27 +46,28 @@ const getApifyToken = async () => {
     throw err;
   }
 
-  const basic = Buffer.from(`${pk}:${pKey}`).toString('base64');
+  const params = new URLSearchParams({
+    grant_type: 'client_credentials',
+    client_id: pk,
+    client_secret: pKey,
+  });
   const res = await axios.post(
-    `${apifyUrl()}/login`,
-    '',
+    `${baseUrl()}/authentication/api/v2/login`,
+    params.toString(),
     {
-      headers: {
-        Authorization: `Basic ${basic}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       timeout: Number(process.env.EPAYCO_PAYOUTS_TIMEOUT || 15000),
     }
   );
-  const token = res.data?.token || res.data?.access_token;
+  const token = res.data?.data?.token || res.data?.token || res.data?.access_token;
   if (!token) {
-    const e = new Error('ePayco Payouts: el login no devolvió token.');
+    const e = new Error('ePayco Payouts: el login OAuth no devolvió token.');
     e.code = 'EPAYCO_PAYOUTS_REJECTED';
-    e.status = 200;
+    e.status = res.status;
     e.data = res.data;
     throw e;
   }
-  const exp = Number(res.data?.expires_in) || Number(res.data?.exp || 0);
+  const exp = Number(res.data?.data?.expires_in) || Number(res.data?.expires_in) || 0;
   cachedToken = token;
   cachedTokenExp = exp > 0 ? Date.now() + exp * 1000 : Date.now() + 55 * 60 * 1000;
   return token;
@@ -90,8 +92,13 @@ const digito = (value) => String(value || '').replace(/\D/g, '');
 
 // Valida que el backend tenga todo lo necesario para operar el alta.
 export const assertEpaycoPayoutsConfig = () => {
-  if (!idEpayco() || !idPlan()) {
-    const err = new Error('ePayco Payouts: faltan EPAYCO_ID_EPAYCO y/o EPAYCO_ID_PLAN (panel ePayco Payouts).');
+  if (!idEpayco()) {
+    const err = new Error('ePayco Payouts: no se pudo determinar el id_epayco (define EPAYCO_ID_EPAYCO o configura la tarjeta ePayco).');
+    err.code = 'EPAYCO_PAYOUTS_CONFIG';
+    throw err;
+  }
+  if (!idPlan()) {
+    const err = new Error('ePayco Payouts: falta EPAYCO_ID_PLAN (id del plan para proveedores en el panel ePayco Payouts).');
     err.code = 'EPAYCO_PAYOUTS_CONFIG';
     throw err;
   }
@@ -117,6 +124,10 @@ export const registerEpaycoProvider = async ({ tienda, account } = {}) => {
     return { skipped: true, reason: 'banco_no_soportado' };
   }
 
+  // Asegura que las llaves estén cargadas (para derivar id_epayco del P_CUST_ID_CLIENTE).
+  if (!isEpaycoConfigured()) {
+    await loadEpaycoCredentials().catch(() => {});
+  }
   assertEpaycoPayoutsConfig();
 
   const docLabel = DOC_LABEL[String(account.tipo_documento || '').trim().toUpperCase()] || String(account.tipo_documento || '').toUpperCase();
