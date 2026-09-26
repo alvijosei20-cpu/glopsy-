@@ -150,7 +150,7 @@ const MarketConfig = () => {
   const enviaConfig = enviaConfigs[enviaMode];
   const initialEnviaConfig = initialEnviaConfigs[enviaMode];
 
-  const boldMode = 'produccion';
+  const [boldMode, setBoldMode] = useState('prueba');
   const [boldConfigs, setBoldConfigs] = useState({
     prueba: { public_key: '', access_token: '', webhook_secret: '', is_default: false },
     produccion: { public_key: '', access_token: '', webhook_secret: '', is_default: false }
@@ -2291,6 +2291,47 @@ const MarketConfig = () => {
                       {`Guardado (${boldMode === 'prueba' ? 'Prueba' : 'Producción'})`}
                     </span>
                   )}
+                </div>
+
+                {/* Toggle Prueba / Produccion */}
+                <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.25rem', background: '#f8fafc', padding: '0.75rem 1rem', borderRadius: '0.75rem', border: '1px solid #e2e8f0', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#475569' }}>Modo de credenciales:</span>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => setBoldMode('prueba')}
+                      style={{
+                        padding: '0.4rem 1rem',
+                        borderRadius: '0.5rem',
+                        border: '1px solid #0369a1',
+                        background: boldMode === 'prueba' ? '#0369a1' : 'white',
+                        color: boldMode === 'prueba' ? 'white' : '#0369a1',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      Prueba
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBoldMode('produccion')}
+                      style={{
+                        padding: '0.4rem 1rem',
+                        borderRadius: '0.5rem',
+                        border: '1px solid #0369a1',
+                        background: boldMode === 'produccion' ? '#0369a1' : 'white',
+                        color: boldMode === 'produccion' ? 'white' : '#0369a1',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      Producción
+                    </button>
+                  </div>
                 </div>
 
                 <form onSubmit={handleSaveBold}>
