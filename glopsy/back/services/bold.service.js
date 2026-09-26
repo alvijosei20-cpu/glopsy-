@@ -19,6 +19,7 @@
 // ==========================================
 
 import axios from 'axios';
+import crypto from 'node:crypto';
 
 let runtimeCreds = null;
 export const setBoldCredentials = (creds = null) => { runtimeCreds = creds || null; };
@@ -27,6 +28,19 @@ const apiKey = () => runtimeCreds?.apiKey || process.env.BOLD_API_KEY || '';
 const disputesUrl = () => runtimeCreds?.disputesUrl || process.env.BOLD_DISPUTES_URL || '';
 const payoutUrl = () => runtimeCreds?.payoutUrl || process.env.BOLD_PAYOUT_URL || '';
 const balanceUrl = () => runtimeCreds?.balanceUrl || process.env.BOLD_BALANCE_URL || '';
+
+// Credenciales del checkout Onpage (cuenta Bold de la plataforma).
+const publicKey = () => runtimeCreds?.publicKey || process.env.BOLD_PUBLIC_KEY || '';
+const privateKey = () => runtimeCreds?.privateKey || process.env.BOLD_PRIVATE_KEY || '';
+const customerId = () => runtimeCreds?.customerId || process.env.BOLD_CUSTOMER_ID || '';
+const sdkUrl = () => runtimeCreds?.sdkUrl || process.env.BOLD_SDK_URL || 'https://checkout.bold.co/checkout.js';
+
+export const isBoldCheckoutConfigured = () => Boolean(publicKey() && privateKey());
+export const getBoldPublicKey = () => publicKey();
+export const getBoldPrivateKey = () => privateKey();
+export const getBoldCustomerId = () => customerId();
+export const getBoldSdkUrl = () => sdkUrl();
+export const isBoldTest = () => runtimeCreds?.test !== false;
 
 export const isBoldConfigured = () => Boolean(apiKey() && disputesUrl());
 
@@ -100,4 +114,80 @@ export const getAccountBalances = async () => {
   } catch (err) {
     return { configured: true, available: 0, deferred: 0, frozen: 0, dispute: 0, currency: 'COP', error: String(err?.message || 'error_bold') };
   }
+};
+
+// ------------------------------------------------------------------
+// Checkout Onpage (cuenta Bold de la plataforma).
+// Firma HMAC-SHA256 del webhook: sha256( customer_id ^ key ^ ref ^ txn ^ amount ^ currency )
+// ------------------------------------------------------------------
+
+export const buildBoldSignature = ({
+  custId,
+  ref,
+  transactionId,
+  amount,
+  currency,
+  key = privateKey(),
+}) => crypto
+  .createHmac('sha256', String(key))
+  .update([custId, key, ref, transactionId, amount, currency].join('^'))
+  .digest('hex');
+
+export const verifyBoldSignature = (data = {}) => {
+  const received = String(data.x_signature || data.signature || '').toLowerCase();
+  if (!received) return false;
+  const expected = buildBoldSignature({
+    custId: data.x_cust_id_cliente || data.customer_id,
+    ref: data.x_ref_payco || data.reference,
+    transactionId: data.x_transaction_id || data.transaction_id,
+    amount: data.x_amount || data.amount,
+    currency: data.x_currency_code || data.currency,
+  });
+  const a = Buffer.from(expected);
+  const b = Buffer.from(received);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+};
+
+// Datos para el checkout Onpage de Bold (window.Bold.checkout.configure().open()).
+export const buildBoldOnpageData = ({
+  key = publicKey(),
+  test = isBoldTest(),
+  invoice,
+  amount,
+  currency = 'COP',
+  description,
+  name = 'Compra en Glopsy',
+  confirmationUrl,
+  responseUrl,
+  billing = {},
+  extras = {},
+}) => ({
+  key,
+  test: Boolean(test),
+  name,
+  description: description || name,
+  invoice: String(invoice),
+  currency: String(currency).toLowerCase(),
+  amount: Number(amount),
+  country: 'co',
+  lang: 'es',
+  external: 'false',
+  ...(confirmationUrl ? { confirmation: confirmationUrl } : {}),
+  ...(responseUrl ? { response: responseUrl } : {}),
+  ...(billing.name ? { name_billing: billing.name } : {}),
+  ...(billing.email ? { email_billing: billing.email } : {}),
+  ...(billing.documentType ? { type_doc_billing: billing.documentType } : {}),
+  ...(billing.documentNumber ? { number_doc_billing: billing.documentNumber } : {}),
+  ...(billing.phone ? { mobilephone_billing: billing.phone } : {}),
+  ...(Object.keys(extras).length > 0 ? { extras } : {}),
+});
+
+// Estados de Bold normalizados.
+export const normalizeBoldState = (state, response) => {
+  const s = String(state || response || '').trim().toLowerCase();
+  if (s === 'aceptada' || s === 'aprobada' || s === 'approved') return 'approved';
+  if (s === 'rechazada' || s === 'fallida' || s === 'failed' || s === 'rejected') return 'rejected';
+  if (s === 'reversada' || s === 'reversion' || s === 'refunded') return 'refunded';
+  if (s === 'pendiente' || s === 'pending') return 'pending';
+  return 'unknown';
 };

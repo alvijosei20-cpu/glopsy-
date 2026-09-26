@@ -420,7 +420,7 @@ export const updateTiendaForUser = async (userId, { name = null, slug = null, ga
 };
 
 // Una tienda nueva nace inactiva. Solo puede "darse de alta" si ya configuró su
-// cuenta bancaria de pagos (las pasarelas MP/ePayco/ENVIA son globales de la plataforma).
+// cuenta bancaria de pagos (las pasarelas MP/Bold/ENVIA son globales de la plataforma).
 export const getProductionIntegrationsForUser = async (userId) => {
   const { rows } = await pool.query(
     `SELECT banco_codigo, tipo_cuenta, numero_cuenta, titular_cuenta
@@ -718,16 +718,16 @@ export const saveCheckoutIntegrationForUser = async (userId, provider, mode, { p
 };
 
 // Pasarelas disponibles en el checkout y cuál es la predeterminada.
-// MP y ePayco son para tiendas colombianas (COP).
+// Bold es para tiendas colombianas (COP); Mercado Pago según configuración.
 export const getPublicPaymentMethods = async ({ moneda = 'COP' } = {}) => {
   const providers = [];
   if (String(moneda).toUpperCase() === 'COP') {
     const { rows } = await pool.query(
       `SELECT provider, mode, is_default
        FROM checkout_integrations
-       WHERE provider IN ('mercadopago', 'epayco')
+       WHERE provider IN ('mercadopago', 'bold')
          AND access_token IS NOT NULL AND length(access_token) > 0
-         AND (mode = 'produccion' OR provider = 'epayco')
+         AND mode = 'produccion'
        ORDER BY (mode = 'produccion') DESC, is_default DESC`
     );
     const seen = new Map();

@@ -1,7 +1,7 @@
 // ==========================================
 // Sistema contable (ledger de doble entrada)
 //
-// Los pagos en línea ingresan por la cuenta central de ePayco y se liquidan
+// Los pagos en línea ingresan por la cuenta central de Bold y se liquidan
 // a cada proveedor. Los saldos se derivan de los asientos, no se guardan
 // mutables.
 //
@@ -140,7 +140,7 @@ export const resolveCommissionRate = async (client, { productoId, categoriaId, t
 // ------------------------------------------------------------------
 
 export const recordSaleForOrder = async (orderId, {
-  provider = 'epayco',
+  provider = 'bold',
   moneda = 'COP',
   processorFee = 0,
   withholding = 0,
@@ -518,7 +518,7 @@ const setPayoutState = async (payoutId, estado, extra = {}) => {
 const getPayoutOrders = async (payoutId) => {
   const { rows } = await pool.query(
     `SELECT o.id AS order_id, o.order_number, o.es_exportacion,
-            o.payload->>'epayco_ref_payco' AS ref_payco
+            o.payload->>'bold_ref' AS ref_bold, o.payload->>'epayco_ref_payco' AS ref_payco
      FROM payout_items pi
      JOIN orders o ON o.id = pi.order_id
      WHERE pi.payout_id = $1`,
@@ -601,7 +601,7 @@ export const approvePayout = async ({ payoutId, tiendaId }) => withTransaction(a
   let check;
   try {
     check = await bold.checkPayoutDisputes({
-      orders: orders.map((o) => ({ orderId: o.order_id, refPayco: o.ref_payco })),
+      orders: orders.map((o) => ({ orderId: o.order_id, refPayco: o.ref_payco || o.ref_bold })),
     });
   } catch (err) {
     check = { configured: true, disputes: null, error: String(err?.message || 'error_bold') };

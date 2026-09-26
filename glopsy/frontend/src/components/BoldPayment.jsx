@@ -2,18 +2,18 @@ import React, { useEffect, useState } from 'react';
 import { ShieldCheck, ArrowLeft, CreditCard } from 'lucide-react';
 import api from '../services/api';
 
-const EPAYCO_REF_KEY = 'glopsy_epayco_ref';
-const EPAYCO_SCRIPT_ID = 'epayco-checkout-sdk';
+const BOLD_REF_KEY = 'glopsy_bold_ref';
+const BOLD_SCRIPT_ID = 'bold-checkout-sdk';
 
-const loadEpaycoScript = () => new Promise((resolve, reject) => {
-  if (window.ePayco?.checkout) return resolve();
-  let script = document.getElementById(EPAYCO_SCRIPT_ID);
+const loadBoldScript = (sdkUrl) => new Promise((resolve, reject) => {
+  if (window.Bold?.checkout) return resolve();
+  let script = document.getElementById(BOLD_SCRIPT_ID);
   const onLoad = () => resolve();
-  const onError = () => reject(new Error('No se pudo cargar ePayco.'));
+  const onError = () => reject(new Error('No se pudo cargar Bold.'));
   if (!script) {
     script = document.createElement('script');
-    script.id = EPAYCO_SCRIPT_ID;
-    script.src = 'https://checkout.epayco.co/checkout.js';
+    script.id = BOLD_SCRIPT_ID;
+    script.src = sdkUrl || 'https://checkout.bold.co/checkout.js';
     script.async = true;
     script.onload = onLoad;
     script.onerror = onError;
@@ -31,7 +31,7 @@ const DOC_TYPES = {
   CEDULA_EXTRANJERIA: 'CE',
 };
 
-export default function EpaycoPayment({
+export default function BoldPayment({
   total,
   items,
   shippingCost,
@@ -58,7 +58,7 @@ export default function EpaycoPayment({
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const ref = sessionStorage.getItem(EPAYCO_REF_KEY);
+    const ref = sessionStorage.getItem(BOLD_REF_KEY);
     if (ref) pollStatus(ref);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -66,10 +66,10 @@ export default function EpaycoPayment({
   const pollStatus = async (reference, attempts = 0) => {
     setChecking(true);
     try {
-      const res = await api.get(`/payments/epayco/status/${encodeURIComponent(reference)}`);
+      const res = await api.get(`/payments/bold/status/${encodeURIComponent(reference)}`);
       const status = res.data?.status;
       if (status === 'APPROVED') {
-        sessionStorage.removeItem(EPAYCO_REF_KEY);
+        sessionStorage.removeItem(BOLD_REF_KEY);
         setChecking(false);
         onSuccess?.();
         return;
@@ -83,7 +83,7 @@ export default function EpaycoPayment({
         setError('Aún estamos confirmando tu pago. Si ya pagaste, usa "Verificar estado".');
         return;
       }
-      sessionStorage.removeItem(EPAYCO_REF_KEY);
+      sessionStorage.removeItem(BOLD_REF_KEY);
       setOpened(false);
       setError(status === 'REJECTED' ? 'El pago fue rechazado.' : status === 'REFUNDED' ? 'El pago fue reversado.' : 'No se pudo confirmar el pago.');
     } catch {
@@ -106,7 +106,7 @@ export default function EpaycoPayment({
 
     setLoading(true);
     try {
-      const start = await api.post('/payments/epayco/checkout', {
+      const start = await api.post('/payments/bold/checkout', {
         items,
         shipping_cost: shippingCost,
         shipping_payload: shippingPayload,
@@ -130,16 +130,19 @@ export default function EpaycoPayment({
       });
 
       if (!start.data?.ok) {
-        setError(start.data?.message || 'No fue posible iniciar el pago.');
+        const msg = {
+          bold_no_configurado: 'Aún no se ha configurado la pasarela Bold para esta tienda.',
+        }[start.data?.message] || start.data?.message;
+        setError(msg || 'No fue posible iniciar el pago.');
         return;
       }
 
       const reference = start.data.orderNumber;
       const checkout = start.data.checkout;
-      sessionStorage.setItem(EPAYCO_REF_KEY, reference);
+      sessionStorage.setItem(BOLD_REF_KEY, reference);
 
-      await loadEpaycoScript();
-      const handler = window.ePayco.checkout.configure({ key: checkout.key, test: checkout.test });
+      await loadBoldScript(start.data.sdkUrl);
+      const handler = window.Bold.checkout.configure({ key: checkout.key, test: checkout.test });
       const data = { ...checkout };
       delete data.key;
       delete data.test;
@@ -169,7 +172,7 @@ export default function EpaycoPayment({
     <form onSubmit={handlePay} className="space-y-5">
       <div className="flex items-center justify-between pb-4 border-b border-slate-200">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">Pago con ePayco</h2>
+          <h2 className="text-xl font-bold text-slate-900">Pago con Bold</h2>
           <p className="text-xs text-slate-500">Paga con tarjeta, PSE, Nequi o efectivo. Total: {formatPrice ? formatPrice(total) : total}</p>
         </div>
         <button type="button" onClick={onBack} className="text-xs font-bold text-fuchsia-600 hover:underline cursor-pointer flex items-center gap-1">
@@ -180,14 +183,14 @@ export default function EpaycoPayment({
       {opened ? (
         <div className="space-y-4 text-sm text-slate-600 bg-blue-50 border border-blue-100 rounded-xl p-4">
           <p className="flex items-center gap-2 font-bold text-blue-800">
-            <CreditCard size={16} /> Completa el pago en la ventana de ePayco.
+            <CreditCard size={16} /> Completa el pago en la ventana de Bold.
           </p>
           <p>Si cerraste la ventana, puedes verificar el estado de tu pago.</p>
           <div className="flex gap-3">
             <button
               type="button"
               onClick={() => {
-                const ref = sessionStorage.getItem(EPAYCO_REF_KEY);
+                const ref = sessionStorage.getItem(BOLD_REF_KEY);
                 if (ref) pollStatus(ref);
               }}
               className="bg-white border border-blue-200 text-blue-700 font-bold px-4 py-2 rounded-xl text-sm cursor-pointer"

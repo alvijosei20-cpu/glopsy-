@@ -8,7 +8,7 @@ import { trackEvent } from '../../utils/analytics';
 import { useMoney } from '../../utils/money';
 import { useStorefront } from '../../storefront/StorefrontContext';
 import { useAuth } from '../../context/AuthContext';
-import EpaycoPayment from '../../components/EpaycoPayment';
+import BoldPayment from '../../components/BoldPayment';
 import './cart.css';
 
 export default function Checkout() {
@@ -52,23 +52,24 @@ export default function Checkout() {
   const [showBricks, setShowBricks] = useState(false);
   const [preferenceData, setPreferenceData] = useState(null);
   const [paymentProvider, setPaymentProvider] = useState('mercadopago');
-  const [showEpayco, setShowEpayco] = useState(false);
+  const [showBold, setShowBold] = useState(false);
 
-  // Si el cliente vuelve del checkout de ePayco, retomamos la verificación del pago.
+  // Si el cliente vuelve del checkout de Bold, retomamos la verificación del pago.
   useEffect(() => {
-    if (sessionStorage.getItem('glopsy_epayco_ref')) {
-      setPaymentProvider('epayco');
-      setShowEpayco(true);
+    if (sessionStorage.getItem('glopsy_bold_ref')) {
+      setPaymentProvider('bold');
+      setShowBold(true);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Pasarela predeterminada de la plataforma (MP o ePayco) para tiendas COP.
+  // Pasarela predeterminada de la plataforma (Bold o Mercado Pago) para tiendas COP.
   useEffect(() => {
     if (!isCOP) return;
     api.get('/tienda/payment-methods', { params: { moneda: currency || 'COP' } })
       .then(res => {
         const def = res.data?.default;
-        if (def === 'epayco' || def === 'mercadopago') setPaymentProvider(def);
+        if (def === 'bold' || def === 'mercadopago') setPaymentProvider(def);
       })
       .catch(() => {});
   }, [isCOP, currency]);
@@ -368,7 +369,7 @@ export default function Checkout() {
     sessionStorage.removeItem('glopsy_checkout_snapshot');
   };
 
-  const handleEpaycoSuccess = () => {
+  const handleBoldSuccess = () => {
     setCheckoutSuccess(true);
     localStorage.removeItem('glopsy_cart');
     window.dispatchEvent(new Event('storage'));
@@ -433,10 +434,10 @@ export default function Checkout() {
       quantity: Number(item.quantity || 1),
     }));
 
-    // ePayco: checkout Onpage (el pago se completa en la pasarela embebida).
-    if (paymentProvider === 'epayco') {
+    // Bold: checkout Onpage (el pago se completa en la pasarela embebida).
+    if (paymentProvider === 'bold') {
       trackEvent('begin_checkout', { currency, value: total, items: checkoutItems });
-      setShowEpayco(true);
+      setShowBold(true);
       return;
     }
 
@@ -550,8 +551,8 @@ export default function Checkout() {
               </div>
               <div id="paymentBrick_container" className="min-h-[450px]"></div>
             </div>
-          ) : showEpayco ? (
-            <EpaycoPayment
+          ) : showBold ? (
+            <BoldPayment
               total={total}
               items={cartItemsConPrecio}
               shippingCost={shippingCost}
@@ -561,8 +562,8 @@ export default function Checkout() {
               currency={currency}
               user={user}
               formatPrice={formatPrice}
-              onSuccess={handleEpaycoSuccess}
-              onBack={() => setShowEpayco(false)}
+              onSuccess={handleBoldSuccess}
+              onBack={() => setShowBold(false)}
             />
           ) : (
             <form onSubmit={handleCheckout} className="space-y-6">
@@ -578,10 +579,10 @@ export default function Checkout() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPaymentProvider('epayco')}
-                  className={`p-3 rounded-xl border text-sm font-bold transition-all cursor-pointer ${paymentProvider === 'epayco' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                  onClick={() => setPaymentProvider('bold')}
+                  className={`p-3 rounded-xl border text-sm font-bold transition-all cursor-pointer ${paymentProvider === 'bold' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
                 >
-                  Tarjeta / PSE (ePayco)
+                  Tarjeta / PSE (Bold)
                 </button>
               </div>
             </div>
@@ -956,7 +957,7 @@ export default function Checkout() {
               <ShieldCheck size={20} />
               {loadingCheckout
                 ? 'Procesando pago con Mercado Pago...'
-                : paymentProvider === 'epayco' ? 'Continuar con ePayco' : 'Pagar con Mercado Pago'}
+                : paymentProvider === 'bold' ? 'Continuar con Bold' : 'Pagar con Mercado Pago'}
             </button>
           </form>
           )}

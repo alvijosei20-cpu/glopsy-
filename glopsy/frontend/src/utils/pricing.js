@@ -11,10 +11,10 @@
 
 import { ivaRateForCountry } from './iva';
 
-// Tarifas de pasarela por país. CO: ePayco (tarifa general publicada).
+// Tarifas de pasarela por país. CO: Bold (tarifa general publicada).
 // VE queda en 0 hasta definir la pasarela; ajustar aquí si cambia.
 export const GATEWAY_FEES = {
-  CO: { label: 'ePayco', percent: 3.29, fixed: 700, ivaOnFee: 19 },
+  CO: { label: 'Bold', percent: 3.29, fixed: 700, ivaOnFee: 19 },
   VE: { label: 'Pasarela', percent: 0, fixed: 0, ivaOnFee: 0 },
 };
 

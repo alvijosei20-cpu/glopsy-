@@ -150,17 +150,17 @@ const MarketConfig = () => {
   const enviaConfig = enviaConfigs[enviaMode];
   const initialEnviaConfig = initialEnviaConfigs[enviaMode];
 
-  const epaycoMode = 'produccion';
-  const [epaycoConfigs, setEpaycoConfigs] = useState({
+  const boldMode = 'produccion';
+  const [boldConfigs, setBoldConfigs] = useState({
     prueba: { public_key: '', access_token: '', webhook_secret: '', is_default: false },
     produccion: { public_key: '', access_token: '', webhook_secret: '', is_default: false }
   });
-  const [initialEpaycoConfigs, setInitialEpaycoConfigs] = useState({
+  const [initialBoldConfigs, setInitialBoldConfigs] = useState({
     prueba: { public_key: '', access_token: '', webhook_secret: '', is_default: false },
     produccion: { public_key: '', access_token: '', webhook_secret: '', is_default: false }
   });
-  const epaycoConfig = epaycoConfigs[epaycoMode];
-  const initialEpaycoConfig = initialEpaycoConfigs[epaycoMode];
+  const boldConfig = boldConfigs[boldMode];
+  const initialBoldConfig = initialBoldConfigs[boldMode];
   const [usdStatus, setUsdStatus] = useState({ usd_activation_status: 'none' });
   const [requestingUsd, setRequestingUsd] = useState(false);
   const [payoutAccount, setPayoutAccount] = useState({ banco_codigo: '', banco_nombre: '', tipo_cuenta: '', numero_cuenta: '', titular_cuenta: '', tipo_documento: '', titular_documento: '', tipo_proveedor: '', responsable_iva: false });
@@ -427,14 +427,14 @@ const MarketConfig = () => {
           };
           setEnviaConfigs(newEnvia);
           setInitialEnviaConfigs(JSON.parse(JSON.stringify(newEnvia)));
-          const epaycoPrueba = integrations.find(i => i.provider === 'epayco' && (i.mode === 'prueba' || !i.mode));
-          const epaycoProd = integrations.find(i => i.provider === 'epayco' && i.mode === 'produccion');
-          const newEpayco = {
-            prueba: { public_key: epaycoPrueba?.public_key || '', access_token: epaycoPrueba?.access_token || '', webhook_secret: epaycoPrueba?.webhook_secret || '', is_default: false },
-            produccion: { public_key: epaycoProd?.public_key || '', access_token: epaycoProd?.access_token || '', webhook_secret: epaycoProd?.webhook_secret || '', is_default: epaycoProd?.is_default === true }
+          const boldPrueba = integrations.find(i => i.provider === 'bold' && (i.mode === 'prueba' || !i.mode));
+          const boldProd = integrations.find(i => i.provider === 'bold' && i.mode === 'produccion');
+          const newBold = {
+            prueba: { public_key: boldPrueba?.public_key || '', access_token: boldPrueba?.access_token || '', webhook_secret: boldPrueba?.webhook_secret || '', is_default: false },
+            produccion: { public_key: boldProd?.public_key || '', access_token: boldProd?.access_token || '', webhook_secret: boldProd?.webhook_secret || '', is_default: boldProd?.is_default === true }
           };
-          setEpaycoConfigs(newEpayco);
-          setInitialEpaycoConfigs(JSON.parse(JSON.stringify(newEpayco)));
+          setBoldConfigs(newBold);
+          setInitialBoldConfigs(JSON.parse(JSON.stringify(newBold)));
         }
         // fetch shipping profiles
         const resPerfiles = await api.get('/tienda/perfiles-envio').catch(() => ({ data: { perfiles: [] } }));
@@ -574,33 +574,33 @@ const MarketConfig = () => {
     }
   };
 
-  const handleSaveEpayco = async (e) => {
+  const handleSaveBold = async (e) => {
     e.preventDefault();
-    if (!epaycoConfig.public_key || !epaycoConfig.public_key.trim()) {
-      setNotice('Error: La Public Key de ePayco es obligatoria.');
+    if (!boldConfig.public_key || !boldConfig.public_key.trim()) {
+      setNotice('Error: La Public Key de Bold es obligatoria.');
       return;
     }
-    if (!epaycoConfig.access_token || !epaycoConfig.access_token.trim()) {
-      setNotice('Error: La llave privada (P_KEY) de ePayco es obligatoria.');
+    if (!boldConfig.access_token || !boldConfig.access_token.trim()) {
+      setNotice('Error: La llave de API (secreto) de Bold es obligatoria.');
       return;
     }
     try {
-      const tokenChanged = epaycoConfig.access_token !== initialEpaycoConfig.access_token && epaycoConfig.access_token.trim() !== '';
+      const tokenChanged = boldConfig.access_token !== initialBoldConfig.access_token && boldConfig.access_token.trim() !== '';
       const res = await api.post('/tienda/checkout-integrations', {
-        provider: 'epayco',
-        mode: epaycoMode,
-        is_default: epaycoConfig.is_default === true,
-        public_key: epaycoConfig.public_key,
-        ...(tokenChanged ? { access_token: epaycoConfig.access_token } : {}),
-        webhook_secret: epaycoConfig.webhook_secret || undefined,
+        provider: 'bold',
+        mode: boldMode,
+        is_default: boldConfig.is_default === true,
+        public_key: boldConfig.public_key,
+        ...(tokenChanged ? { access_token: boldConfig.access_token } : {}),
+        webhook_secret: boldConfig.webhook_secret || undefined,
       });
-      setNotice(res.data.message || 'Configuración de ePayco guardada con éxito.');
-      setInitialEpaycoConfigs(prev => ({ ...prev, [epaycoMode]: { ...epaycoConfig } }));
+      setNotice(res.data.message || 'Configuración de Bold guardada con éxito.');
+      setInitialBoldConfigs(prev => ({ ...prev, [boldMode]: { ...boldConfig } }));
       const resCheckout = await api.get('/tienda/checkout-integrations');
       if (resCheckout.data?.integrations) setSavedCheckoutIntegrations(resCheckout.data.integrations);
     } catch (err) {
-      console.error('Error al guardar ePayco:', err);
-      setNotice(err.response?.data?.message || 'Error al guardar la configuración de ePayco.');
+      console.error('Error al guardar Bold:', err);
+      setNotice(err.response?.data?.message || 'Error al guardar la configuración de Bold.');
     }
   };
 
@@ -1088,7 +1088,7 @@ const MarketConfig = () => {
   if (!tienda) return null;
 
   const mpSaved = savedCheckoutIntegrations.find(i => i.provider === 'mercadopago' && (i.mode === mpMode || (!i.mode && mpMode === 'prueba')));
-  const epaycoSaved = savedCheckoutIntegrations.find(i => i.provider === 'epayco' && (i.mode === epaycoMode || (!i.mode && epaycoMode === 'prueba')));
+  const boldSaved = savedCheckoutIntegrations.find(i => i.provider === 'bold' && (i.mode === boldMode || (!i.mode && boldMode === 'prueba')));
   const storePaisIso = paises.find((p) => Number(p.id) === Number(tienda?.paisId))?.codigo_iso || null;
   const isVenezuela = storePaisIso === 'VE';
   const internationalDispatch = tienda?.internationalDispatchProvider || '';
@@ -2020,7 +2020,7 @@ const MarketConfig = () => {
                 <div>
                   <h3>Payments y Checkout</h3>
                   <p>{isMainStore
-                    ? 'Pasarelas globales de la plataforma (Mercado Pago, ePayco y ENVIA).'
+                    ? 'Pasarelas globales de la plataforma (Mercado Pago, Bold y ENVIA).'
                     : 'Configura la cuenta bancaria donde recibes la liquidación de tus ventas.'}</p>
                 </div>
               </div>
@@ -2276,54 +2276,54 @@ const MarketConfig = () => {
                 </form>
               </div>
 
-              {/* ePayco Section */}
+              {/* Bold Section */}
               <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginBottom: '2rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
-                  <div style={{ background: '#e11d2e', color: 'white', fontWeight: 900, padding: '0.5rem 0.9rem', borderRadius: '0.5rem', fontSize: '1.1rem', letterSpacing: '1px' }}>
-                    e
+                  <div style={{ background: '#0369a1', color: 'white', fontWeight: 900, padding: '0.5rem 0.9rem', borderRadius: '0.5rem', fontSize: '1.1rem', letterSpacing: '1px' }}>
+                    B
                   </div>
                   <div style={{ flex: 1 }}>
-                    <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>ePayco (Colombia)</h4>
+                    <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>Bold (Colombia)</h4>
                     <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Checkout Onpage: tarjeta, PSE, Nequi y efectivo.</p>
                   </div>
-                  {epaycoSaved && (
+                  {boldSaved && (
                     <span style={{ background: '#dcfce7', color: '#166534', padding: '0.25rem 0.75rem', borderRadius: '999px', fontSize: '0.8rem', fontWeight: 600 }}>
-                      {`Guardado (${epaycoMode === 'prueba' ? 'Prueba' : 'Producción'})`}
+                      {`Guardado (${boldMode === 'prueba' ? 'Prueba' : 'Producción'})`}
                     </span>
                   )}
                 </div>
 
-                <form onSubmit={handleSaveEpayco}>
+                <form onSubmit={handleSaveBold}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                     <div className="config-form-group" style={{ margin: 0 }}>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#334155', fontWeight: 600 }}>
-                        <KeyRound size={16} color="#e11d2e" /> Public Key ({epaycoMode === 'prueba' ? 'Prueba' : 'Producción'})
+                        <KeyRound size={16} color="#0369a1" /> Public Key ({boldMode === 'prueba' ? 'Prueba' : 'Producción'})
                       </label>
-                      <input type="text" value={epaycoConfig.public_key} onChange={(e) => setEpaycoConfigs({ ...epaycoConfigs, [epaycoMode]: { ...epaycoConfig, public_key: e.target.value } })} placeholder="Llave pública del comercio" />
+                      <input type="text" value={boldConfig.public_key} onChange={(e) => setBoldConfigs({ ...boldConfigs, [boldMode]: { ...boldConfig, public_key: e.target.value } })} placeholder="Llave pública del comercio Bold" />
                     </div>
                     <div className="config-form-group" style={{ margin: 0 }}>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#334155', fontWeight: 600 }}>
-                        <Shield size={16} color="#e11d2e" /> Llave privada P_KEY ({epaycoMode === 'prueba' ? 'Prueba' : 'Producción'})
+                        <Shield size={16} color="#0369a1" /> Llave de API / secreto ({boldMode === 'prueba' ? 'Prueba' : 'Producción'})
                       </label>
-                      <input type="password" value={epaycoConfig.access_token} onChange={(e) => setEpaycoConfigs({ ...epaycoConfigs, [epaycoMode]: { ...epaycoConfig, access_token: e.target.value } })} placeholder="Firma MD5 del webhook" />
+                      <input type="password" value={boldConfig.access_token} onChange={(e) => setBoldConfigs({ ...boldConfigs, [boldMode]: { ...boldConfig, access_token: e.target.value } })} placeholder="Firma del webhook / API key de Bold" />
                     </div>
                     <div className="config-form-group" style={{ margin: 0 }}>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#334155', fontWeight: 600 }}>
-                        <Hash size={16} color="#e11d2e" /> P_CUST_ID_CLIENTE (opcional)
+                        <Hash size={16} color="#0369a1" /> ID de comercio/customer (opcional)
                       </label>
-                      <input type="password" value={epaycoConfig.webhook_secret} onChange={(e) => setEpaycoConfigs({ ...epaycoConfigs, [epaycoMode]: { ...epaycoConfig, webhook_secret: e.target.value } })} placeholder="ID de cliente del comercio" />
+                      <input type="password" value={boldConfig.webhook_secret} onChange={(e) => setBoldConfigs({ ...boldConfigs, [boldMode]: { ...boldConfig, webhook_secret: e.target.value } })} placeholder="ID de cliente del comercio Bold" />
                     </div>
                   </div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem', color: '#334155', fontWeight: 600 }}>
                     <input
                       type="checkbox"
-                      checked={epaycoConfig.is_default === true}
-                      onChange={(e) => setEpaycoConfigs({ ...epaycoConfigs, [epaycoMode]: { ...epaycoConfig, is_default: e.target.checked } })}
+                      checked={boldConfig.is_default === true}
+                      onChange={(e) => setBoldConfigs({ ...boldConfigs, [boldMode]: { ...boldConfig, is_default: e.target.checked } })}
                     />
-                    Usar ePayco como pasarela predeterminada en el checkout
+                    Usar Bold como pasarela predeterminada en el checkout
                   </label>
                   <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
-                    <button type="submit" className="config-btn-primary">Guardar ePayco</button>
+                    <button type="submit" className="config-btn-primary">Guardar Bold</button>
                   </div>
                 </form>
               </div>
