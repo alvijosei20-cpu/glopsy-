@@ -1,4 +1,4 @@
-import { Percent, CreditCard, Store, ReceiptText } from 'lucide-react';
+import { Percent, Store, ReceiptText } from 'lucide-react';
 
 const money = (value, currency) => {
   const n = Number(value || 0);
@@ -12,7 +12,7 @@ const money = (value, currency) => {
 export default function PriceBreakdown({ breakdown, currency = 'COP' }) {
   if (!breakdown) return null;
   const {
-    price, ivaPct, iva, glopsyPct, glopsy, gateway, gatewayBase, gatewayIva, total,
+    price, ivaPct, iva, glopsyPct, glopsy, gateway, total,
   } = breakdown;
 
   const rowStyle = {
@@ -49,18 +49,15 @@ export default function PriceBreakdown({ breakdown, currency = 'COP' }) {
         <strong style={{ whiteSpace: 'nowrap' }}>{money(glopsy, currency)}</strong>
       </div>
 
-      <div style={rowStyle}>
-        <span style={labelStyle}>
-          <CreditCard size={14} color="#7e22ce" /> Comisión {gateway?.label || 'pasarela'}{' '}
-          {pctTag(`${gateway?.percent || 0}% + ${money(gateway?.fixed || 0, currency)}${gateway?.ivaOnFee ? ` + IVA ${gateway.ivaOnFee}%` : ''}`)}
-        </span>
-        <strong style={{ whiteSpace: 'nowrap' }}>{money(gatewayBase + gatewayIva, currency)}</strong>
-      </div>
-
       <div style={{ borderTop: '1px dashed #d8b4fe', marginTop: '8px', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontWeight: 800, color: '#6b21a8', fontSize: '0.95rem' }}>Precio total (se publica)</span>
         <span style={{ fontWeight: 900, color: '#6b21a8', fontSize: '1.15rem', whiteSpace: 'nowrap' }}>{money(total, currency)}</span>
       </div>
+
+      <p style={{ margin: '8px 0 0', fontSize: '0.72rem', color: '#9d174d' }}>
+        La tarifa de la pasarela ({gateway?.label ? `${gateway.label}: ${gateway.percent}%` : 'Bold: 3.29% + $900'}) se agrega en el
+        checkout según el método de pago que elija el cliente.
+      </p>
     </div>
   );
 }

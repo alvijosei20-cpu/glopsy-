@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ShieldCheck, ArrowLeft, CreditCard } from 'lucide-react';
 import api from '../services/api';
+import { BOLD_METHOD_FEES, boldGatewayFeeForMethod } from '../utils/pricing';
 
 const BOLD_REF_KEY = 'glopsy_bold_ref';
 const BOLD_SCRIPT_ID = 'bold-checkout-sdk';
@@ -55,7 +56,11 @@ export default function BoldPayment({
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(false);
   const [opened, setOpened] = useState(false);
+  const [method, setMethod] = useState(String(currency).toUpperCase() === 'USD' ? 'internacional' : 'otras_tarjetas');
   const [error, setError] = useState('');
+
+  const fee = boldGatewayFeeForMethod(total, method, { currency });
+  const newTotal = (Number(total) || 0) + fee.total;
 
   useEffect(() => {
     const ref = sessionStorage.getItem(BOLD_REF_KEY);
@@ -119,6 +124,8 @@ export default function BoldPayment({
         guestHash,
         currency,
         response_url: `${window.location.origin}/checkout`,
+        payment_method: method,
+        gateway_fee: { base: fee.base, iva: fee.iva, total: fee.total },
         billing: {
           name: billing.name,
           email: billing.email,
@@ -173,12 +180,42 @@ export default function BoldPayment({
       <div className="flex items-center justify-between pb-4 border-b border-slate-200">
         <div>
           <h2 className="text-xl font-bold text-slate-900">Pago con Bold</h2>
-          <p className="text-xs text-slate-500">Paga con tarjeta, PSE, Nequi o efectivo. Total: {formatPrice ? formatPrice(total) : total}</p>
+          <p className="text-xs text-slate-500">
+            Subtotal: {formatPrice ? formatPrice(total) : total}. Elige el método de pago, la tarifa se agrega al total.
+          </p>
         </div>
         <button type="button" onClick={onBack} className="text-xs font-bold text-fuchsia-600 hover:underline cursor-pointer flex items-center gap-1">
           <ArrowLeft size={14} /> Volver
         </button>
       </div>
+
+      {!opened && (
+        <div className="space-y-2 bg-slate-50 border border-slate-200 rounded-xl p-4">
+          <label className="block text-xs font-bold text-slate-700">Método de pago Bold (tarifa por transacción)</label>
+          <div className="grid grid-cols-1 gap-2">
+            {Object.entries(BOLD_METHOD_FEES).map(([key, m]) => (
+              <label key={key} className={`flex items-center justify-between gap-2 p-2.5 rounded-lg border cursor-pointer text-sm ${method === key ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white'}`}>
+                <span className="flex items-center gap-2 font-semibold text-slate-800">
+                  <input type="radio" name="bold-method" checked={method === key} onChange={() => setMethod(key)} />
+                  {m.label}
+                </span>
+                <span className="text-xs font-bold text-slate-500">{m.percent}%{fee.method === m ? ` + ${formatPrice ? formatPrice(fee.base) : fee.base}` : ''}</span>
+              </label>
+            ))}
+          </div>
+          <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-sm">
+            <span className="font-bold text-slate-700">
+              Tarifa {fee.method.label}
+              {` (${fee.method.percent}%${fee.base ? ` + fijo` : ''}${fee.iva ? ` + IVA 19%` : ''})`}
+            </span>
+            <strong className="text-slate-900">{formatPrice ? formatPrice(fee.total) : fee.total}</strong>
+          </div>
+          <div className="flex items-center justify-between text-sm font-extrabold text-slate-900">
+            <span>Total a pagar</span>
+            <span className="text-base">{formatPrice ? formatPrice(newTotal) : newTotal}</span>
+          </div>
+        </div>
+      )}
 
       {opened ? (
         <div className="space-y-4 text-sm text-slate-600 bg-blue-50 border border-blue-100 rounded-xl p-4">
@@ -247,7 +284,7 @@ export default function BoldPayment({
         <button type="submit" disabled={loading}
           className="w-full text-white font-bold py-4 rounded-2xl shadow-lg text-base flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700">
           <ShieldCheck size={20} />
-          {loading ? 'Iniciando pago…' : `Pagar ${formatPrice ? formatPrice(total) : total}`}
+          {loading ? 'Iniciando pago…' : `Pagar ${formatPrice ? formatPrice(newTotal) : newTotal}`}
         </button>
       )}
     </form>

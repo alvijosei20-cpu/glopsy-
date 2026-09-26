@@ -18,6 +18,9 @@ import { resolveCheckoutCurrency, convertAmount } from './checkoutCurrency.servi
 
 const ensureCreds = () => loadBoldCredentials().catch(() => null);
 
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+const cleanString = (v, { maxLength = 30 } = {}) => String(v || '').trim().slice(0, maxLength);
+
 const findOrder = async (reference) => {
   if (!reference) return null;
   const { rows } = await pool.query(
@@ -76,6 +79,8 @@ export const startBoldCheckout = async (userId, {
   billing = {},
   responseUrl = null,
   baseUrl = '',
+  paymentMethod = null,
+  gatewayFee = null,
 } = {}) => {
   await ensureCreds();
   if (!bold.isBoldCheckoutConfigured()) return { ok: false, reason: 'bold_no_configurado' };
@@ -89,9 +94,30 @@ export const startBoldCheckout = async (userId, {
   });
 
   const { currency, rate, converted } = await resolveCheckoutCurrency(order.tiendaId, visitor);
-  const chargeAmount = converted ? convertAmount(order.totalAmount, rate) : order.totalAmount;
+  let chargeAmount = converted ? convertAmount(order.totalAmount, rate) : order.totalAmount;
 
-  await pool.query(`UPDATE orders SET amount = $2, currency = $3 WHERE id = $1`, [order.orderId, chargeAmount, currency]);
+  // Recargo de la pasarela según el método de pago Bold elegido por el cliente.
+  let fee = null;
+  if (gatewayFee && Number.isFinite(Number(gatewayFee.total)) && Number(gatewayFee.total) >= 0) {
+    const feeTotal = round2(Number(gatewayFee.total));
+    const maxFee = round2(Number(order.totalAmount) * 0.10) + 10000;
+    if (feeTotal <= maxFee) {
+      fee = {
+        method: cleanString(paymentMethod, { maxLength: 30 }) || 'otras_tarjetas',
+        base: Number.isFinite(Number(gatewayFee.base)) ? round2(Number(gatewayFee.base)) : 0,
+        iva: Number.isFinite(Number(gatewayFee.iva)) ? round2(Number(gatewayFee.iva)) : 0,
+        total: feeTotal,
+      };
+      chargeAmount = round2(chargeAmount + feeTotal);
+    }
+  }
+
+  await pool.query(
+    `UPDATE orders SET amount = $2, currency = $3,
+          payload = COALESCE(payload, '{}'::jsonb) || $4::jsonb
+     WHERE id = $1`,
+    [order.orderId, chargeAmount, currency, JSON.stringify(fee ? { bold_fee: fee } : {})]
+  );
 
   if (String(currency).toUpperCase() === 'USD') {
     await pool.query(`UPDATE orders SET es_exportacion = TRUE WHERE id = $1`, [order.orderId]);
@@ -114,6 +140,7 @@ export const startBoldCheckout = async (userId, {
     orderNumber: order.orderNumber,
     orderHash: order.orderHash,
     amount: chargeAmount,
+    gatewayFee: fee,
     currency,
     sdkUrl: bold.getBoldSdkUrl(),
     checkout: {

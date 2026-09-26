@@ -4,26 +4,38 @@
 // sistema le suma, según el país de la tienda:
 //   + IVA (si aplica)
 //   + comisión de Glopsy por categoría
-//   + comisión de la pasarela de pago
 // El resultado es el PRECIO TOTAL que se publica (suggested_price).
 //
-// El Precio Base es solo control interno y NO entra en este cálculo.
+// La tarifa de la pasarela NO se suma aquí: Bold cobra distinto según el método
+// de pago, así que se agrega en el CHECKOUT al momento que el cliente elige el
+// método (ver boldGatewayFeeForMethod). El Precio Base es solo control interno
+// y NO entra en este cálculo.
 
 import { ivaRateForCountry } from './iva';
 
-// Tarifas de pasarela por país. CO: Bold (tarifa general publicada).
-// VE queda en 0 hasta definir la pasarela; ajustar aquí si cambia.
-export const GATEWAY_FEES = {
-  CO: { label: 'Bold', percent: 3.29, fixed: 700, ivaOnFee: 19 },
-  VE: { label: 'Pasarela', percent: 0, fixed: 0, ivaOnFee: 0 },
+// Tarifas públicas de Bold para pagos en línea (antes de IVA y retenciones).
+// Se aplican en el checkout según el método seleccionado por el cliente.
+export const BOLD_METHOD_FEES = {
+  visa_mastercard: { label: 'Tarjeta Visa / Mastercard', percent: 2.99, fixed: 900, ivaOnFee: 19 },
+  otras_tarjetas: { label: 'Otras tarjetas', percent: 3.29, fixed: 900, ivaOnFee: 19 },
+  pse_bancolombia: { label: 'PSE / Bancolombia / Billeteras', percent: 2.89, fixed: 900, ivaOnFee: 19 },
+  internacional: { label: 'Tarjeta internacional (+1%)', percent: 4.29, fixed: 900, ivaOnFee: 19 },
 };
-
-export const gatewayFeeForCountry = (paisCodigo) =>
-  GATEWAY_FEES[String(paisCodigo || '').toUpperCase()] || GATEWAY_FEES.CO;
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
-// Devuelve el desglose y el total. `salePrice` es el precio que puso el proveedor.
+// Recargo de la pasarela para el checkout, según el método de pago Bold.
+// `amount` es el total a cobrar (sin tarifa). Devuelve base (sin IVA), iva y
+// el total del recargo. El fijo aplica solo en moneda local (COP).
+export const boldGatewayFeeForMethod = (amount, methodKey, { currency = 'COP' } = {}) => {
+  const fee = BOLD_METHOD_FEES[methodKey] || BOLD_METHOD_FEES.otras_tarjetas;
+  const esLocal = String(currency).toUpperCase() === 'COP';
+  const base = round2((Number(amount) * (Number(fee.percent) || 0)) / 100 + (esLocal ? Number(fee.fixed) || 0 : 0));
+  const iva = round2(base * (Number(fee.ivaOnFee) || 0) / 100);
+  return { method: fee, base, iva, total: round2(base + iva) };
+};
+
+// Calcula el precio publicado SIN tarifa de pasarela (se agrega en checkout).
 export const calculatePublishedPrice = ({
   salePrice,
   paisCodigo,
@@ -32,16 +44,12 @@ export const calculatePublishedPrice = ({
   gateway,
 } = {}) => {
   const price = Number(salePrice) || 0;
-  const fee = gateway || gatewayFeeForCountry(paisCodigo);
   const ivaPct = ivaAplica ? ivaRateForCountry(paisCodigo) : 0;
   const glopsyPct = Number(glopsyPorcentaje) || 0;
 
   const iva = round2((price * ivaPct) / 100);
   const glopsy = round2((price * glopsyPct) / 100);
-  const gatewayBase = round2((price * (Number(fee.percent) || 0)) / 100 + (Number(fee.fixed) || 0));
-  const gatewayIva = round2((gatewayBase * (Number(fee.ivaOnFee) || 0)) / 100);
-  const gatewayTotal = round2(gatewayBase + gatewayIva);
-  const total = round2(price + iva + glopsy + gatewayTotal);
+  const total = round2(price + iva + glopsy);
 
   return {
     price,
@@ -49,10 +57,10 @@ export const calculatePublishedPrice = ({
     iva,
     glopsyPct,
     glopsy,
-    gateway: fee,
-    gatewayBase,
-    gatewayIva,
-    gatewayTotal,
+    gateway: gateway || null,
+    gatewayBase: 0,
+    gatewayIva: 0,
+    gatewayTotal: 0,
     total,
     extra: round2(total - price),
   };
