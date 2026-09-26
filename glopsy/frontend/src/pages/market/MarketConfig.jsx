@@ -115,7 +115,7 @@ const MarketConfig = () => {
   const enviaConfig = enviaConfigs[enviaMode];
   const initialEnviaConfig = initialEnviaConfigs[enviaMode];
 
-  const [epaycoMode, setEpaycoMode] = useState('prueba');
+  const epaycoMode = 'produccion';
   const [epaycoConfigs, setEpaycoConfigs] = useState({
     prueba: { public_key: '', access_token: '', webhook_secret: '', is_default: false },
     produccion: { public_key: '', access_token: '', webhook_secret: '', is_default: false }
@@ -2195,21 +2195,6 @@ const MarketConfig = () => {
                       {`Guardado (${epaycoMode === 'prueba' ? 'Prueba' : 'Producción'})`}
                     </span>
                   )}
-                </div>
-
-                {/* Toggle Prueba / Produccion */}
-                <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.25rem', background: '#f8fafc', padding: '0.75rem 1rem', borderRadius: '0.75rem', border: '1px solid #e2e8f0', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#475569' }}>Modo de credenciales:</span>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button type="button" onClick={() => setEpaycoMode('prueba')}
-                      style={{ padding: '0.4rem 1rem', borderRadius: '0.5rem', border: '1px solid #e11d2e', background: epaycoMode === 'prueba' ? '#e11d2e' : 'white', color: epaycoMode === 'prueba' ? 'white' : '#e11d2e', fontWeight: 600, cursor: 'pointer', fontSize: '0.85rem' }}>
-                      Prueba
-                    </button>
-                    <button type="button" onClick={() => setEpaycoMode('produccion')}
-                      style={{ padding: '0.4rem 1rem', borderRadius: '0.5rem', border: '1px solid #e11d2e', background: epaycoMode === 'produccion' ? '#e11d2e' : 'white', color: epaycoMode === 'produccion' ? 'white' : '#e11d2e', fontWeight: 600, cursor: 'pointer', fontSize: '0.85rem' }}>
-                      Producción
-                    </button>
-                  </div>
                 </div>
 
                 <form onSubmit={handleSaveEpayco}>
