@@ -256,9 +256,8 @@ export default function Vender() {
         contacto_email: contactEmail.trim(),
         contacto_telefono: normalizePhone(paisIso, contactPhone) || contactPhone.trim(),
         terms,
+        bank,
       });
-      // La tienda ya existe: se registra la cuenta donde recibirá sus pagos.
-      await api.put('/tienda/payout-account', bank);
       setShowTerms(false);
       await refreshTienda();
       navigate('/market/config', { replace: true });

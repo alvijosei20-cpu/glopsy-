@@ -32,6 +32,7 @@ import { cleanString, isAllowedEnum } from '../utils/validation.js';
 import { getDocumentType, isValidDocumentNumber, isValidPhoneForCountry, normalizePhone, isValidEmail } from '../utils/countryFields.js';
 import { invalidateEdgeCache } from '../utils/cacheInvalidate.js';
 import { invalidateCatalogCache, invalidateProductDetailCachesForStore } from '../services/product.service.js';
+import { registerEpaycoProvider, isEpaycoPayoutsEnabled } from '../services/epaycoPayouts.service.js';
 
 export const createTiendaController = ({
   getShippingCosts = async (req, res) => {
@@ -153,9 +154,63 @@ export const createTiendaController = ({
           message: 'Debes aceptar los Términos y Condiciones y el Contrato de Mandato para crear tu tienda.',
         });
       }
-      const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
+const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
 
-      const tienda = await ensureTienda(req.auth.userId, {
+      // Cuenta de pagos del vendedor (se envía en el formulario de registro de /vender).
+      // Es opcional en la petición, pero obligatoria si el alta de proveedores en ePayco está activo.
+      const bankRaw = req.body?.bank && typeof req.body.bank === 'object' && !Array.isArray(req.body.bank) ? req.body.bank : {};
+      const bank = {
+        banco_codigo: cleanString(bankRaw.banco_codigo, { maxLength: 20 }),
+        banco_nombre: cleanString(bankRaw.banco_nombre, { maxLength: 120 }),
+        tipo_cuenta: cleanString(bankRaw.tipo_cuenta, { maxLength: 20 }),
+        numero_cuenta: cleanString(bankRaw.numero_cuenta, { maxLength: 40 }),
+        titular_cuenta: cleanString(bankRaw.titular_cuenta, { maxLength: 150 }),
+        titular_documento: cleanString(bankRaw.titular_documento, { maxLength: 40 }),
+        tipo_documento: cleanString(bankRaw.tipo_documento, { maxLength: 20 }),
+        tipo_proveedor: cleanString(bankRaw.tipo_proveedor, { maxLength: 20 }),
+      };
+      const bankProvided = Object.values(bank).some((v) => v);
+      const responsable_iva = bank.tipo_proveedor === 'juridica'
+        ? true
+        : bankRaw.responsable_iva === true || bankRaw.responsable_iva === 'true';
+
+      if (bankProvided) {
+        if (!bank.banco_codigo || !bank.tipo_cuenta || !bank.numero_cuenta || !bank.titular_cuenta || !bank.titular_documento || !bank.tipo_documento) {
+          return res.status(400).json({ ok: false, message: 'Banco, tipo de cuenta, número de cuenta, titular, tipo y número de documento son obligatorios.' });
+        }
+        if (!isAllowedEnum(bank.tipo_proveedor, ['natural', 'juridica'])) {
+          return res.status(400).json({ ok: false, message: 'Selecciona si eres persona natural o jurídica.' });
+        }
+        if (!isAllowedEnum(bank.tipo_cuenta, ['ahorro', 'corriente'])) {
+          return res.status(400).json({ ok: false, message: 'El tipo de cuenta debe ser ahorro o corriente.' });
+        }
+        const docType = getDocumentType(paisCodigo, bank.tipo_documento);
+        if (!docType) {
+          return res.status(400).json({ ok: false, message: 'Selecciona un tipo de documento válido para el país de tu tienda.' });
+        }
+        if (!isValidDocumentNumber(paisCodigo, bank.tipo_documento, bank.titular_documento)) {
+          return res.status(400).json({ ok: false, message: `El número de documento no es válido (${docType.hint}).` });
+        }
+        const esBinance = bank.banco_codigo === 'BINANCE_PAY';
+        const cuentaValida = esBinance
+          ? /^[A-Za-z0-9._@-]{4,60}$/.test(bank.numero_cuenta)
+          : /^\d{4,40}$/.test(bank.numero_cuenta);
+        if (!cuentaValida) {
+          return res.status(400).json({
+            ok: false,
+            message: esBinance
+              ? 'Ingresa tu Binance Pay ID o correo (4 a 60 caracteres).'
+              : 'El número de cuenta debe tener entre 4 y 40 dígitos.',
+          });
+        }
+      } else if (isEpaycoPayoutsEnabled() && String(paisCodigo).toUpperCase() === 'CO') {
+        return res.status(400).json({ ok: false, message: 'Debes registrar tu cuenta de pagos (banco, cuenta y titular) al crear la tienda.' });
+      }
+
+      const { rows: existingTienda } = await pool.query(`SELECT usrid FROM tiendas WHERE usrid = $1 LIMIT 1`, [req.auth.userId]);
+      const hadStore = Boolean(existingTienda[0]);
+
+      const tienda = await ensureTiendaForUser(req.auth.userId, {
         name,
         slug,
         ga_id: gaRaw !== undefined && gaRaw !== null ? String(gaRaw).trim().slice(0, 40) : null,
@@ -165,6 +220,48 @@ export const createTiendaController = ({
       });
       if (!tienda) {
         return res.status(400).json({ ok: false, message: 'No fue posible crear la tienda.' });
+      }
+
+      // Guarda la cuenta de pagos del vendedor (mismos datos del registro de /vender).
+      let savedAccount = null;
+      if (bankProvided) {
+        try {
+          savedAccount = await savePayoutAccountForUser(req.auth.userId, {
+            ...bank,
+            responsable_iva,
+          });
+        } catch (saveErr) {
+          if (!hadStore) await pool.query(`DELETE FROM tiendas WHERE usrid = $1`, [req.auth.userId]).catch(() => {});
+          return res.status(saveErr.code === 'BANCO_INVALIDO' ? 400 : 500).json({
+            ok: false,
+            message: saveErr.code === 'BANCO_INVALIDO' ? saveErr.message : 'No fue posible guardar la cuenta de pagos.',
+          });
+        }
+      }
+
+      // Alta automática del vendedor como proveedor en ePayco Payouts.
+      // Cuando el producto está activo, el alta es obligatoria: si falla se rechaza
+      // la creación de la tienda (y se borra la tienda recién creada).
+      try {
+        const provResult = await registerEpaycoProvider({
+          tienda: { ...tienda, paisCodigo, contacto_email: tienda.contacto_email || contactoEmail, contacto_telefono: tienda.contacto_telefono || contactoTelefono },
+          account: savedAccount || bank,
+        });
+        if (provResult.ok && provResult.data) {
+          console.log(`[ePayco Payouts] proveedor registrado para tienda ${tienda.usrid || tienda.hashid || req.auth.userId}`);
+        } else if (provResult.skipped && provResult.reason !== 'epayco_payouts_inactivo') {
+          console.log(`[ePayco Payouts] sin alta (${provResult.reason}) para tienda ${req.auth.userId}`);
+        }
+      } catch (provErr) {
+        console.error('[ePayco Payouts] alta de proveedor fallida:', provErr.message);
+        if (!hadStore) {
+          await pool.query(`DELETE FROM tiendas WHERE usrid = $1`, [req.auth.userId]).catch(() => {});
+        }
+        return res.status(502).json({
+          ok: false,
+          code: 'PROVIDER_REGISTRATION_FAILED',
+          message: 'No fue posible registrar tu tienda como proveedor en ePayco. Revisa tus datos bancarios y contacta al administrador.',
+        });
       }
 
       // Trazabilidad clara de la aceptación: usuario, IP, timestamp, navegador,
