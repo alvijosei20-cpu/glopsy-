@@ -8,6 +8,7 @@ import Footer from '../../components/footer';
 import { useSEO } from '../../utils/seo';
 import { trackEvent } from '../../utils/analytics';
 import { useMoney } from '../../utils/money';
+import { checkCartCompatibility } from '../../utils/cartMode';
 import { useUserCity } from '../../utils/location';
 import LocationPicker from '../../components/LocationPicker';
 import './home.css';
@@ -533,6 +534,12 @@ export default function Home() {
     e.stopPropagation();
     try {
       const existingCart = JSON.parse(localStorage.getItem('glopsy_cart') || '[]');
+      const compat = checkCartCompatibility(existingCart, p);
+      if (!compat.ok) {
+        setToastMessage('No se puede mezclar artículos locales con internacionales. Todos internacionales o todos locales.');
+        setTimeout(() => setToastMessage(''), 3500);
+        return;
+      }
       const finalPrice = getFinalPrice(p);
       const itemIndex = existingCart.findIndex(item => item.id === p.id);
       if (itemIndex > -1) {
@@ -545,6 +552,7 @@ export default function Home() {
           image: getProductImage(p),
           quantity: 1,
           tienda_id: p.tienda_id,
+          internacional: p.internacional === true,
         });
       }
       localStorage.setItem('glopsy_cart', JSON.stringify(existingCart));

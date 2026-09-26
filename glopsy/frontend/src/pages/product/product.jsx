@@ -9,6 +9,7 @@ import { useMoney } from '../../utils/money';
 import { productShareUrl, shareProduct } from '../../utils/share';
 import { useUserCity } from '../../utils/location';
 import { getStoreSlug } from '../../utils/storeHost';
+import { checkCartCompatibility } from '../../utils/cartMode';
 import LocationPicker from '../../components/LocationPicker';
 import ProductAssistant from '../../components/ProductAssistant';
 import './product.css';
@@ -457,6 +458,12 @@ export default function ProductDetail() {
 
     try {
       const existingCart = JSON.parse(localStorage.getItem('glopsy_cart') || '[]');
+      const modeItem = { ...cartItem, internacional: product.internacional === true };
+      const compat = checkCartCompatibility(existingCart, modeItem);
+      if (!compat.ok) {
+        setError('No se puede mezclar artículos locales con internacionales en el mismo carrito. Todos internacionales o todos locales.');
+        return;
+      }
       const existingIndex = existingCart.findIndex(item => 
         item.id === cartItem.id && item.variant?.name === cartItem.variant?.name
       );
@@ -464,7 +471,7 @@ export default function ProductDetail() {
       if (existingIndex > -1) {
         existingCart[existingIndex].quantity += cartItem.quantity;
       } else {
-        existingCart.push(cartItem);
+        existingCart.push(modeItem);
       }
 
       localStorage.setItem('glopsy_cart', JSON.stringify(existingCart));

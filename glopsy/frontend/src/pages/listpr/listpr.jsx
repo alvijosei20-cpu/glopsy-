@@ -7,6 +7,8 @@ import { SkeletonList } from '../../components/SkeletonLoader';
 import { useSEO } from '../../utils/seo';
 import { trackEvent } from '../../utils/analytics';
 import { useMoney } from '../../utils/money';
+import { getStoredCountry } from '../../utils/location';
+import { checkCartCompatibility, getCart } from '../../utils/cartMode';
 import { productShareUrl, shareProduct } from '../../utils/share';
 import { useUserCity } from '../../utils/location';
 import LocationPicker from '../../components/LocationPicker';
@@ -92,7 +94,7 @@ export default function Listpr() {
   const handleAddToCart = (p, e) => {
     e.stopPropagation();
     try {
-      const existingCart = JSON.parse(localStorage.getItem('glopsy_cart') || '[]');
+      const existingCart = getCart();
       const baseP = Number(p.suggested_price || p.base_price || 0);
       let finalPrice = baseP;
       if (p.oferta_activa) {
@@ -101,6 +103,13 @@ export default function Listpr() {
         } else if (p.oferta_activa.tipo === 'monto_fijo') {
           finalPrice = Math.max(0, baseP - Number(p.oferta_activa.valor));
         }
+      }
+      // No mezclar artículos locales e internacionales en el mismo carrito.
+      const compat = checkCartCompatibility(existingCart, p);
+      if (!compat.ok) {
+        setToastMessage('No se puede mezclar el carrito local con productos internacionales. Vacía el carrito o usa otro. Todos internacionales o todos locales.');
+        setTimeout(() => setToastMessage(''), 3500);
+        return;
       }
       const itemIndex = existingCart.findIndex(item => item.id === p.id);
       if (itemIndex > -1) {
@@ -112,7 +121,8 @@ export default function Listpr() {
           price: finalPrice,
           image: getProductImage(p),
           quantity: 1,
-          tienda_id: p.tienda_id
+          tienda_id: p.tienda_id,
+          internacional: p.internacional === true,
         });
       }
       localStorage.setItem('glopsy_cart', JSON.stringify(existingCart));
@@ -141,6 +151,28 @@ export default function Listpr() {
   };
 
   const userCity = useUserCity();
+  // País del usuario (de sus coordenadas) y países donde operamos.
+  const userCountry = getStoredCountry();
+  const [opCountries, setOpCountries] = useState(new Set());
+  const [noCoverage, setNoCoverage] = useState(false);
+
+  useEffect(() => {
+    api.get('/geo/paises')
+      .then((res) => {
+        const list = Array.isArray(res.data?.paises) ? res.data.paises : [];
+        setOpCountries(new Set(list.map((p) => String(p.codigo_iso || '').toUpperCase()).filter(Boolean)));
+      })
+      .catch(() => {});
+  }, []);
+
+  // Si el usuario NO está en un país donde operamos, solo mostramos el
+  // catálogo internacional (tiendas habilitadas para vender al exterior).
+  useEffect(() => {
+    if (!userCountry || opCountries.size === 0) return;
+    setNoCoverage(!opCountries.has(userCountry));
+  }, [userCountry, opCountries]);
+
+  const internacionalOn = internacional || noCoverage;
 
   // Cargar categorías y favoritos al montar
   useEffect(() => {
@@ -184,7 +216,7 @@ export default function Listpr() {
           min_rating: minRating > 0 ? minRating : undefined,
           envio_gratis: freeShipping || undefined,
           solo_ofertas: onlyDeals || undefined,
-          internacional: internacional || undefined,
+          internacional: internacionalOn || undefined,
         },
       });
 
@@ -223,14 +255,14 @@ export default function Listpr() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [limit, userCity, sortBy, priceMin, priceMax, minRating, freeShipping, onlyDeals, internacional]);
+  }, [limit, userCity, sortBy, priceMin, priceMax, minRating, freeShipping, onlyDeals, internacionalOn]);
 
   // Carga inicial y al cambiar búsqueda, categoría, orden o filtros
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
     setOffset(0);
     fetchProducts(submittedQuery, selectedCategory, 0, false);
-  }, [submittedQuery, selectedCategory, sortBy, priceMin, priceMax, minRating, freeShipping, onlyDeals, internacional, fetchProducts]);
+  }, [submittedQuery, selectedCategory, sortBy, priceMin, priceMax, minRating, freeShipping, onlyDeals, internacionalOn, fetchProducts]);
 
   // Manejo de Infinite Scroll (al llegar al final del scroll)
   useEffect(() => {
@@ -476,18 +508,19 @@ export default function Listpr() {
           <button
             type="button"
             onClick={() => setInternacional(!internacional)}
+            disabled={noCoverage}
             className={`w-full flex items-center justify-between gap-2 h-9 px-3 rounded-lg border text-xs font-semibold transition-all ${
-              internacional
+              internacionalOn
                 ? 'bg-blue-600 text-white border-blue-600'
                 : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:text-blue-600'
-            }`}
-            title="Muestra las tiendas habilitadas para vender al exterior"
+            } ${noCoverage ? 'opacity-60 cursor-not-allowed' : ''}`}
+            title={noCoverage ? 'Tu país no tiene cobertura local: se muestran solo tiendas internacionales.' : 'Muestra las tiendas habilitadas para vender al exterior'}
           >
             <span className="flex items-center gap-2">
               <Globe size={14} />
               Compra internacional
             </span>
-            {internacional && <Check size={14} />}
+            {internacionalOn && <Check size={14} />}
           </button>
 
           {/* Ordenar */}
@@ -547,6 +580,13 @@ export default function Listpr() {
             {/* Ubicación del Usuario */}
             <LocationPicker className="bg-slate-50 text-slate-600 border border-slate-200 px-3.5 py-2.5 rounded-xl shrink-0" />
           </div>
+
+          {noCoverage && (
+            <div className="mt-3 flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-800 text-xs font-semibold rounded-xl px-3.5 py-2.5">
+              <Globe size={15} className="shrink-0" />
+              Tu ubicación no tiene cobertura local en Glopsy: te mostramos el catálogo internacional (tiendas habilitadas para vender al exterior).
+            </div>
+          )}
 
           {/* Categorías (solo móvil) */}
           <div className="mt-3 md:hidden flex items-center gap-2 overflow-x-auto pb-0.5 scrollbar-none">
@@ -648,12 +688,13 @@ export default function Listpr() {
             <button
               type="button"
               onClick={() => setInternacional(!internacional)}
+              disabled={noCoverage}
               className={`flex items-center gap-2 h-9 px-3 rounded-lg border text-xs font-semibold transition-all ${
-                internacional
+                internacionalOn
                   ? 'bg-blue-600 text-white border-blue-600'
                   : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:text-blue-600'
-              }`}
-              title="Muestra las tiendas habilitadas para vender al exterior"
+              } ${noCoverage ? 'opacity-60 cursor-not-allowed' : ''}`}
+              title={noCoverage ? 'Tu país no tiene cobertura local: se muestran solo tiendas internacionales.' : 'Muestra las tiendas habilitadas para vender al exterior'}
             >
               <Globe size={14} />
               Compra internacional

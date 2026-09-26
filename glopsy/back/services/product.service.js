@@ -845,6 +845,7 @@ export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadNam
       p.images,
       p.description,
       p.created_at,
+      (t.usd_activation_status = 'approved' AND COALESCE(t.international_dispatch_provider, '') <> '') AS internacional,
       c.nombre AS ciudad_nombre,
       cat.id AS categoria_id,
       cat.nombre AS categoria_nombre,
@@ -876,6 +877,7 @@ export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadNam
     LEFT JOIN fullments f ON p.fullm_id = f.id
     LEFT JOIN ciudades c ON f.ciudad_id = c.id
     LEFT JOIN categorias cat ON p.categoria_id = cat.id
+    LEFT JOIN tiendas t ON t.usrid = p.tienda_id
     WHERE ${buildSearchWhere(mainIdx)}${scopeClause ? ` AND ${scopeClause}` : ''}
     ORDER BY ${orderBy}
     LIMIT $3 OFFSET $4
@@ -967,11 +969,13 @@ export const getStorefrontProducts = async ({ slug = '', q = '', limit = 48, off
            ${priceExpr} AS suggested_price_efectivo,
            p.images, p.stock_total, p.created_at,
            c.nombre AS ciudad,
+           (t.usd_activation_status = 'approved' AND COALESCE(t.international_dispatch_provider, '') <> '') AS internacional,
            (SELECT COALESCE(AVG(rv.rating), 0)::numeric(3,2) FROM reviews rv WHERE rv.product_id = p.id) AS avg_rating,
            (SELECT COUNT(*) FROM reviews rv WHERE rv.product_id = p.id) AS review_count
     FROM produc p
     LEFT JOIN fullments f ON p.fullm_id = f.id
     LEFT JOIN ciudades c ON f.ciudad_id = c.id
+    LEFT JOIN tiendas t ON t.usrid = p.tienda_id
     WHERE ${conds.join(' AND ')}`;
 
   const [{ rows }, { rows: countRows }] = await Promise.all([
@@ -999,6 +1003,7 @@ export const getStorefrontProducts = async ({ slug = '', q = '', limit = 48, off
       stock_total: Number(r.stock_total || 0),
       avg_rating: Number(r.avg_rating || 0),
       review_count: Number(r.review_count || 0),
+      internacional: r.internacional === true,
       ciudad: r.ciudad || '',
     })),
     total: countRows[0]?.total || 0,
@@ -1131,6 +1136,7 @@ export const getProductByPublicId = async (identifier, ciudad = null) => {
       COALESCE(t.activa, true) AS tienda_activa,
       COALESCE(t.moneda, pa.moneda, 'COP') AS moneda,
       COALESCE(t.locale, pa.locale, 'es-CO') AS locale,
+      (t.usd_activation_status = 'approved' AND COALESCE(t.international_dispatch_provider, '') <> '') AS internacional,
       (COALESCE(p.suggested_price, p.base_price) + ${freeShippingCostoExpr('$2')}) AS suggested_price_efectivo,
       (
         SELECT COUNT(*) FROM reviews rv WHERE rv.product_id = p.id

@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { ShoppingCart, Trash2, CreditCard } from 'lucide-react';
 import { trackEvent } from '../../utils/analytics';
 import { useMoney } from '../../utils/money';
+import { isMixedCart } from '../../utils/cartMode';
 import './cart.css';
 
 export default function Cart() {
@@ -192,8 +193,22 @@ export default function Cart() {
                 </div>
               </div>
 
+              {isMixedCart(cartItems) && (
+                <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl p-3 mb-3">
+                  Tu carrito mezcla artículos locales con internacionales, no se puede pagar así. Vacíalo y arma una sola compra (todos locales o todos internacionales).
+                  <button
+                    type="button"
+                    onClick={() => { localStorage.removeItem('glopsy_cart'); window.dispatchEvent(new Event('storage')); setCartItems([]); }}
+                    className="mt-2 w-full bg-red-50 border border-red-300 text-red-700 font-bold py-2 rounded-xl text-sm cursor-pointer"
+                  >
+                    Vaciar carrito
+                  </button>
+                </div>
+              )}
+
               <button
                 onClick={() => {
+                  if (isMixedCart(cartItems)) return;
                   trackEvent('begin_checkout', {
                     currency,
                     value: subtotal,
@@ -201,7 +216,8 @@ export default function Cart() {
                   });
                   navigate('/checkout');
                 }}
-                className="w-full bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-bold py-4 rounded-2xl shadow-lg shadow-fuchsia-600/30 text-sm mb-4 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                disabled={isMixedCart(cartItems)}
+                className="w-full bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-bold py-4 rounded-2xl shadow-lg shadow-fuchsia-600/30 text-sm mb-4 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 <CreditCard size={18} />
                 Pagar
