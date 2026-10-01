@@ -1,7 +1,17 @@
 // Fuente única de los Términos y Condiciones y del Contrato de Mandato.
 // Se usa en la página /terminos y en el modal de aceptación al crear tienda.
 // Al cambiar el contenido, actualizar TERMS_VERSION (queda registrada en la DB).
-export const TERMS_VERSION = '2026-09-20';
+export const TERMS_VERSION = '2026-10-01';
+export const PRIVACY_VERSION = '2026-10-01';
+
+// Identificación del proveedor (Ley 1480 de 2011, art. 50; Decreto 1074 de 2015,
+// art. 2.2.2.53.1). Glopsy es operado por Nodux Technology.
+export const PROVIDER = {
+  legalName: 'Nodux Technology',
+  nit: '700351291',
+  email: 'soporte@glopsy.com',
+  country: 'Colombia',
+};
 
 export const TERMS_SECTIONS = [
   {
@@ -41,9 +51,13 @@ export const TERMS_SECTIONS = [
     ],
   },
   {
-    title: '5. Devoluciones y garantías',
+    title: '5. Devoluciones, garantías y derecho de retracto',
     body: [
       'Las garantías legales previstas en la Ley 1480 de 2011 serán atendidas por el Vendedor responsable del producto.',
+      'Derecho de retracto (artículo 47 de la Ley 1480 de 2011): en las ventas realizadas por medios electrónicos, el Comprador podrá retractarse de la compra dentro de los cinco (5) días hábiles siguientes a la entrega del producto, sin necesidad de justificar su decisión, siempre que el bien se encuentre en las mismas condiciones en que lo recibió.',
+      'Para ejercer el retracto, el Comprador deberá solicitarlo desde la sección "Compras" de la plataforma, indicando el pedido y los productos, dentro del término legal. Glopsy y el Vendedor coordinarán la devolución del bien y el reembolso de la totalidad del dinero pagado por el Comprador.',
+      'En los casos de retracto, los costos de transporte y demás gastos de logística que implique la devolución estarán a cargo del Comprador, conforme al parágrafo del artículo 47 de la Ley 1480 de 2011, salvo cuando el bien presente defectos o no corresponda a lo ofrecido.',
+      'No procede el retracto en los eventos excluidos por la ley (por ejemplo, bienes perecederos, personalizados o abiertos por razones de higiene, entre otros).',
       'Las políticas de devolución, cambio o reembolso de cada tienda son independientes y deben ser aceptadas por el Comprador al momento de realizar la compra.',
       'Glopsy solo facilitará la gestión de solicitudes entre las partes y no decide sobre la procedencia de las mismas.',
     ],
@@ -73,9 +87,11 @@ export const TERMS_SECTIONS = [
     ],
   },
   {
-    title: '9. Contacto',
+    title: '9. Identificación del proveedor y contacto',
     body: [
-      'Si tienes inquietudes sobre estos términos, escríbenos al correo de soporte indicado en la aplicación.',
+      'La plataforma Glopsy® es operada por Nodux Technology, identificada con NIT 700351291.',
+      'Domicilio: Colombia. Canal de atención al cliente: correo electrónico soporte@glopsy.com y la sección de soporte dentro de la aplicación.',
+      'Si tienes inquietudes sobre estos términos, escríbenos al correo de soporte indicado.',
     ],
   },
 ];

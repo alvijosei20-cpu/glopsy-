@@ -16,6 +16,10 @@ import {
   verifyBiometricLoginService,
   createOAuthCode,
   consumeOAuthCode,
+  recordUserConsent,
+  getUserConsents,
+  exportUserData,
+  deleteUserAccount,
 } from '../services/auth.service.js';
 import { pool } from '../db.js';
 import { setAuthCookie, clearAuthCookie } from '../utils/cookies.js';
@@ -264,7 +268,7 @@ export const oauthConsume = async (req, res) => {
 export const getCurrentUser = async (req, res) => {
   try {
     const { rows } = await pool.query(
-      'SELECT id, email, name, avatar_url, phone, can_sell, TO_CHAR(birthdate, \'YYYY-MM-DD\') AS birthdate, document_type, document_number, gender FROM users WHERE id = $1',
+      'SELECT id, email, name, avatar_url, phone, can_sell, TO_CHAR(birthdate, \'YYYY-MM-DD\') AS birthdate, document_type, document_number, gender, terms_version, privacy_version FROM users WHERE id = $1',
       [req.auth.userId]
     );
 
@@ -521,12 +525,106 @@ export const registerEmail = async (req, res) => {
     if (password.length > 128) {
       return res.status(400).json({ ok: false, message: 'La contraseña es demasiado larga (máx. 128 caracteres).' });
     }
-    const { user, token } = await registerWithEmail({ email, password, name });
+    // La autorización previa, expresa e informada es obligatoria (Ley 1581, art. 9).
+    if (req.body.acceptedTerms !== true) {
+      return res.status(400).json({
+        ok: false,
+        message: 'Debes aceptar los Términos y Condiciones y la Política de Privacidad para registrarte.',
+      });
+    }
+    const termsVersion = cleanString(req.body.termsVersion, { maxLength: 30 }) || null;
+    const privacyVersion = cleanString(req.body.privacyVersion, { maxLength: 30 }) || null;
+    const visitorCountry = String(req.get('x-visitor-country') || req.get('cf-ipcountry') || '').trim();
+
+    const { user, token } = await registerWithEmail({
+      email,
+      password,
+      name,
+      consent: {
+        termsVersion,
+        privacyVersion,
+        ip: req.ip,
+        forwardedFor: req.get('x-forwarded-for'),
+        userAgent: req.get('user-agent'),
+        language: req.get('accept-language'),
+        timezone: cleanString(req.body.timezone, { maxLength: 60 }) || null,
+        country: visitorCountry,
+        referrer: req.get('referer'),
+        metadata: { source: 'email_register' },
+      },
+    });
     setAuthCookie(res, token);
     res.status(201).json({ ok: true, user });
   } catch (error) {
     console.error('Error en registro con email:', error.message);
     res.status(400).json({ ok: false, message: error.message || 'Error al registrar usuario.' });
+  }
+};
+
+// Registra la aceptación de Términos y Privacidad de un usuario ya autenticado
+// (por ejemplo, tras registrarse o iniciar sesión con una red social).
+export const recordConsentController = async (req, res) => {
+  try {
+    const termsVersion = cleanString(req.body.termsVersion, { maxLength: 30 }) || null;
+    const privacyVersion = cleanString(req.body.privacyVersion, { maxLength: 30 }) || null;
+    if (!termsVersion && !privacyVersion) {
+      return res.status(400).json({ ok: false, message: 'Versiones de consentimiento requeridas.' });
+    }
+    const visitorCountry = String(req.get('x-visitor-country') || req.get('cf-ipcountry') || '').trim();
+    await recordUserConsent({
+      userId: req.auth.userId,
+      termsVersion,
+      privacyVersion,
+      ip: req.ip,
+      forwardedFor: req.get('x-forwarded-for'),
+      userAgent: req.get('user-agent'),
+      language: req.get('accept-language'),
+      timezone: cleanString(req.body.timezone, { maxLength: 60 }) || null,
+      country: visitorCountry,
+      referrer: req.get('referer'),
+      metadata: { source: cleanString(req.body.source, { maxLength: 40 }) || 'oauth' },
+    });
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('Error al registrar el consentimiento:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible registrar el consentimiento.' });
+  }
+};
+
+// Historial de consentimientos del titular autenticado.
+export const getMyConsentsController = async (req, res) => {
+  try {
+    const consents = await getUserConsents(req.auth.userId);
+    return res.json({ ok: true, consents });
+  } catch (error) {
+    console.error('Error al consultar consentimientos:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible consultar los consentimientos.' });
+  }
+};
+
+// Derecho de acceso: descarga de los datos personales del titular.
+export const exportMyDataController = async (req, res) => {
+  try {
+    const data = await exportUserData(req.auth.userId);
+    return res.json({ ok: true, data });
+  } catch (error) {
+    console.error('Error al exportar datos del titular:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible exportar los datos.' });
+  }
+};
+
+// Derecho de supresión: elimina/anonimiza la cuenta y revoca la sesión.
+export const deleteMyAccountController = async (req, res) => {
+  try {
+    if (req.body?.confirm !== true) {
+      return res.status(400).json({ ok: false, message: 'Debes confirmar la eliminación de la cuenta.' });
+    }
+    await deleteUserAccount(req.auth.userId);
+    clearAuthCookie(res);
+    return res.json({ ok: true, message: 'Tu cuenta y tus datos personales fueron eliminados.' });
+  } catch (error) {
+    console.error('Error al eliminar cuenta:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible eliminar la cuenta.' });
   }
 };
 

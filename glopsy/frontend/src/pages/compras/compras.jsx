@@ -161,7 +161,7 @@ export default function Compras() {
                 images: ret.product_images,
                 image: ret.product_images && typeof ret.product_images === 'string' && ret.product_images.startsWith('http') ? ret.product_images : undefined,
               });
-              const reasonLabel = ret.reason === 'garantia' ? 'Garantía' : ret.reason === 'cambio' ? 'Cambio' : (ret.reason || 'Sin especificar');
+              const reasonLabel = ret.reason === 'garantia' ? 'Garantía' : ret.reason === 'retracto' ? 'Retracto' : ret.reason === 'cambio' ? 'Cambio' : (ret.reason || 'Sin especificar');
               return (
                 <div
                   key={ret.id}

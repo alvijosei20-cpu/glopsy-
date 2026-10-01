@@ -13,6 +13,7 @@ import { getRootOrigin, getStoreSlug } from './utils/storeHost';
 import { loadGA, trackPageView } from './utils/analytics';
 import NotificationCenter from './components/NotificationCenter';
 import CountryNotice from './components/CountryNotice';
+import CookieConsent from './components/CookieConsent';
 
 const StorefrontHome = lazy(() => import('./storefront/StorefrontHome'));
 const Home = lazy(() => import('./pages/home/home'));
@@ -303,6 +304,7 @@ export default function App() {
       <StorefrontProvider>
         <MainApp />
         <NotificationCenter />
+        <CookieConsent />
       </StorefrontProvider>
     </AuthProvider>
   );

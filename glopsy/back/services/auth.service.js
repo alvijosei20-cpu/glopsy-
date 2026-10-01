@@ -9,6 +9,7 @@ import {
 import { pool } from '../db.js';
 import { redisClient } from './redis.service.js';
 import { cleanString, cleanEmail, cleanUrl } from '../utils/validation.js';
+import { parseUserAgent } from './tienda.service.js';
 
 const rpName = 'Glopsy';
 const getRpID = (originUrl) => {
@@ -38,7 +39,7 @@ export const verifyPassword = (password, storedHash) => {
   return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(key, 'hex'));
 };
 
-export const registerWithEmail = async ({ email, password, name }) => {
+export const registerWithEmail = async ({ email, password, name, consent } = {}) => {
   const safeEmail = cleanEmail(email, { required: true });
   if (!safeEmail) throw new Error('Correo electrónico inválido.');
   const safeName = cleanString(name, { maxLength: 120 });
@@ -57,12 +58,185 @@ export const registerWithEmail = async ({ email, password, name }) => {
   );
   const user = rows[0];
 
+  // Registra la aceptación de Términos y Privacidad (Ley 1581 de 2012, art. 9).
+  if (consent) {
+    await recordUserConsent({ userId: user.id, ...consent }).catch((err) => {
+      console.error('Error al registrar el consentimiento del usuario:', err.message);
+    });
+  }
+
   const tokenPayload = { userId: user.id, email: user.email };
   const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '7d' });
 
   await redisClient.set(`session:${user.id}`, token, { EX: 7 * 24 * 60 * 60 });
 
   return { user, token };
+};
+
+// Registra la aceptación de Términos y Condiciones y/o Política de Privacidad
+// dejando trazabilidad: usuario, IP, timestamp, navegador, dispositivo, país,
+// idioma. No lanza error hacia el flujo principal si falla.
+export const recordUserConsent = async ({
+  userId,
+  termsVersion,
+  privacyVersion,
+  accepted = true,
+  ip,
+  forwardedFor,
+  userAgent,
+  language,
+  timezone,
+  country,
+  referrer,
+  metadata,
+} = {}) => {
+  const uid = Number(userId);
+  if (!uid) {
+    const err = new Error('userId requerido para registrar el consentimiento.');
+    err.code = 400;
+    throw err;
+  }
+  const tv = termsVersion ? String(termsVersion).trim().slice(0, 30) : null;
+  const pv = privacyVersion ? String(privacyVersion).trim().slice(0, 30) : null;
+  const ua = userAgent ? String(userAgent).slice(0, 2000) : null;
+  const parsed = parseUserAgent(ua || '');
+
+  const { rows } = await pool.query(
+    `INSERT INTO user_aceptaciones (
+       user_id, terms_version, privacy_version, accepted, ip, forwarded_for,
+       user_agent, browser, browser_version, os, device, language, timezone,
+       country, referrer, metadata
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+     RETURNING id, accepted_at`,
+    [
+      uid,
+      tv,
+      pv,
+      accepted !== false,
+      ip ? String(ip).slice(0, 64) : null,
+      forwardedFor ? String(forwardedFor).slice(0, 500) : null,
+      ua,
+      parsed.browser,
+      parsed.browserVersion,
+      parsed.os,
+      parsed.device,
+      language ? String(language).slice(0, 60) : null,
+      timezone ? String(timezone).slice(0, 60) : null,
+      country ? String(country).slice(0, 2).toUpperCase() : null,
+      referrer ? String(referrer).slice(0, 500) : null,
+      metadata && typeof metadata === 'object' ? JSON.stringify(metadata) : '{}',
+    ]
+  );
+
+  await pool.query(
+    `UPDATE users SET
+       terms_version = COALESCE($2, terms_version),
+       terms_accepted_at = CASE WHEN $2 IS NOT NULL THEN now() ELSE terms_accepted_at END,
+       privacy_version = COALESCE($3, privacy_version),
+       privacy_accepted_at = CASE WHEN $3 IS NOT NULL THEN now() ELSE privacy_accepted_at END,
+       updated_at = NOW()
+     WHERE id = $1`,
+    [uid, tv, pv]
+  );
+
+  return { id: rows[0]?.id, acceptedAt: rows[0]?.accepted_at };
+};
+
+// Obtiene el historial de consentimientos del usuario (para el titular).
+export const getUserConsents = async (userId) => {
+  const uid = Number(userId);
+  if (!uid) return [];
+  const { rows } = await pool.query(
+    `SELECT id, terms_version, privacy_version, accepted, accepted_at, browser, os, device, country
+     FROM user_aceptaciones WHERE user_id = $1 ORDER BY accepted_at DESC`,
+    [uid]
+  );
+  return rows;
+};
+
+// Derecho de acceso: exporta en JSON los datos personales del titular.
+export const exportUserData = async (userId) => {
+  const uid = Number(userId);
+  if (!uid) throw new Error('Usuario inválido.');
+
+  const [userRes, addrRes, cardsRes, ordersRes, returnsRes, consentsRes] = await Promise.all([
+    pool.query(
+      `SELECT id, email, name, avatar_url, phone, TO_CHAR(birthdate, 'YYYY-MM-DD') AS birthdate,
+              document_type, document_number, gender, can_sell, created_at, updated_at
+       FROM users WHERE id = $1`,
+      [uid]
+    ),
+    pool.query(
+      `SELECT type, title, street, city, state, zip_code, country, phone, notes, created_at
+       FROM user_addresses WHERE user_id = $1 ORDER BY id`,
+      [uid]
+    ),
+    pool.query(
+      `SELECT card_holder, last_four, card_brand, expiry_month, expiry_year, created_at
+       FROM user_cards WHERE user_id = $1 ORDER BY id`,
+      [uid]
+    ),
+    pool.query(
+      `SELECT order_number, order_hash, status, amount, created_at
+       FROM orders WHERE user_id = $1 ORDER BY created_at DESC`,
+      [uid]
+    ),
+    pool.query(
+      `SELECT r.return_number, r.order_ref, r.product_sku, r.quantity, r.reason, r.status, r.created_at
+       FROM returns r
+       JOIN orders o ON o.id = r.order_id
+       WHERE o.user_id = $1 ORDER BY r.created_at DESC`,
+      [uid]
+    ),
+    getUserConsents(uid),
+  ]);
+
+  return {
+    generated_at: new Date().toISOString(),
+    titular: userRes.rows[0] || null,
+    direcciones: addrRes.rows,
+    metodos_pago: cardsRes.rows,
+    pedidos: ordersRes.rows,
+    devoluciones: returnsRes.rows,
+    consentimientos: consentsRes,
+  };
+};
+
+// Derecho de supresión: anonimiza los datos personales del titular. Se conservan
+// los registros con obligación legal/fiscal (pedidos, aceptaciones) sin datos
+// que identifiquen directamente a la persona.
+export const deleteUserAccount = async (userId) => {
+  const uid = Number(userId);
+  if (!uid) throw new Error('Usuario inválido.');
+
+  await pool.query('DELETE FROM user_addresses WHERE user_id = $1', [uid]);
+  await pool.query('DELETE FROM user_cards WHERE user_id = $1', [uid]);
+  await pool.query('DELETE FROM user_credentials WHERE user_id = $1', [uid]);
+
+  await pool.query(
+    `UPDATE users SET
+       email = $2,
+       name = 'Cuenta eliminada',
+       avatar_url = NULL,
+       phone = NULL,
+       birthdate = NULL,
+       document_type = NULL,
+       document_number = NULL,
+       gender = NULL,
+       password_hash = NULL,
+       push_subscription = NULL,
+       webauthn_credential = NULL,
+       google_id = NULL,
+       discord_id = NULL,
+       tiktok_id = NULL,
+       deleted_at = now(),
+       updated_at = now()
+     WHERE id = $1`,
+    [uid, `deleted+${uid}@deleted.glopsy.shop`]
+  );
+
+  await revokeSession(uid).catch(() => {});
+  return true;
 };
 
 export const loginWithEmail = async ({ email, password }) => {

@@ -1,13 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { User, MapPin, Save, Plus, Trash2, Shield, Calendar, Phone, FileText, CheckCircle2, AlertCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { User, MapPin, Save, Plus, Trash2, Shield, Calendar, Phone, FileText, CheckCircle2, AlertCircle, Lock, Download, Trash } from 'lucide-react';
 import api from '../../services/api';
 import { SkeletonProfile } from '../../components/SkeletonLoader';
+import { useAuth } from '../../context/AuthContext';
 
 export default function Profile() {
-  const [activeTab, setActiveTab] = useState('personal'); // 'personal' | 'addresses'
+  const navigate = useNavigate();
+  const { logout } = useAuth();
+  const [activeTab, setActiveTab] = useState('personal'); // 'personal' | 'addresses' | 'privacy'
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ text: '', type: '' });
+  const [consents, setConsents] = useState([]);
+  const [privacyBusy, setPrivacyBusy] = useState(false);
 
   // Personal Info
   const [formData, setFormData] = useState({
@@ -51,9 +57,10 @@ export default function Profile() {
   const fetchProfileData = async () => {
     try {
       setLoading(true);
-      const [userRes, addrRes] = await Promise.all([
+      const [userRes, addrRes, consentRes] = await Promise.all([
         api.get('/auth/me'),
         api.get('/auth/addresses'),
+        api.get('/auth/consents').catch(() => ({ data: { consents: [] } })),
       ]);
 
       if (userRes.data.ok) {
@@ -72,6 +79,10 @@ export default function Profile() {
 
       if (addrRes.data.ok) {
         setAddresses(addrRes.data.addresses || []);
+      }
+
+      if (consentRes.data?.ok) {
+        setConsents(consentRes.data.consents || []);
       }
     } catch (err) {
       console.error('Error al cargar datos del perfil:', err);
@@ -148,6 +159,51 @@ export default function Profile() {
     }
   };
 
+  const handleExportData = async () => {
+    setPrivacyBusy(true);
+    try {
+      const res = await api.get('/auth/me/export');
+      if (!res.data?.ok) throw new Error('export failed');
+      const blob = new Blob([JSON.stringify(res.data.data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `glopsy-mis-datos-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('Descarga de tus datos generada.', 'success');
+    } catch (err) {
+      console.error('Error al exportar datos:', err);
+      showToast('No fue posible exportar tus datos.', 'error');
+    } finally {
+      setPrivacyBusy(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    const first = window.confirm(
+      '¿Eliminar tu cuenta? Esta acción es irreversible y borrará tus datos personales (direcciones, métodos de pago guardados, huellas y sesión).'
+    );
+    if (!first) return;
+    const typed = window.prompt('Escribe ELIMINAR para confirmar la eliminación definitiva de tu cuenta:');
+    if (typed !== 'ELIMINAR') {
+      showToast('Eliminación cancelada.', 'error');
+      return;
+    }
+    setPrivacyBusy(true);
+    try {
+      await api.delete('/auth/me', { data: { confirm: true } });
+      await logout();
+      navigate('/', { replace: true });
+    } catch (err) {
+      console.error('Error al eliminar cuenta:', err);
+      showToast('No fue posible eliminar la cuenta.', 'error');
+      setPrivacyBusy(false);
+    }
+  };
+
   if (loading) {
     return <SkeletonProfile />;
   }
@@ -197,6 +253,13 @@ export default function Profile() {
         >
           <MapPin size={18} />
           Direcciones
+        </button>
+        <button
+          onClick={() => setActiveTab('privacy')}
+          className={`flex items-center gap-2 pb-4 font-semibold text-sm transition-colors border-b-2 ${activeTab === 'privacy' ? 'border-fuchsia-600 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}`}
+        >
+          <Lock size={18} />
+          Privacidad
         </button>
       </div>
 
@@ -467,6 +530,76 @@ export default function Profile() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Tab 3: Privacidad y datos personales */}
+      {activeTab === 'privacy' && (
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-fuchsia-100 dark:border-zinc-800 shadow-sm p-6 sm:p-8 space-y-4">
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Download size={20} className="text-fuchsia-500" />
+              Tus datos personales
+            </h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              En cumplimiento de la Ley 1581 de 2012, puedes acceder, actualizar, rectificar y suprimir
+              tus datos personales, así como conocer las autorizaciones que has otorgado.
+            </p>
+            <button
+              type="button"
+              onClick={handleExportData}
+              disabled={privacyBusy}
+              className="inline-flex items-center gap-2 bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-medium px-5 py-2.5 rounded-xl shadow-md shadow-fuchsia-600/20 transition-all disabled:opacity-50 cursor-pointer"
+            >
+              <Download size={17} />
+              Descargar mis datos
+            </button>
+
+            <div className="pt-2">
+              <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2">
+                Historial de autorizaciones
+              </h3>
+              {consents.length === 0 ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400">No hay autorizaciones registradas.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {consents.map((c) => (
+                    <li
+                      key={c.id}
+                      className="text-xs text-slate-600 dark:text-slate-400 flex flex-wrap gap-x-3 gap-y-0.5 border border-slate-100 dark:border-zinc-800 rounded-xl px-3 py-2"
+                    >
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">
+                        {c.accepted_at ? new Date(c.accepted_at).toLocaleString('es-CO') : '—'}
+                      </span>
+                      <span>Términos: {c.terms_version || '—'}</span>
+                      <span>Privacidad: {c.privacy_version || '—'}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-rose-200 dark:border-rose-900/50 shadow-sm p-6 sm:p-8 space-y-3">
+            <h2 className="text-lg font-bold text-rose-600 dark:text-rose-400 flex items-center gap-2">
+              <Trash size={20} />
+              Eliminar mi cuenta
+            </h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              Esta acción es irreversible. Se eliminarán tus datos personales (perfil, direcciones, métodos
+              de pago guardados, credenciales biométricas y sesiones). Conservaremos únicamente la
+              información que la ley nos obliga a mantener por motivos fiscales y contables.
+            </p>
+            <button
+              type="button"
+              onClick={handleDeleteAccount}
+              disabled={privacyBusy}
+              className="inline-flex items-center gap-2 bg-rose-600 hover:bg-rose-700 text-white font-medium px-5 py-2.5 rounded-xl shadow-md transition-all disabled:opacity-50 cursor-pointer"
+            >
+              <Trash size={17} />
+              Eliminar mi cuenta y mis datos
+            </button>
+          </div>
         </div>
       )}
 

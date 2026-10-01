@@ -270,9 +270,15 @@ export default function CompraDetail() {
         sku: i.public_id || String(i.product_id || ''),
         quantity: Number(i.quantity || 1),
       }));
+      const reasonValue =
+        returnReason === 'garantia'
+          ? 'garantia'
+          : returnReason === 'retracto'
+            ? 'retracto'
+            : returnOtherReason.trim().slice(0, 500);
       const res = await api.post('/returns/request', {
         orderId,
-        reason: returnReason === 'garantia' ? 'garantia' : returnOtherReason.trim().slice(0, 500),
+        reason: reasonValue,
         customerNotes: returnNotes,
         products,
       });
@@ -280,7 +286,9 @@ export default function CompraDetail() {
         setToastMessage(
           returnReason === 'garantia'
             ? '¡Devolución solicitada con éxito! Te contactaremos para coordinar la recogida.'
-            : '¡Solicitud enviada! Recuerda que el costo de la devolución correrá por tu cuenta.'
+            : returnReason === 'retracto'
+              ? '¡Retracto solicitado! Coordinaremos la devolución del producto y el reembolso.'
+              : '¡Solicitud enviada! Recuerda que el costo de la devolución correrá por tu cuenta.'
         );
         setTimeout(() => setToastMessage(''), 4000);
         setReturnModal(null);
@@ -819,7 +827,7 @@ export default function CompraDetail() {
 
               <div>
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">¿Por qué motivo lo devuelves?</label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   <button
                     onClick={() => { setReturnReason('garantia'); setReturnOtherReason(''); }}
                     className={`flex flex-col items-center gap-1.5 px-4 py-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
@@ -830,6 +838,17 @@ export default function CompraDetail() {
                   >
                     <CheckCircle size={18} />
                     Garantía
+                  </button>
+                  <button
+                    onClick={() => { setReturnReason('retracto'); setReturnOtherReason(''); }}
+                    className={`flex flex-col items-center gap-1.5 px-4 py-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                      returnReason === 'retracto'
+                        ? 'bg-fuchsia-50 dark:bg-fuchsia-950/40 border-fuchsia-400 dark:border-fuchsia-700 text-fuchsia-700 dark:text-fuchsia-300'
+                        : 'bg-white dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-slate-400 hover:border-fuchsia-300 dark:hover:border-fuchsia-800'
+                    }`}
+                  >
+                    <RotateCcw size={18} />
+                    Retracto
                   </button>
                   <button
                     onClick={() => setReturnReason('otros')}
@@ -844,6 +863,20 @@ export default function CompraDetail() {
                   </button>
                 </div>
               </div>
+
+              {returnReason === 'retracto' && (
+                <div className="rounded-xl border border-sky-300 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/30 px-4 py-3">
+                  <p className="text-xs font-semibold text-sky-700 dark:text-sky-400 flex items-center gap-1.5">
+                    <Info size={14} /> Derecho de retracto (Ley 1480 de 2011, art. 47)
+                  </p>
+                  <p className="text-[11px] text-sky-600 dark:text-sky-500 mt-1">
+                    Puedes retractarte dentro de los 5 días hábiles siguientes a la entrega, sin justificar tu
+                    decisión, si el producto está en las mismas condiciones en que lo recibiste. Coordinaremos
+                    la devolución y el reembolso del dinero pagado. Los costos del envío de devolución corren
+                    por tu cuenta.
+                  </p>
+                </div>
+              )}
 
               {returnReason === 'otros' && (
                 <div className="rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3">

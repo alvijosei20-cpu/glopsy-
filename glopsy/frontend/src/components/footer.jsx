@@ -1,5 +1,7 @@
 import { Link } from 'react-router-dom';
-import { FileText, ShieldCheck, Truck, Mail } from 'lucide-react';
+import { FileText, ShieldCheck, Truck, Mail, Cookie } from 'lucide-react';
+import { PROVIDER } from '../utils/termsContent';
+import { openCookieConsent } from '../utils/cookieConsent';
 export default function Footer() {
   return (
     <footer className="bg-black text-white w-screen relative left-1/2 -translate-x-1/2 -mb-2 sm:-mb-3">
@@ -10,8 +12,9 @@ export default function Footer() {
               Glopsy<span className="text-white/40">®</span>
             </p>
             <p className="text-[10px] text-white/50 mt-0.5">
-              Nodux Technology · Todos los derechos reservados
+              {PROVIDER.legalName} · NIT {PROVIDER.nit} · Domicilio {PROVIDER.country}
             </p>
+            <p className="text-[10px] text-white/50 mt-0.5">Todos los derechos reservados</p>
           </div>
 
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-[10px] text-white/60">
@@ -33,6 +36,14 @@ export default function Footer() {
               <ShieldCheck size={12} className="text-white/40" />
               Compras seguras
             </span>
+            <button
+              type="button"
+              onClick={openCookieConsent}
+              className="flex items-center gap-1 hover:text-white transition-colors text-sky-400 cursor-pointer"
+            >
+              <Cookie size={12} />
+              Cookies
+            </button>
             <span className="flex items-center gap-1 text-white/50">
               <Truck size={12} className="text-white/40" />
               Envíos nacionales

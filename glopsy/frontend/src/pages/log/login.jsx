@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Fingerprint, ShieldCheck, Truck, BadgePercent, Store, Sparkles, UserPlus } from 'lucide-react';
 import './login.css';
 import api from '../../services/api';
+import { TERMS_VERSION, PRIVACY_VERSION } from '../../utils/termsContent';
 
 function bufferDecode(value) {
   if (!value) return value;
@@ -38,6 +39,7 @@ const LoginForm = ({ mode, onSwitch }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
@@ -154,9 +156,28 @@ const LoginForm = ({ mode, onSwitch }) => {
     setError(null);
     setLoading(true);
 
+    if (isRegister && !acceptedTerms) {
+      setError('Debes aceptar los Términos y Condiciones y la Política de Privacidad.');
+      setLoading(false);
+      return;
+    }
+
     try {
       const endpoint = isRegister ? '/auth/register' : '/auth/login';
-      const payload = isRegister ? { email, password, name } : { email, password };
+      const timezone = (() => {
+        try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return null; }
+      })();
+      const payload = isRegister
+        ? {
+            email,
+            password,
+            name,
+            acceptedTerms: true,
+            termsVersion: TERMS_VERSION,
+            privacyVersion: PRIVACY_VERSION,
+            timezone,
+          }
+        : { email, password };
       const res = await api.post(endpoint, payload);
 
       if (res.data.ok) {
@@ -221,6 +242,28 @@ const LoginForm = ({ mode, onSwitch }) => {
             className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500 bg-white text-slate-800"
           />
         </div>
+        {isRegister && (
+          <label className="flex items-start gap-2 text-left text-[11px] text-slate-600 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={acceptedTerms}
+              onChange={(e) => setAcceptedTerms(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-fuchsia-600"
+              required
+            />
+            <span className="leading-snug">
+              Acepto los{' '}
+              <Link to="/terminos" target="_blank" className="text-fuchsia-600 hover:underline font-semibold">
+                Términos y Condiciones
+              </Link>{' '}
+              y autorizo el tratamiento de mis datos conforme a la{' '}
+              <Link to="/privacidad" target="_blank" className="text-fuchsia-600 hover:underline font-semibold">
+                Política de Privacidad
+              </Link>
+              .
+            </span>
+          </label>
+        )}
         <button
           type="submit"
           disabled={loading}
@@ -287,6 +330,17 @@ const LoginForm = ({ mode, onSwitch }) => {
               Continuar con TikTok
             </button>
           </div>
+          <p className="text-[10px] text-slate-400 text-center mt-4 leading-snug">
+            Al continuar con una red social aceptas los{' '}
+            <Link to="/terminos" target="_blank" className="text-fuchsia-500 hover:underline">
+              Términos y Condiciones
+            </Link>{' '}
+            y la{' '}
+            <Link to="/privacidad" target="_blank" className="text-fuchsia-500 hover:underline">
+              Política de Privacidad
+            </Link>
+            .
+          </p>
         </>
       )}
     </div>

@@ -19,6 +19,10 @@ import {
   logout,
   registerEmail,
   loginEmail,
+  recordConsentController,
+  getMyConsentsController,
+  exportMyDataController,
+  deleteMyAccountController,
   savePushSubscriptionController,
   saveBiometricCredentialController,
   deleteBiometricCredentialController,
@@ -54,6 +58,11 @@ router.post('/register', authLimiter, registerEmail);
 router.post('/login', authLimiter, loginEmail);
 router.get('/me', requireAuth, getCurrentUser);
 router.put('/me', requireAuth, updateCurrentUser);
+// Derechos del titular (Ley 1581 de 2012): acceso, supresión y constancia de autorización.
+router.post('/consent', requireAuth, recordConsentController);
+router.get('/consents', requireAuth, getMyConsentsController);
+router.get('/me/export', requireAuth, exportMyDataController);
+router.delete('/me', requireAuth, deleteMyAccountController);
 router.get('/addresses', requireAuth, getAddresses);
 router.get('/checkout-defaults', requireAuth, getCheckoutDefaultsController);
 router.post('/addresses', requireAuth, saveAddress);

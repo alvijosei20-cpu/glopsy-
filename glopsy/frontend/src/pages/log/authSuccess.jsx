@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../services/api';
 import { SkeletonList } from '../../components/SkeletonLoader';
+import { TERMS_VERSION, PRIVACY_VERSION } from '../../utils/termsContent';
 
 export default function AuthSuccess() {
   const { login } = useAuth();
@@ -17,7 +18,20 @@ export default function AuthSuccess() {
         if (code) {
           await api.post('/auth/oauth/consume', { code });
         }
-        await login();
+        const user = await login();
+        // Las redes sociales muestran el aviso de aceptación antes de continuar.
+        // Se deja constancia del consentimiento si está pendiente o desactualizado.
+        if (user?.terms_version !== TERMS_VERSION) {
+          const timezone = (() => {
+            try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return null; }
+          })();
+          await api.post('/auth/consent', {
+            termsVersion: TERMS_VERSION,
+            privacyVersion: PRIVACY_VERSION,
+            source: 'oauth',
+            timezone,
+          }).catch(() => {});
+        }
         navigate('/', { replace: true });
       } catch {
         navigate('/login?error=oauth', { replace: true });
