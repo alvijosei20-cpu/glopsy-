@@ -9,6 +9,7 @@ import { useMoney } from '../../utils/money';
 import { useStorefront } from '../../storefront/StorefrontContext';
 import { useAuth } from '../../context/AuthContext';
 import BoldPayment from '../../components/BoldPayment';
+import RetractoNotice from '../../components/RetractoNotice';
 import './cart.css';
 
 export default function Checkout() {
@@ -948,6 +949,8 @@ export default function Checkout() {
                 </div>
               </div>
             </div>
+
+            <RetractoNotice className="mb-3" />
 
             <button
               type="submit"

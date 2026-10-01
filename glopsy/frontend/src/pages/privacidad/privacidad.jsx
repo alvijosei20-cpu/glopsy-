@@ -71,6 +71,7 @@ const SECTIONS = [
       'Los datos personales podrán ser compartidos con Vendedores independientes, empresas de transporte y mensajería, y pasarelas de pago autorizadas, exclusivamente en la medida necesaria para procesar, pagar y entregar tus pedidos.',
       'Glopsy no vende, alquila ni comercializa tus datos personales con terceros con fines no relacionados con la prestación del servicio.',
       'Las transferencias internacionales de datos se realizarán únicamente cuando sean necesarias para el servicio y bajo los mecanismos de protección exigidos por el Decreto 1377 de 2013, garantizando niveles adecuados de seguridad.',
+      'Cuando el servicio se preste a usuarios en Venezuela, además de esta Política se aplicará en lo pertinente la normativa venezolana de protección de datos personales, y los datos se tratarán bajo medidas equivalentes de seguridad y confidencialidad.',
     ],
   },
   {

@@ -182,6 +182,23 @@ export default function Profile() {
     }
   };
 
+  const handleDeleteBiometric = async () => {
+    if (!window.confirm('¿Eliminar tus datos biométricos y revocar esta autorización?')) return;
+    setPrivacyBusy(true);
+    try {
+      await api.delete('/auth/biometric');
+      await api.post('/auth/consent', { consentType: 'biometric', accepted: false, source: 'revoke' }).catch(() => {});
+      const consentRes = await api.get('/auth/consents').catch(() => ({ data: { consents: [] } }));
+      if (consentRes.data?.ok) setConsents(consentRes.data.consents || []);
+      showToast('Datos biométricos eliminados.', 'success');
+    } catch (err) {
+      console.error('Error al eliminar datos biométricos:', err);
+      showToast('No se pudieron eliminar tus datos biométricos.', 'error');
+    } finally {
+      setPrivacyBusy(false);
+    }
+  };
+
   const handleDeleteAccount = async () => {
     const first = window.confirm(
       '¿Eliminar tu cuenta? Esta acción es irreversible y borrará tus datos personales (direcciones, métodos de pago guardados, huellas y sesión).'
@@ -571,13 +588,43 @@ export default function Profile() {
                       <span className="font-semibold text-slate-700 dark:text-slate-300">
                         {c.accepted_at ? new Date(c.accepted_at).toLocaleString('es-CO') : '—'}
                       </span>
-                      <span>Términos: {c.terms_version || '—'}</span>
-                      <span>Privacidad: {c.privacy_version || '—'}</span>
+                      {c.metadata?.consentType ? (
+                        <span>
+                          {c.metadata.consentType === 'biometric' ? 'Datos biométricos' : c.metadata.consentType}
+                          {c.accepted === false ? ' (revocada)' : ''}
+                        </span>
+                      ) : (
+                        <>
+                          <span>Términos: {c.terms_version || '—'}</span>
+                          <span>Privacidad: {c.privacy_version || '—'}</span>
+                        </>
+                      )}
                     </li>
                   ))}
                 </ul>
               )}
             </div>
+          </div>
+
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-fuchsia-100 dark:border-zinc-800 shadow-sm p-6 sm:p-8 space-y-3">
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Shield size={20} className="text-fuchsia-500" />
+              Datos biométricos
+            </h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              La autenticación biométrica (huella o rostro) es opcional. Puedes revocar esta autorización y
+              eliminar tus datos biométricos en cualquier momento; seguirás pudiendo iniciar sesión con tu
+              contraseña.
+            </p>
+            <button
+              type="button"
+              onClick={handleDeleteBiometric}
+              disabled={privacyBusy}
+              className="inline-flex items-center gap-2 border border-fuchsia-600 text-fuchsia-600 hover:bg-fuchsia-50 dark:hover:bg-fuchsia-950/30 font-medium px-5 py-2.5 rounded-xl transition-all disabled:opacity-50 cursor-pointer"
+            >
+              <Trash size={17} />
+              Revocar y eliminar mis datos biométricos
+            </button>
           </div>
 
           <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-rose-200 dark:border-rose-900/50 shadow-sm p-6 sm:p-8 space-y-3">

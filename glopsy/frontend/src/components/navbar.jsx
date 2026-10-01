@@ -178,6 +178,18 @@ export default function Navbar() {
       alert('Tu navegador no soporta autenticación biométrica (WebAuthn).');
       return;
     }
+    // Los datos biométricos son sensibles: requieren autorización expresa,
+    // previa e informada, separada del resto (Ley 1581 de 2012, arts. 5-6).
+    const authorized = window.confirm(
+      'Autorización para el tratamiento de datos biométricos\n\n' +
+        'Autorizo de manera expresa, previa e informada a Glopsy (Nodux Technology) para tratar mis ' +
+        'datos biométricos (huella dactilar o rostro) con la única finalidad de autenticarme de forma ' +
+        'segura en la plataforma.\n\n' +
+        'Esta autorización es opcional: puedo usar mi contraseña y puedo revocarla o suprimir mis datos ' +
+        'biométricos en cualquier momento desde Mi Perfil > Privacidad.\n\n' +
+        '¿Autorizas el tratamiento de tus datos biométricos?'
+    );
+    if (!authorized) return;
     try {
       let res = await api.post('/auth/biometric/register-options');
 
@@ -217,6 +229,8 @@ export default function Navbar() {
       };
 
       await api.post('/auth/biometric/register-verify', credentialData);
+      // Deja constancia de la autorización expresa del dato sensible.
+      api.post('/auth/consent', { consentType: 'biometric', source: 'biometric' }).catch(() => {});
       setBiometricStatus('¡Huella biométrica registrada con éxito!');
       setTimeout(() => setBiometricStatus(''), 4000);
     } catch (err) {

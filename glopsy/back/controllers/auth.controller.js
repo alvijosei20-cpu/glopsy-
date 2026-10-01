@@ -532,6 +532,19 @@ export const registerEmail = async (req, res) => {
         message: 'Debes aceptar los Términos y Condiciones y la Política de Privacidad para registrarte.',
       });
     }
+    // Mayoría de edad: la plataforma es para mayores de 18 (Ley 1480 y 1581).
+    const birthdate = cleanDate(req.body.birthdate);
+    if (!birthdate) {
+      return res.status(400).json({ ok: false, message: 'Debes indicar tu fecha de nacimiento (formato AAAA-MM-DD).' });
+    }
+    const today = new Date();
+    const birth = new Date(`${birthdate}T00:00:00Z`);
+    let age = today.getUTCFullYear() - birth.getUTCFullYear();
+    const monthDiff = today.getUTCMonth() - birth.getUTCMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getUTCDate() < birth.getUTCDate())) age -= 1;
+    if (age < 18) {
+      return res.status(400).json({ ok: false, message: 'Debes ser mayor de 18 años para registrarte en Glopsy.' });
+    }
     const termsVersion = cleanString(req.body.termsVersion, { maxLength: 30 }) || null;
     const privacyVersion = cleanString(req.body.privacyVersion, { maxLength: 30 }) || null;
     const visitorCountry = String(req.get('x-visitor-country') || req.get('cf-ipcountry') || '').trim();
@@ -540,6 +553,7 @@ export const registerEmail = async (req, res) => {
       email,
       password,
       name,
+      birthdate,
       consent: {
         termsVersion,
         privacyVersion,
@@ -567,14 +581,16 @@ export const recordConsentController = async (req, res) => {
   try {
     const termsVersion = cleanString(req.body.termsVersion, { maxLength: 30 }) || null;
     const privacyVersion = cleanString(req.body.privacyVersion, { maxLength: 30 }) || null;
-    if (!termsVersion && !privacyVersion) {
-      return res.status(400).json({ ok: false, message: 'Versiones de consentimiento requeridas.' });
+    const consentType = cleanString(req.body.consentType, { maxLength: 30 }) || null;
+    if (!termsVersion && !privacyVersion && !consentType) {
+      return res.status(400).json({ ok: false, message: 'Versiones o tipo de consentimiento requeridos.' });
     }
     const visitorCountry = String(req.get('x-visitor-country') || req.get('cf-ipcountry') || '').trim();
     await recordUserConsent({
       userId: req.auth.userId,
       termsVersion,
       privacyVersion,
+      accepted: req.body.accepted !== false,
       ip: req.ip,
       forwardedFor: req.get('x-forwarded-for'),
       userAgent: req.get('user-agent'),
@@ -582,7 +598,10 @@ export const recordConsentController = async (req, res) => {
       timezone: cleanString(req.body.timezone, { maxLength: 60 }) || null,
       country: visitorCountry,
       referrer: req.get('referer'),
-      metadata: { source: cleanString(req.body.source, { maxLength: 40 }) || 'oauth' },
+      metadata: {
+        source: cleanString(req.body.source, { maxLength: 40 }) || 'oauth',
+        consentType: consentType || null,
+      },
     });
     return res.json({ ok: true });
   } catch (error) {

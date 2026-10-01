@@ -39,6 +39,7 @@ const LoginForm = ({ mode, onSwitch }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [birthdate, setBirthdate] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -161,6 +162,23 @@ const LoginForm = ({ mode, onSwitch }) => {
       setLoading(false);
       return;
     }
+    if (isRegister) {
+      if (!birthdate) {
+        setError('Debes indicar tu fecha de nacimiento.');
+        setLoading(false);
+        return;
+      }
+      const today = new Date();
+      const birth = new Date(`${birthdate}T00:00:00`);
+      let age = today.getFullYear() - birth.getFullYear();
+      const m = today.getMonth() - birth.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age -= 1;
+      if (Number.isNaN(age) || age < 18) {
+        setError('Debes ser mayor de 18 años para registrarte en Glopsy.');
+        setLoading(false);
+        return;
+      }
+    }
 
     try {
       const endpoint = isRegister ? '/auth/register' : '/auth/login';
@@ -172,6 +190,7 @@ const LoginForm = ({ mode, onSwitch }) => {
             email,
             password,
             name,
+            birthdate,
             acceptedTerms: true,
             termsVersion: TERMS_VERSION,
             privacyVersion: PRIVACY_VERSION,
@@ -214,6 +233,21 @@ const LoginForm = ({ mode, onSwitch }) => {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Tu nombre"
+              required
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500 bg-white text-slate-800"
+            />
+          </div>
+        )}
+        {isRegister && (
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1 text-left">
+              Fecha de nacimiento <span className="text-slate-400 font-normal">(debes ser mayor de 18 años)</span>
+            </label>
+            <input
+              type="date"
+              value={birthdate}
+              onChange={(e) => setBirthdate(e.target.value)}
+              max={new Date().toISOString().slice(0, 10)}
               required
               className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500 bg-white text-slate-800"
             />

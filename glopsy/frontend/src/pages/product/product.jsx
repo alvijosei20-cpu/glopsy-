@@ -10,6 +10,7 @@ import { productShareUrl, shareProduct } from '../../utils/share';
 import { useUserCity } from '../../utils/location';
 import { getStoreSlug } from '../../utils/storeHost';
 import { checkCartCompatibility } from '../../utils/cartMode';
+import RetractoNotice from '../../components/RetractoNotice';
 import LocationPicker from '../../components/LocationPicker';
 import ProductAssistant from '../../components/ProductAssistant';
 import './product.css';
@@ -956,6 +957,7 @@ export default function ProductDetail() {
                 <span>La tienda de este producto está pausada. No es posible agregarlo al carrito ni comprarlo.</span>
               </div>
             )}
+            <RetractoNotice className="mt-6 mb-4" />
             <div className="pt-6 border-t border-fuchsia-100 flex flex-col sm:flex-row gap-4">
               <button
                 type="button"

@@ -84,6 +84,8 @@ export const TERMS_SECTIONS = [
       'Estos términos se rigen por las leyes de la República de Colombia.',
       'Cualquier controversia será sometida a la jurisdicción ordinaria de Colombia, de acuerdo con las normas de competencia aplicables.',
       'En todo caso se dará aplicación a los mecanismos de protección al consumidor consagrados en la Ley 1480 de 2011.',
+      'Operación internacional: Glopsy opera comercialmente en Colombia y Venezuela. Cuando el Comprador o el Vendedor se encuentre en Venezuela, se aplicará en lo pertinente la normativa venezolana de protección al consumidor y de protección de datos personales, sin perjuicio de los derechos que esta plataforma reconoce a todos sus usuarios.',
+      'Transferencias internacionales: cuando el servicio implique el tratamiento o la transferencia de datos personales fuera de Colombia, se realizará únicamente cuando sea necesario para la prestación del servicio y bajo los mecanismos de protección y niveles de seguridad exigidos por la normativa aplicable, conforme a la Política de Privacidad.',
     ],
   },
   {

@@ -39,10 +39,11 @@ export const verifyPassword = (password, storedHash) => {
   return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(key, 'hex'));
 };
 
-export const registerWithEmail = async ({ email, password, name, consent } = {}) => {
+export const registerWithEmail = async ({ email, password, name, birthdate, consent } = {}) => {
   const safeEmail = cleanEmail(email, { required: true });
   if (!safeEmail) throw new Error('Correo electrónico inválido.');
   const safeName = cleanString(name, { maxLength: 120 });
+  const safeBirthdate = birthdate ? String(birthdate).trim() : null;
 
   const existing = await pool.query('SELECT id FROM users WHERE email = $1 LIMIT 1', [safeEmail]);
   if (existing.rows[0]) {
@@ -51,10 +52,10 @@ export const registerWithEmail = async ({ email, password, name, consent } = {})
 
   const password_hash = hashPassword(password);
   const { rows } = await pool.query(
-    `INSERT INTO users (email, name, password_hash)
-     VALUES ($1, $2, $3)
+    `INSERT INTO users (email, name, password_hash, birthdate)
+     VALUES ($1, $2, $3, $4)
      RETURNING id, email, name, avatar_url, can_sell`,
-    [safeEmail, safeName || safeEmail.split('@')[0], password_hash]
+    [safeEmail, safeName || safeEmail.split('@')[0], password_hash, safeBirthdate]
   );
   const user = rows[0];
 
@@ -147,7 +148,7 @@ export const getUserConsents = async (userId) => {
   const uid = Number(userId);
   if (!uid) return [];
   const { rows } = await pool.query(
-    `SELECT id, terms_version, privacy_version, accepted, accepted_at, browser, os, device, country
+    `SELECT id, terms_version, privacy_version, accepted, accepted_at, browser, os, device, country, metadata
      FROM user_aceptaciones WHERE user_id = $1 ORDER BY accepted_at DESC`,
     [uid]
   );
