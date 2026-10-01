@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import api from '../services/api';
 import { initGA } from '../utils/analytics';
+import { initTikTokPixel } from '../utils/tiktokPixel';
 import { getStoreSlug } from '../utils/storeHost';
 
 const StorefrontContext = createContext({ slug: null, store: null, ready: false });
@@ -26,7 +27,11 @@ export function StorefrontProvider({ children }) {
       api
         .get('/storefront/main')
         .then(({ data }) => {
-          if (alive) setStore(data?.store || null);
+          if (!alive) return;
+          const st = data?.store || null;
+          setStore(st);
+          // Pixel de TikTok de la tienda principal (si está configurado).
+          if (st?.tiktokPixelId) initTikTokPixel(st.tiktokPixelId);
         })
         .catch(() => {})
         .finally(() => {
@@ -47,6 +52,8 @@ export function StorefrontProvider({ children }) {
         setReady(true);
         // Cada tienda reporta a SU propiedad de Google Analytics.
         if (st?.gaId) initGA(st.gaId);
+        // Y a su propio Pixel de TikTok (marketing).
+        if (st?.tiktokPixelId) initTikTokPixel(st.tiktokPixelId);
       })
       .catch(() => {
         if (!alive) return;

@@ -6,6 +6,7 @@
 // de cookies/analítica (Ley 1581 de 2012 y RGPD). Hasta entonces las mediciones
 // quedan en cola y `trackEvent`/`trackPageView` son no-ops.
 import { hasAnalyticsConsent } from './cookieConsent';
+import { trackTikTokEvent, trackTikTokPage } from './tiktokPixel';
 
 const DEFAULT_ID = import.meta.env.VITE_GA_MEASUREMENT_ID || 'G-HQF14269NQ';
 const configured = new Set();
@@ -60,16 +61,21 @@ export function loadGA() {
 }
 
 export function trackPageView(path) {
-  if (configured.size === 0 || !window.gtag) return;
-  window.gtag('event', 'page_view', {
-    page_path: path,
-    page_location: window.location.href,
-  });
+  if (configured.size !== 0 && window.gtag) {
+    window.gtag('event', 'page_view', {
+      page_path: path,
+      page_location: window.location.href,
+    });
+  }
+  // Pixel de TikTok (no-op si no está cargado/con consentimiento).
+  trackTikTokPage();
 }
 
 export function trackEvent(name, params = {}) {
-  if (configured.size === 0 || !window.gtag) return;
-  window.gtag('event', name, params);
+  if (configured.size !== 0 && window.gtag) {
+    window.gtag('event', name, params);
+  }
+  trackTikTokEvent(name, params);
 }
 
 // Al otorgar consentimiento se activan las propiedades pendientes; al revocarlo

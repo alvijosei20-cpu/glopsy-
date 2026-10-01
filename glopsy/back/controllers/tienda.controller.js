@@ -287,22 +287,25 @@ const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
       const name = cleanString(req.body?.name, { maxLength: 100 });
       const slug = cleanString(req.body?.slug, { maxLength: 63 });
       const gaRaw = req.body?.ga_id;
+      const tiktokPixelRaw = req.body?.tiktok_pixel_id;
       const paisRaw = req.body?.pais_id;
       const zoomOrigenRaw = req.body?.zoom_origen_codciudad;
       const internationalDispatchRaw = req.body?.international_dispatch_provider;
       const hasName = name !== undefined && name !== null && String(name).trim() !== '';
       const hasSlug = slug !== undefined && slug !== null && String(slug).trim() !== '';
       const hasGa = gaRaw !== undefined && gaRaw !== null;
+      const hasTiktokPixel = tiktokPixelRaw !== undefined && tiktokPixelRaw !== null;
       const hasPais = paisRaw !== undefined && paisRaw !== null && String(paisRaw).trim() !== '';
       const hasZoomOrigen = zoomOrigenRaw !== undefined && zoomOrigenRaw !== null && String(zoomOrigenRaw).trim() !== '';
       const hasInternationalDispatch = internationalDispatchRaw !== undefined;
-      if (!hasName && !hasSlug && !hasGa && !hasPais && !hasZoomOrigen && !hasInternationalDispatch) {
+      if (!hasName && !hasSlug && !hasGa && !hasTiktokPixel && !hasPais && !hasZoomOrigen && !hasInternationalDispatch) {
         return res.status(400).json({ ok: false, message: 'No hay cambios que aplicar.' });
       }
       const tienda = await updateTienda(req.auth.userId, {
         name: hasName ? name : null,
         slug: hasSlug ? slug : null,
         ga_id: hasGa ? String(gaRaw).trim() : undefined,
+        tiktok_pixel_id: hasTiktokPixel ? String(tiktokPixelRaw).trim() : undefined,
         pais_id: hasPais ? Number(paisRaw) : undefined,
         zoom_origen_codciudad: hasZoomOrigen ? Number(zoomOrigenRaw) : undefined,
         international_dispatch_provider: internationalDispatchRaw === null || internationalDispatchRaw === ''

@@ -27,6 +27,27 @@ const Market = () => {
   const [tiktok, setTiktok] = useState({ client_id: '', client_secret: '', redirect_uri: '', scopes: '', enabled: true, configured: false, source: 'none' });
   const [savingTiktok, setSavingTiktok] = useState(false);
   const [tiktokMsg, setTiktokMsg] = useState('');
+  const [pixel, setPixel] = useState({ id: '', saving: false, msg: '' });
+
+  // Pixel de TikTok de la tienda (marketing).
+  useEffect(() => {
+    setPixel((p) => ({ ...p, id: tienda?.tiktokPixelId || '' }));
+  }, [tienda?.tiktokPixelId]);
+
+  const savePixel = async () => {
+    setPixel((p) => ({ ...p, saving: true, msg: '' }));
+    setError('');
+    try {
+      await api.patch('/tienda', { tiktok_pixel_id: pixel.id.trim() });
+      refreshTienda?.();
+      setPixel((p) => ({ ...p, msg: 'Pixel de TikTok guardado.' }));
+      setTimeout(() => setPixel((p) => ({ ...p, msg: '' })), 2500);
+    } catch (err) {
+      setError(err.response?.data?.message || 'No se pudo guardar el Pixel de TikTok.');
+    } finally {
+      setPixel((p) => ({ ...p, saving: false }));
+    }
+  };
 
   useEffect(() => {
     if (!tienda) return;
@@ -261,6 +282,39 @@ const Market = () => {
             );
           })}
         </div>
+
+        <article className="integration-card" style={{ marginTop: '1rem' }}>
+          <div className="integration-card__brand">
+            <span className="integration-logo" style={{ background: '#111', color: '#fff' }} aria-hidden="true">T</span>
+            <div>
+              <h3>TikTok Pixel</h3>
+              <span className="integration-card__state">{pixel.id ? 'Configurado' : 'No configurado'}</span>
+            </div>
+          </div>
+          <p className="market__hint" style={{ margin: '0.25rem 0 0.75rem' }}>
+            Pixel de TikTok de tu tienda para medir conversiones (visitas, carrito, compras) en tus campañas.
+          </p>
+          <label style={{ display: 'block', color: '#334155', fontWeight: 600, fontSize: '0.8rem' }}>Pixel ID</label>
+          <input
+            type="text"
+            value={pixel.id}
+            onChange={(e) => setPixel((p) => ({ ...p, id: e.target.value.trim() }))}
+            placeholder="Ej. C1A2B3D4E5F6G7H8"
+            autoComplete="off"
+            style={{ width: '100%', padding: '0.6rem 0.75rem', borderRadius: '0.6rem', border: '1px solid #cbd5e1', fontSize: '0.85rem', marginTop: '0.3rem' }}
+          />
+          {pixel.msg && <p className="panel__notice" role="status" style={{ marginTop: '0.6rem' }}>{pixel.msg}</p>}
+          <div className="integration-card__actions">
+            <button
+              className="integration-button integration-button--send"
+              type="button"
+              onClick={savePixel}
+              disabled={pixel.saving}
+            >
+              <Send size={16} /> {pixel.saving ? 'Guardando…' : 'Guardar'}
+            </button>
+          </div>
+        </article>
 
         {tienda?.isMain && (
           <article className="integration-card" style={{ marginTop: '1rem' }}>
