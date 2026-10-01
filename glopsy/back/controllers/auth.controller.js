@@ -23,6 +23,7 @@ import {
 } from '../services/auth.service.js';
 import { pool } from '../db.js';
 import { setAuthCookie, clearAuthCookie } from '../utils/cookies.js';
+import { getOAuthConfig } from '../services/oauthConfig.service.js';
 import {
   cleanString,
   cleanNullableString,
@@ -183,9 +184,9 @@ export const discordCallback = async (req, res) => {
 // Nota: TikTok NO devuelve email. Se guarda un email sintético
 // "<open_id>@tiktok.local" para encajar con users.email (NOT NULL).
 // ==========================================
-export const tiktokLogin = (req, res) => {
-  const clientKey = process.env.TIKTOK_CLIENT_KEY;
-  const redirectUri = process.env.TIKTOK_REDIRECT_URI;
+export const tiktokLogin = async (req, res) => {
+  // Credenciales globales configurables desde el panel (con respaldo en env).
+  const { clientId: clientKey, redirectUri, scopes } = await getOAuthConfig('tiktok');
   if (!clientKey || !redirectUri) {
     return res.redirect(`${process.env.FRONTEND_URL}/login?error=provider_not_configured`);
   }
@@ -195,7 +196,7 @@ export const tiktokLogin = (req, res) => {
     client_key: clientKey,
     redirect_uri: redirectUri,
     response_type: 'code',
-    scope: 'user.info.basic,user.info.profile',
+    scope: scopes || 'user.info.basic,user.info.profile',
   });
 
   res.redirect(`${rootUrl}?${options.toString()}`);
@@ -213,14 +214,15 @@ export const tiktokCallback = async (req, res) => {
   }
 
   try {
+    const { clientId: clientKey, clientSecret, redirectUri } = await getOAuthConfig('tiktok');
     const tokenResponse = await axios.post(
       'https://open.tiktokapis.com/v2/oauth/token/',
       new URLSearchParams({
-        client_key: process.env.TIKTOK_CLIENT_KEY,
-        client_secret: process.env.TIKTOK_CLIENT_SECRET,
+        client_key: clientKey,
+        client_secret: clientSecret,
         code: authCode,
         grant_type: 'authorization_code',
-        redirect_uri: process.env.TIKTOK_REDIRECT_URI,
+        redirect_uri: redirectUri,
       }).toString(),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );

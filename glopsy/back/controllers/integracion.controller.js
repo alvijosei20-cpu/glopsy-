@@ -3,7 +3,9 @@ import {
   saveIntegracionForUser,
   queryIntegrationProduct,
 } from '../services/integracion.service.js';
-import { cleanString, isAllowedEnum } from '../utils/validation.js';
+import { getOAuthStatus, saveOAuthConfig } from '../services/oauthConfig.service.js';
+import { getTiendaForUser } from '../services/tienda.service.js';
+import { cleanString, cleanUrl, isAllowedEnum } from '../utils/validation.js';
 
 export const createIntegracionController = ({
   getIntegraciones = getIntegracionesForUser,
@@ -50,6 +52,40 @@ export const createIntegracionController = ({
     }
   },
 
+  // OAuth global de la plataforma (TikTok Login Kit). Solo la tienda principal.
+  getTiktokAuth: async (req, res) => {
+    try {
+      const tienda = await getTiendaForUser(req.auth.userId);
+      if (!tienda?.isMain) {
+        return res.status(403).json({ ok: false, message: 'Esta configuración es de la tienda principal.' });
+      }
+      return res.json({ ok: true, auth: await getOAuthStatus('tiktok') });
+    } catch (error) {
+      console.error('Error al consultar TikTok Auth:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible consultar la configuración.' });
+    }
+  },
+
+  saveTiktokAuth: async (req, res) => {
+    try {
+      const tienda = await getTiendaForUser(req.auth.userId);
+      if (!tienda?.isMain) {
+        return res.status(403).json({ ok: false, message: 'Esta configuración es de la tienda principal.' });
+      }
+      const auth = await saveOAuthConfig('tiktok', {
+        clientId: cleanString(req.body?.clientId, { maxLength: 200 }),
+        clientSecret: cleanString(req.body?.clientSecret, { maxLength: 300 }),
+        redirectUri: cleanUrl(req.body?.redirectUri, { maxLength: 500 }),
+        scopes: cleanString(req.body?.scopes, { maxLength: 200 }),
+        enabled: req.body?.enabled,
+      });
+      return res.json({ ok: true, message: 'Credenciales de TikTok guardadas.', auth });
+    } catch (error) {
+      console.error('Error al guardar TikTok Auth:', error.message);
+      return res.status(400).json({ ok: false, message: error.message || 'No fue posible guardar la configuración.' });
+    }
+  },
+
   queryProduct: async (req, res) => {
     const provider = cleanString(req.query?.provider, { maxLength: 30 });
     const productId = cleanString(req.query?.productId, { maxLength: 200 });
@@ -87,4 +123,10 @@ export const createIntegracionController = ({
 });
 
 const integracionController = createIntegracionController();
-export const { get: getIntegraciones, save: saveIntegracion, queryProduct } = integracionController;
+export const {
+  get: getIntegraciones,
+  save: saveIntegracion,
+  queryProduct,
+  getTiktokAuth,
+  saveTiktokAuth,
+} = integracionController;

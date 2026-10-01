@@ -24,6 +24,9 @@ const Market = () => {
     template: 'dashboard', theme: 'auto', palette: 'fucsia', color: '#c026d3', banner: '',
   });
   const [savingAppearance, setSavingAppearance] = useState(false);
+  const [tiktok, setTiktok] = useState({ client_id: '', client_secret: '', redirect_uri: '', scopes: '', enabled: true, configured: false, source: 'none' });
+  const [savingTiktok, setSavingTiktok] = useState(false);
+  const [tiktokMsg, setTiktokMsg] = useState('');
 
   useEffect(() => {
     if (!tienda) return;
@@ -60,6 +63,43 @@ const Market = () => {
     };
     fetchIntegraciones();
   }, []);
+
+  // Credenciales globales de TikTok Auth: solo la tienda principal.
+  useEffect(() => {
+    if (!tienda?.isMain) return;
+    let alive = true;
+    api
+      .get('/tienda/integraciones/tiktok')
+      .then(({ data }) => {
+        if (alive && data?.auth) setTiktok(data.auth);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [tienda?.isMain]);
+
+  const saveTiktok = async () => {
+    setSavingTiktok(true);
+    setTiktokMsg('');
+    setError('');
+    try {
+      const { data } = await api.post('/tienda/integraciones/tiktok', {
+        clientId: tiktok.client_id,
+        clientSecret: tiktok.client_secret,
+        redirectUri: tiktok.redirect_uri,
+        scopes: tiktok.scopes,
+        enabled: tiktok.enabled,
+      });
+      if (data?.auth) setTiktok(data.auth);
+      setTiktokMsg('Credenciales de TikTok guardadas.');
+      setTimeout(() => setTiktokMsg(''), 2500);
+    } catch (err) {
+      setError(err.response?.data?.message || 'No se pudieron guardar las credenciales de TikTok.');
+    } finally {
+      setSavingTiktok(false);
+    }
+  };
 
   const updateKey = (provider, value) => setApiKeys((current) => ({ ...current, [provider]: value }));
 
@@ -221,6 +261,85 @@ const Market = () => {
             );
           })}
         </div>
+
+        {tienda?.isMain && (
+          <article className="integration-card" style={{ marginTop: '1rem' }}>
+            <div className="integration-card__brand">
+              <span className="integration-logo" style={{ background: '#111', color: '#fff' }} aria-hidden="true">T</span>
+              <div>
+                <h3>TikTok Auth</h3>
+                <span className="integration-card__state">
+                  {tiktok.configured ? 'Configurado' : 'No configurado'}{tiktok.source === 'env' ? ' · env' : ''}
+                </span>
+              </div>
+            </div>
+            <p className="market__hint" style={{ margin: '0.25rem 0 0.75rem' }}>
+              Credenciales globales de TikTok Login Kit para que tus clientes inicien sesión con TikTok.
+            </p>
+
+            <label style={{ display: 'block', color: '#334155', fontWeight: 600, fontSize: '0.8rem', marginTop: '0.4rem' }}>Client Key</label>
+            <input
+              type="text"
+              value={tiktok.client_id || ''}
+              onChange={(e) => setTiktok((t) => ({ ...t, client_id: e.target.value }))}
+              placeholder="Client Key de TikTok"
+              autoComplete="off"
+              style={{ width: '100%', padding: '0.6rem 0.75rem', borderRadius: '0.6rem', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
+            />
+
+            <label style={{ display: 'block', color: '#334155', fontWeight: 600, fontSize: '0.8rem', marginTop: '0.6rem' }}>Client Secret</label>
+            <input
+              type="password"
+              value={tiktok.client_secret || ''}
+              onChange={(e) => setTiktok((t) => ({ ...t, client_secret: e.target.value }))}
+              placeholder="Client Secret"
+              autoComplete="new-password"
+              style={{ width: '100%', padding: '0.6rem 0.75rem', borderRadius: '0.6rem', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
+            />
+
+            <label style={{ display: 'block', color: '#334155', fontWeight: 600, fontSize: '0.8rem', marginTop: '0.6rem' }}>Redirect URI</label>
+            <input
+              type="url"
+              value={tiktok.redirect_uri || ''}
+              onChange={(e) => setTiktok((t) => ({ ...t, redirect_uri: e.target.value }))}
+              placeholder="https://tu-backend.com/api/auth/tiktok/callback"
+              autoComplete="off"
+              style={{ width: '100%', padding: '0.6rem 0.75rem', borderRadius: '0.6rem', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
+            />
+
+            <label style={{ display: 'block', color: '#334155', fontWeight: 600, fontSize: '0.8rem', marginTop: '0.6rem' }}>Scopes (opcional)</label>
+            <input
+              type="text"
+              value={tiktok.scopes || ''}
+              onChange={(e) => setTiktok((t) => ({ ...t, scopes: e.target.value }))}
+              placeholder="user.info.basic,user.info.profile"
+              autoComplete="off"
+              style={{ width: '100%', padding: '0.6rem 0.75rem', borderRadius: '0.6rem', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
+            />
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.7rem', fontSize: '0.82rem', color: '#334155' }}>
+              <input
+                type="checkbox"
+                checked={tiktok.enabled !== false}
+                onChange={(e) => setTiktok((t) => ({ ...t, enabled: e.target.checked }))}
+              />
+              Login con TikTok habilitado
+            </label>
+
+            {tiktokMsg && <p className="panel__notice" role="status" style={{ marginTop: '0.6rem' }}>{tiktokMsg}</p>}
+
+            <div className="integration-card__actions">
+              <button
+                className="integration-button integration-button--send"
+                type="button"
+                onClick={saveTiktok}
+                disabled={savingTiktok || !tiktok.client_id?.trim() || !tiktok.redirect_uri?.trim() || (!tiktok.client_secret?.trim() && !tiktok.configured)}
+              >
+                <Send size={16} /> {savingTiktok ? 'Guardando…' : 'Guardar'}
+              </button>
+            </div>
+          </article>
+        )}
       </section>
 
       <section className="market__card" aria-labelledby="appearance-title">

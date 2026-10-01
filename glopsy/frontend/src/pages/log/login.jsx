@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Fingerprint, ShieldCheck, Truck, BadgePercent, Store, Sparkles, UserPlus } from 'lucide-react';
@@ -41,6 +41,21 @@ const LoginForm = ({ mode, onSwitch }) => {
   const [name, setName] = useState('');
   const [birthdate, setBirthdate] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [tiktokEnabled, setTiktokEnabled] = useState(true);
+
+  // Muestra el botón de TikTok solo si la plataforma tiene configurado TikTok Auth.
+  useEffect(() => {
+    let alive = true;
+    api
+      .get('/home/oauth/tiktok')
+      .then(({ data }) => {
+        if (alive && typeof data?.configured === 'boolean') setTiktokEnabled(data.configured);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
@@ -357,12 +372,14 @@ const LoginForm = ({ mode, onSwitch }) => {
               Continuar con Discord
             </button>
 
-            <button className="btn-social btn-tiktok" onClick={handleTikTokLogin} type="button">
-              <svg className="icon" viewBox="0 0 24 24" fill="#FFFFFF">
-                <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z"/>
-              </svg>
-              Continuar con TikTok
-            </button>
+            {tiktokEnabled && (
+              <button className="btn-social btn-tiktok" onClick={handleTikTokLogin} type="button">
+                <svg className="icon" viewBox="0 0 24 24" fill="#FFFFFF">
+                  <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z"/>
+                </svg>
+                Continuar con TikTok
+              </button>
+            )}
           </div>
           <p className="text-[10px] text-slate-400 text-center mt-4 leading-snug">
             Al continuar con una red social aceptas los{' '}

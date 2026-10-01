@@ -1,10 +1,19 @@
 import { Router } from 'express';
 import { requireAdminKey } from '../middlewares/admin.js';
 import { getBanners, saveBanners, resetBanners } from '../services/home.service.js';
+import { isOAuthConfigured } from '../services/oauthConfig.service.js';
 
 const router = Router();
 
 const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+
+// Estado público de proveedores OAuth (para mostrar/ocultar botones de login).
+router.get(
+  '/oauth/tiktok',
+  asyncHandler(async (_req, res) => {
+    res.json({ ok: true, configured: await isOAuthConfigured('tiktok') });
+  })
+);
 
 router.get(
   '/banners',
