@@ -32,7 +32,7 @@ export default function Terms() {
           </h1>
         </div>
         <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
-          Última actualización: 20 de septiembre de 2026
+          Última actualización: 1 de octubre de 2026
         </p>
         <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-8 max-w-2xl">
           Este documento regula el uso de la plataforma Glopsy, operada por Nodux Technology. Al acceder o usar

@@ -53,6 +53,7 @@ const SECTIONS = [
       'Solicitar la supresión de tus datos cuando su tratamiento no cumpla con la ley o se haya revocado la autorización.',
       'Presentar reclamos ante el responsable por el uso indebido de tus datos y, de ser el caso, revocar la autorización.',
       'Acceder en forma gratuita a tus datos personales que hayan sido objeto de tratamiento.',
+      'Si te encuentras en Venezuela, podrás ejercer el derecho de habeas data (acceso, rectificación, actualización y supresión de tus datos) conforme al artículo 28 de la Constitución de la República Bolivariana de Venezuela, a través de los mismos canales indicados en esta Política.',
     ],
   },
   {
@@ -153,7 +154,7 @@ export default function Privacidad() {
           </h1>
         </div>
         <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
-          Última actualización: 27 de agosto de 2026
+          Última actualización: 1 de octubre de 2026
         </p>
         <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-8 max-w-2xl">
           Esta política regula el tratamiento de los datos personales de los usuarios de la plataforma
