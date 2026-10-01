@@ -61,8 +61,8 @@
     </script>
 
     <!-- TikTok Pixel (código base; solo marketplace principal).
-         Se carga en modo consentimiento: los eventos quedan retenidos hasta
-         que el usuario acepta cookies (banner), y se liberan con grantConsent(). -->
+         Se carga y dispara para que TikTok reconozca el pixel y mida
+         conversiones de campañas. -->
     <script>
       (function (w, d, t) {
         var host = d.location.hostname.toLowerCase();
@@ -87,15 +87,7 @@
           var f = d.getElementsByTagName('script')[0]; f.parentNode.insertBefore(s, f);
         };
 
-        var consented = false;
-        try {
-          var raw = w.localStorage.getItem('glopsy_cookie_consent');
-          var parsed = raw ? JSON.parse(raw) : null;
-          consented = !!(parsed && parsed.analytics === true);
-        } catch (e) {}
-
         ttq.load('DAVCV7JC77U17TEHUKF0');
-        if (!consented) ttq.holdConsent();
         ttq.page();
       })(window, document, 'ttq');
     </script>
