@@ -34,6 +34,41 @@ electrónico), **Decreto 1074 de 2015** y directrices de la **SIC**.
 | F | Verificación de vendedores (RUT / registro mercantil) | Ley 1480; términos | Operaciones |
 | G | Revisión por abogado del contenido de Términos, Privacidad y Contrato de Mandato | — | Legal |
 
+## Venezuela — modelo transfronterizo (cripto/pagos)
+
+Glopsy opera en Venezuela como **empresa transfronteriza**, sin realizar por
+cuenta propia las actividades reguladas de criptoactivos que la ley venezolana
+reserva a sujetos habilitados.
+
+**Diseño declarado**
+- **IVA/SENIAT:** el impuesto de la venta corresponde al **vendedor/proveedor**;
+  Glopsy actúa como intermediario tecnológico bajo contrato de mandato.
+- **Bolívares (VES):** la conversión y la pata en bolívares la ejecuta un
+  **tercero regulado (VexPay)**. Glopsy no opera el cambio a VES.
+- **USDT:** la custodia/recepción se realiza en la **red blockchain**, fuera de
+  Venezuela, sin que Glopsy mantenga los activos en el país ni preste servicios
+  de intercambio o custodia por cuenta de terceros dentro del territorio.
+
+**Criterios que sostienen la posición (a mantener)**
+- La entidad, las claves/wallets y la operación permanecen fuera de Venezuela.
+- No hay establecimiento ni actividad de intercambio/custodia en el país.
+- El tramo en bolívares lo asume VexPay, que es el sujeto regulado.
+- El servicio no se ofrece como casa de cambio ni custodia de criptoactivos.
+
+**Riesgos residuales a cubrir (no bloqueantes)**
+- La regulación atiende a la **actividad**, no a la moneda: evitar que Glopsy
+  custodie activos *por cuenta de terceros* o intermedie precios desde Venezuela.
+- **AML/CFT y sanciones (OFAC):** al mover USDT aplican expectativas de
+  prevención de legitimación de capitales y, sobre todo, cumplimiento de
+  sanciones internacionales. Mantener política de KYC/riesgo en la contraparte.
+- **Comisión de Glopsy:** el IVA de los bienes es del vendedor, pero la
+  **comisión/servicio de intermediación** de Glopsy puede ser un servicio digital
+  gravado en Venezuela; definir quién factura y desde dónde.
+- **VexPay:** dejar por contrato que asume la pata VES, su KYC/AML y su número de
+  habilitación (dependencia de un tercero regulado).
+- **Consumidor (SUNDDE)** y **habeas data** siguen aplicando a los clientes en
+  Venezuela independientemente de la naturaleza transfronteriza de la empresa.
+
 ## Notas de mantenimiento
 
 - Al cambiar el contenido de Términos o Privacidad, actualizar `TERMS_VERSION` /
