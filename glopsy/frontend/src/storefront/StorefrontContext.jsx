@@ -28,10 +28,9 @@ export function StorefrontProvider({ children }) {
         .get('/storefront/main')
         .then(({ data }) => {
           if (!alive) return;
-          const st = data?.store || null;
-          setStore(st);
-          // Pixel de TikTok de la tienda principal (si está configurado).
-          if (st?.tiktokPixelId) initTikTokPixel(st.tiktokPixelId);
+          // El pixel de TikTok de la tienda principal se carga desde el HTML
+          // (código base en index.html), en modo consentimiento.
+          setStore(data?.store || null);
         })
         .catch(() => {})
         .finally(() => {

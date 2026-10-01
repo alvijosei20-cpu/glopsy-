@@ -34,6 +34,11 @@ export function setCookieConsent({ analytics = false, marketing = false } = {}) 
     localStorage.setItem(COOKIE_CONSENT_KEY, JSON.stringify(data));
   } catch {}
   if (typeof window !== 'undefined') {
+    // TikTok Pixel en modo consentimiento: liberar/rechazar los eventos.
+    try {
+      if (data.analytics && typeof window.ttq?.grantConsent === 'function') window.ttq.grantConsent();
+      else if (!data.analytics && typeof window.ttq?.revokeConsent === 'function') window.ttq.revokeConsent();
+    } catch {}
     window.dispatchEvent(new CustomEvent('glopsy:cookie-consent', { detail: data }));
   }
   return data;

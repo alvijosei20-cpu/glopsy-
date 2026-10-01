@@ -59,6 +59,46 @@
       "publisher": { "@type": "Organization", "name": "Glopsy" }
     }
     </script>
+
+    <!-- TikTok Pixel (código base; solo marketplace principal).
+         Se carga en modo consentimiento: los eventos quedan retenidos hasta
+         que el usuario acepta cookies (banner), y se liberan con grantConsent(). -->
+    <script>
+      (function (w, d, t) {
+        var host = d.location.hostname.toLowerCase();
+        var roots = ['glopsy.shop', 'glopsy.com.ve'];
+        var isMain = false;
+        for (var r = 0; r < roots.length; r++) {
+          var root = roots[r];
+          if (host === root || host === 'app.' + root || host === 'www.' + root) { isMain = true; break; }
+        }
+        if (!isMain) return;
+
+        var ttq = (w[t] = w[t] || []);
+        ttq.methods = ['page','track','identify','instances','debug','on','off','once','ready','alias','group','enableCookie','disableCookie','holdConsent','revokeConsent','grantConsent'];
+        ttq.setAndDefer = function (o, e) { o[e] = function () { o.push([e].concat(Array.prototype.slice.call(arguments, 0))); }; };
+        for (var i = 0; i < ttq.methods.length; i++) ttq.setAndDefer(ttq, ttq.methods[i]);
+        ttq.load = function (id, n) {
+          var url = 'https://analytics.tiktok.com/i18n/pixel/events.js?lib=' + t + '&sdkid=' + id;
+          ttq._i = ttq._i || {}; ttq._i[id] = []; ttq._i[id]._u = url;
+          ttq._t = ttq._t || {}; ttq._t[id] = +new Date();
+          ttq._o = ttq._o || {}; ttq._o[id] = n || {};
+          var s = d.createElement('script'); s.type = 'text/javascript'; s.async = true; s.src = url;
+          var f = d.getElementsByTagName('script')[0]; f.parentNode.insertBefore(s, f);
+        };
+
+        var consented = false;
+        try {
+          var raw = w.localStorage.getItem('glopsy_cookie_consent');
+          var parsed = raw ? JSON.parse(raw) : null;
+          consented = !!(parsed && parsed.analytics === true);
+        } catch (e) {}
+
+        ttq.load('DAVCV7JC77U17TEHUKF0');
+        if (!consented) ttq.holdConsent();
+        ttq.page();
+      })(window, document, 'ttq');
+    </script>
   </head>
   <body>
     <div id="root"></div>

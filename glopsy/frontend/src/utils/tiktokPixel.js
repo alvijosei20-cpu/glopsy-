@@ -14,6 +14,7 @@ function ensureSnippet() {
   t.methods = [
     'page', 'track', 'identify', 'instances', 'debug', 'on', 'off', 'once',
     'ready', 'alias', 'group', 'enableCookie', 'disableCookie',
+    'holdConsent', 'revokeConsent', 'grantConsent',
   ];
   t.setAndDefer = function (target, method) {
     target[method] = function () {
