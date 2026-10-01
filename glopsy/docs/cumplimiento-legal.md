@@ -29,7 +29,7 @@ electrónico), **Decreto 1074 de 2015** y directrices de la **SIC**.
 | A | RUT y registro mercantil de Nodux Technology | Código de Comercio | Legal/contable |
 | B | Facturación electrónica DIAN | DIAN | Contable (campos fiscales ya implementados) |
 | C | Dirección física y teléfono del proveedor (si existen) | Ley 1480 art. 50 | Legal — hoy solo canal electrónico |
-| D | Manual interno de políticas y procedimientos de datos | Decreto 1377/2013 | Legal |
+| D | Manual interno de políticas y procedimientos de datos | Decreto 1377/2013 | Legal — borrador creado en `docs/manual-proteccion-datos.md` (faltan [designar oficial] y firma) |
 | E | Registro Nacional de Bases de Datos (RNBD) ante la SIC si se supera el umbral de activos (100.000 UVT) | Ley 1581, Decreto 1074/2015 | Legal |
 | F | Verificación de vendedores (RUT / registro mercantil) | Ley 1480; términos | Operaciones |
 | G | Revisión por abogado del contenido de Términos, Privacidad y Contrato de Mandato | — | Legal |

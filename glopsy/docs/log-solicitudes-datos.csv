@@ -1,0 +1,2 @@
+id,fecha_recepcion,canal,titular_nombre,titular_documento,titular_correo,tipo,subtipo,detalle,identidad_verificada,fecha_limite,accion_tomada,fecha_respuesta,estado,responsable
+1,2026-01-15T09:30,correo,Ejemplo Titular,1020304050,ejemplo@correo.com,consulta,acceso,Solicita copia de sus datos personales,si,2026-01-29,,,abierta,[Por designar]
