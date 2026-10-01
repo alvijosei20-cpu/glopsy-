@@ -74,6 +74,17 @@ export const AuthProvider = ({ children }) => {
     else setTienda(null);
   }, [user, fetchUserStore]);
 
+  // Cuando el interceptor detecta una sesión realmente vencida, se limpia también
+  // el estado en memoria para evitar bucles de redirección al login.
+  useEffect(() => {
+    const onExpired = () => {
+      setUser(null);
+      setTienda(null);
+    };
+    window.addEventListener('glopsy:session-expired', onExpired);
+    return () => window.removeEventListener('glopsy:session-expired', onExpired);
+  }, []);
+
   const login = useCallback(async () => {
     const u = await fetchCurrentUser();
     const guestHash = localStorage.getItem('glopsy_guest_hash');

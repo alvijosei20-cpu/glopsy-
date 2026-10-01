@@ -3,25 +3,13 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import './index.css'
-import axios from "axios";
 
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
+// El manejo de expiración de sesión vive en el interceptor de la instancia `api`
+// (src/services/api.js), para no duplicar lógica ni reaccionar a respuestas 403.
 
-
-// 1. Configuración global del interceptor (Antes de renderizar)
-axios.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response && (error.response.status === 401 || error.response.status === 403)) {
-      localStorage.removeItem('user');
-      window.location.href = '/login?expired=true';
-    }
-    return Promise.reject(error);
-  }
-);
-
-// 2. Renderizado único de la aplicación
+// Renderizado único de la aplicación
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>

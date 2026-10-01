@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Fingerprint, ShieldCheck, Truck, BadgePercent, Store, Sparkles, UserPlus } from 'lucide-react';
 import './login.css';
@@ -356,10 +356,17 @@ const BENEFICIOS = [
 
 export const Login = () => {
   const [isRegister, setIsRegister] = useState(false);
+  const location = useLocation();
+  const expired = new URLSearchParams(location.search).get('expired') === 'true';
 
   return (
     <div className="login-container">
       <div className="login-card">
+        {expired && !isRegister && (
+          <div className="mx-4 mt-4 md:mx-0 md:mt-0 md:absolute md:top-4 md:left-1/2 md:-translate-x-1/2 md:z-10 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 px-4 py-2.5 text-xs font-semibold text-center">
+            Tu sesión expiró. Inicia sesión de nuevo para continuar.
+          </div>
+        )}
         <div className="md:grid md:grid-cols-2">
           {/* Formulario (toggle en móvil y desktop) */}
           <div className="md:p-10">

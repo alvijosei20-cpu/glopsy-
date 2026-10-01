@@ -143,7 +143,9 @@ export default function Navbar() {
   };
 
   useEffect(() => {
-    if (pushPermission !== 'granted') return;
+    // Sólo intenta registrar el push si hay sesión: sin ella, el POST
+    // /auth/push-subscription devuelve 401 y no debe cerrar la sesión del invitado.
+    if (!user || pushPermission !== 'granted') return;
     const t = setTimeout(() => { subscribeToPush().catch(() => {}); }, 800);
     return () => clearTimeout(t);
   }, [user, pushPermission]);
