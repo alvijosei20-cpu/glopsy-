@@ -211,105 +211,162 @@ export const getInternationalShippingOptions = async ({
   // DDP garantizado: envia.com cotiza flete + derechos/impuestos de importación.
   const customsSettings = { dutiesPaymentEntity: 'envia_guaranteed', exportReason: 'sale' };
 
-  let carriers = [];
-  try {
-    carriers = await getEnviaCarriers({ accessToken: creds.accessToken, mode: creds.mode, countryCode: destination.country });
-  } catch {
-    carriers = [];
-  }
+  const carriers = await getEnviaCarriers({
+    accessToken: creds.accessToken,
+    mode: creds.mode,
+    countryCode: destination.country,
+  }).catch(() => []);
   const carrierNames = carriers
     .map((c) => c?.name || c?.carrier || c?.slug)
     .filter(Boolean)
     .slice(0, maxCarriers);
 
-  const options = [];
-  for (const carrier of carrierNames) {
-    let branches = [];
-    try {
-      branches = await getEnviaBranches({
-        accessToken: creds.accessToken,
-        mode: creds.mode,
-        carrier,
-        countryCode: destination.country,
-        state: destination.state,
-        locality: destination.city,
-        zipcode: destination.postalCode,
-        type: 2,
-        packages,
-        limitBranches: maxBranchesPerCarrier,
-      });
-    } catch {
-      continue;
-    }
+  const destAddress = {
+    name: destination.name || 'Cliente',
+    email: destination.email || undefined,
+    phone: String(destination.phone || '').replace(/[^\d+]/g, '') || undefined,
+    phone_code: destination.phone_code || undefined,
+    street: destination.street || destination.address || '',
+    number: destination.number || '',
+    district: destination.district || undefined,
+    city: destination.city || '',
+    state: destination.state || '',
+    country: destination.country || '',
+    postalCode: destination.postalCode || '',
+    reference: destination.reference || '',
+  };
 
-    for (const branch of branches.slice(0, maxBranchesPerCarrier)) {
-      const branchAddress = buildBranchAddress(branch, destination);
+  const options = [];
+
+  // Caso A: ENVIA NO opera en el país destino (ej. Venezuela) → un único tramo
+  // internacional que llega DIRECTO a la dirección del comprador.
+  if (carrierNames.length === 0) {
+    for (const carrier of ["dhl", "fedex", "ups", "aramex"]) {
       try {
-        const [leg1Rates, leg2Rates] = await Promise.all([
-          // Tramo 1: origen del producto -> oficina (internacional).
-          getInternationalShippingRates({
-            accessToken: creds.accessToken,
-            mode: creds.mode,
-            origin,
-            destination: branchAddress,
-            packages,
-            currency,
-            carrier,
-            customsSettings,
-          }),
-          // Tramo 2: oficina -> cliente (última milla con la transportadora de la oficina).
-          getInternationalShippingRates({
-            accessToken: creds.accessToken,
-            mode: creds.mode,
-            origin: branchAddress,
-            destination,
-            packages,
-            currency,
-            carrier,
-          }),
-        ]);
-        const leg1 = pickCheapest(leg1Rates);
-        const leg2 = pickCheapest(leg2Rates);
-        if (!leg1 || !leg2) continue;
-        const leg1Total = ratePrice(leg1);
-        const landedCost = rateLandedCost(leg1);
-        const leg1Shipping = rateShippingOnly(leg1);
-        const leg2Total = ratePrice(leg2);
+        const rates = await getInternationalShippingRates({
+          accessToken: creds.accessToken,
+          mode: creds.mode,
+          origin,
+          destination: destAddress,
+          packages,
+          currency,
+          carrier,
+          customsSettings,
+        });
+        const best = pickCheapest(rates);
+        if (!best) continue;
+        const landedCost = rateLandedCost(best);
+        const shippingOnly = rateShippingOnly(best);
         options.push({
           carrier,
-          branch: {
-            code: branch?.branch_code || branch?.branch_id || null,
-            reference: branch?.reference || null,
-            distance: branch?.distance ?? null,
-            address: branchAddress,
-          },
+          direct: true,
+          branch: null,
           leg1: {
-            carrier: rateCarrier(leg1) || carrier,
-            service: rateService(leg1),
-            amount: leg1Shipping,
-            currency: rateCurrency(leg1),
+            carrier: rateCarrier(best) || carrier,
+            service: rateService(best),
+            amount: shippingOnly,
+            currency: rateCurrency(best),
             dutiesAndTaxes: landedCost,
-            totalWithDuties: Number.isFinite(leg1Total) ? leg1Total : leg1Shipping,
+            totalWithDuties: ratePrice(best),
           },
-          leg2: {
-            carrier: rateCarrier(leg2) || carrier,
-            service: rateService(leg2),
-            amount: leg2Total,
-            currency: rateCurrency(leg2),
-          },
+          leg2: null,
           dutiesAndTaxes: landedCost,
-          shippingTotal: leg1Shipping + leg2Total,
-          total: Number.isFinite(leg1Total) ? leg1Total + leg2Total : leg1Shipping + leg2Total,
+          shippingTotal: shippingOnly,
+          total: ratePrice(best),
         });
       } catch {
-        // Se ignora esta combinación y se continúa con las demás.
+        // Se ignora el carrier y se continúa con los demás.
+      }
+    }
+  } else {
+    // Caso B: ENVIA opera en destino → origen -> oficina -> cliente (última milla).
+    for (const carrier of carrierNames) {
+      let branches = [];
+      try {
+        branches = await getEnviaBranches({
+          accessToken: creds.accessToken,
+          mode: creds.mode,
+          carrier,
+          countryCode: destination.country,
+          state: destination.state,
+          locality: destination.city,
+          zipcode: destination.postalCode,
+          type: 2,
+          packages,
+          limitBranches: maxBranchesPerCarrier,
+        });
+      } catch {
+        continue;
+      }
+
+      for (const branch of branches.slice(0, maxBranchesPerCarrier)) {
+        const branchAddress = buildBranchAddress(branch, destination);
+        try {
+          const [leg1Rates, leg2Rates] = await Promise.all([
+            getInternationalShippingRates({
+              accessToken: creds.accessToken,
+              mode: creds.mode,
+              origin,
+              destination: branchAddress,
+              packages,
+              currency,
+              carrier,
+              customsSettings,
+            }),
+            getInternationalShippingRates({
+              accessToken: creds.accessToken,
+              mode: creds.mode,
+              origin: branchAddress,
+              destination,
+              packages,
+              currency,
+              carrier,
+            }),
+          ]);
+          const leg1 = pickCheapest(leg1Rates);
+          const leg2 = pickCheapest(leg2Rates);
+          if (!leg1 || !leg2) continue;
+          const leg1Total = ratePrice(leg1);
+          const landedCost = rateLandedCost(leg1);
+          const leg1Shipping = rateShippingOnly(leg1);
+          const leg2Total = ratePrice(leg2);
+          options.push({
+            carrier,
+            direct: false,
+            branch: {
+              code: branch?.branch_code || branch?.branch_id || null,
+              reference: branch?.reference || null,
+              distance: branch?.distance ?? null,
+              address: branchAddress,
+            },
+            leg1: {
+              carrier: rateCarrier(leg1) || carrier,
+              service: rateService(leg1),
+              amount: leg1Shipping,
+              currency: rateCurrency(leg1),
+              dutiesAndTaxes: landedCost,
+              totalWithDuties: Number.isFinite(leg1Total) ? leg1Total : leg1Shipping,
+            },
+            leg2: {
+              carrier: rateCarrier(leg2) || carrier,
+              service: rateService(leg2),
+              amount: leg2Total,
+              currency: rateCurrency(leg2),
+            },
+            dutiesAndTaxes: landedCost,
+            shippingTotal: leg1Shipping + leg2Total,
+            total: Number.isFinite(leg1Total) ? leg1Total + leg2Total : leg1Shipping + leg2Total,
+          });
+        } catch {
+          // Se ignora esta combinación y se continúa con las demás.
+        }
       }
     }
   }
 
   options.sort((a, b) => a.total - b.total);
   const top = options.slice(0, 5).map((o, idx) => ({
-    id: `${o.carrier}_${o.branch.code || idx}`,
+    id: `${o.carrier}_${o.branch?.code || idx}`,
     ...o,
     total: Math.round(o.total * 100) / 100,
   }));
@@ -366,12 +423,20 @@ export const dispatchInternationalOrder = async (orderId) => {
 
     const option = sp.option;
     const destination = sp.destination || {};
+    const isDirect = option?.direct === true || !option?.branch?.address;
     const branchAddress = option?.branch?.address || null;
-    if (!branchAddress) return { ok: false, reason: 'no_branch' };
+    if (!isDirect && !branchAddress) return { ok: false, reason: 'no_branch' };
+
+    // En modo directo el paquete va del origen (producto) al comprador; en modo
+    // oficina, del origen a la oficina de ENVIA y luego al comprador.
+    const originAddress = isDirect
+      ? await resolveOriginAddress(items, order.tienda_id).catch(() => null)
+      : branchAddress;
+    const destAddress = buildDestinationAddress(destination, order);
 
     const result = { ok: true, mastershop: null, tracking: null, label: null };
 
-    // 1) Pedido de despacho en MasterShop (paquete -> oficina de ENVIA).
+    // 1) Pedido de despacho en MasterShop (paquete -> oficina o comprador).
     const ms = await getMastershopIntegrationForStore(order.tienda_id);
     if (ms?.apiKey) {
       try {
@@ -388,7 +453,7 @@ export const dispatchInternationalOrder = async (orderId) => {
         result.mastershop = await createMastershopDispatchOrder({
           apiKey: ms.apiKey,
           orderId: order.order_number || order.id,
-          shippingAddress: branchAddress,
+          shippingAddress: isDirect ? destAddress : branchAddress,
           items,
           total: Number(order.amount) || 0,
           currency: store.moneda || 'COP',
@@ -399,22 +464,22 @@ export const dispatchInternationalOrder = async (orderId) => {
       }
     }
 
-    // 2) Guía ENVIA de la última milla (oficina -> cliente).
+    // 2) Guía ENVIA (directo origen -> comprador, u oficina -> comprador).
     const creds = await getStoreEnviaCredentials(order.tienda_id);
-    if (creds?.accessToken && option?.branch?.code) {
+    if (creds?.accessToken && originAddress) {
       try {
         const packages = await buildPackages(items);
-        const destAddress = buildDestinationAddress(destination, order);
-        const originAddress = { ...branchAddress, branchCode: option.branch.code };
-        const labelCarrier = option.leg2?.carrier || option.carrier;
+        const labelCarrier = isDirect
+          ? (option.leg1?.carrier || option.carrier)
+          : (option.leg2?.carrier || option.carrier);
         const label = await generateEnviaLabel({
           accessToken: creds.accessToken,
           mode: creds.mode,
-          origin: originAddress,
+          origin: isDirect ? originAddress : { ...originAddress, branchCode: option.branch.code },
           destination: destAddress,
           packages,
           carrier: labelCarrier,
-          service: option.leg2?.service,
+          service: isDirect ? option.leg1?.service : option.leg2?.service,
           currency: 'USD',
           orderReference: order.order_number || String(order.id),
           customsSettings: { dutiesPaymentEntity: 'envia_guaranteed', exportReason: 'sale' },
@@ -439,7 +504,7 @@ export const dispatchInternationalOrder = async (orderId) => {
             const invoice = await createCommercialInvoice({
               accessToken: creds.accessToken,
               mode: creds.mode,
-              origin: originAddress,
+              origin: isDirect ? originAddress : { ...originAddress, branchCode: option.branch.code },
               destination: destAddress,
               shipment: { carrier: labelCarrier, trackingNumber: result.tracking },
               packages: packages.map((p) => ({
