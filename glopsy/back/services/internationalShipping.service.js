@@ -54,6 +54,22 @@ const rateCarrier = (r) => r?.carrier || r?.carrierName || r?.provider || null;
 const rateService = (r) => r?.service || r?.serviceName || r?.service_name || null;
 const rateCurrency = (r) => r?.currency || r?.currencyId || 'USD';
 
+// ENVIA exige que `state` tenga 2-3 caracteres (código). Si llega el nombre
+// completo (ej. "Distrito Capital"), se colapsa a un código corto.
+const normalizeState = (state) => {
+  const s = String(state || '').trim();
+  if (!s) return s;
+  if (s.length <= 3) return s.toUpperCase();
+  return s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .split(/[\s\-]+/)
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 3)
+    .toUpperCase();
+};
+
 // Origen del envío: ciudad/departamento con los que se publicó el producto.
 const resolveOriginAddress = async (items, tiendaId) => {
   const ids = items.map((i) => Number(i.id)).filter(Boolean);
@@ -99,7 +115,7 @@ const resolveOriginAddress = async (items, tiendaId) => {
     number: process.env.ENVIA_ORIGIN_NUMBER || '1',
     district: undefined,
     city: isCo ? ensure8DigitDane(row.codigo_dane) : row.ciudad_nombre,
-    state: isCo ? getStateCode(row.departamento_nombre) : row.departamento_nombre,
+    state: isCo ? getStateCode(row.departamento_nombre) : normalizeState(row.departamento_nombre),
     country,
     postalCode: row.codigo_postal || (isCo ? '11001000' : ''),
   };
@@ -163,7 +179,7 @@ const buildBranchAddress = (branch, dest) => {
     number: a.number || '',
     district: a.locality || a.city || undefined,
     city: a.city || a.locality || dest.city,
-    state: a.state || dest.state,
+    state: a.state || normalizeState(dest.state),
     country: a.country || dest.country,
     postalCode: a.postalCode || dest.postalCode,
     reference: branch?.reference || '',
@@ -180,6 +196,9 @@ export const getInternationalShippingOptions = async ({
 } = {}) => {
   if (!destination?.country) throw new Error('Falta el país de destino.');
   if (!Array.isArray(items) || items.length === 0) throw new Error('No hay productos para cotizar.');
+
+  // Normaliza el estado destino al código que exige ENVIA (2-3 letras).
+  destination = { ...destination, state: normalizeState(destination.state), country: String(destination.country).toUpperCase() };
 
   const creds = await getStoreEnviaCredentials(tiendaId);
   if (!creds?.accessToken) {
@@ -235,6 +254,7 @@ export const getInternationalShippingOptions = async ({
             destination: branchAddress,
             packages,
             currency,
+            carrier,
             customsSettings,
           }),
           // Tramo 2: oficina -> cliente (última milla con la transportadora de la oficina).
