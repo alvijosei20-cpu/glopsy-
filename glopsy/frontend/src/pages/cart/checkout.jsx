@@ -55,7 +55,7 @@ export default function Checkout() {
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [showBricks, setShowBricks] = useState(false);
   const [preferenceData, setPreferenceData] = useState(null);
-  const [paymentProvider, setPaymentProvider] = useState('mercadopago');
+  const [paymentProvider, setPaymentProvider] = useState('bold');
   const [showBold, setShowBold] = useState(false);
 
   // Si el cliente vuelve del checkout de Bold, retomamos la verificación del pago.
@@ -67,15 +67,10 @@ export default function Checkout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Pasarela predeterminada de la plataforma (Bold o Mercado Pago) para tiendas COP.
+  // Pasarela para tiendas COP. Mercado Pago está deshabilitado: siempre Bold.
   useEffect(() => {
     if (!isCOP) return;
-    api.get('/tienda/payment-methods', { params: { moneda: currency || 'COP' } })
-      .then(res => {
-        const def = res.data?.default;
-        if (def === 'bold' || def === 'mercadopago') setPaymentProvider(def);
-      })
-      .catch(() => {});
+    setPaymentProvider('bold');
   }, [isCOP, currency]);
 
   useEffect(() => {
@@ -578,21 +573,8 @@ export default function Checkout() {
             <div className="space-y-2">
               <label className="block text-xs font-bold text-slate-700">Método de pago</label>
               {isCOP ? (
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setPaymentProvider('mercadopago')}
-                    className={`p-3 rounded-xl border text-sm font-bold transition-all cursor-pointer ${paymentProvider === 'mercadopago' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-                  >
-                    Mercado Pago
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentProvider('bold')}
-                    className={`p-3 rounded-xl border text-sm font-bold transition-all cursor-pointer ${paymentProvider === 'bold' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-                  >
-                    Tarjeta / PSE (Bold)
-                  </button>
+                <div className="p-3 rounded-xl border border-blue-600 bg-blue-50 text-blue-700 text-sm font-bold">
+                  Tarjeta / PSE (Bold)
                 </div>
               ) : (
                 <div className="p-3 rounded-xl border border-fuchsia-200 bg-fuchsia-50 text-sm">
@@ -975,8 +957,8 @@ export default function Checkout() {
               {!isCOP
                 ? 'Glopsy Pay (USDT) — próximamente'
                 : loadingCheckout
-                  ? 'Procesando pago con Mercado Pago...'
-                  : paymentProvider === 'bold' ? 'Continuar con Bold' : 'Pagar con Mercado Pago'}
+                  ? 'Procesando pago...'
+                  : 'Continuar con Bold'}
             </button>
           </form>
           )}
