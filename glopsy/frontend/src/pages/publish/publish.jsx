@@ -44,7 +44,7 @@ export default function Publish() {
     urlImageProduct: '',
     basePrice: 0,
     suggestedPrice: '',
-    baseCurrencyPrice: 'USD',
+    baseCurrencyPrice: 'USDT',
     stockTotal: 0,
     productOwner: {},
     description: '',
@@ -135,7 +135,7 @@ export default function Publish() {
         urlImageProduct: raw.urlImageProduct || raw.image || raw.image_url || raw.foto || (raw.images && (raw.images[0]?.src || raw.images[0])) || '',
         basePrice: raw.basePrice || raw.price || 0,
         suggestedPrice: raw.suggestedPrice || raw.selling_price || raw.price || raw.precio || '0.00',
-        baseCurrencyPrice: raw.baseCurrencyPrice || raw.currency || 'USD',
+        baseCurrencyPrice: raw.baseCurrencyPrice || raw.currency || 'USDT',
         stockTotal: raw.stockTotal || 0,
         productOwner: raw.productOwner || { publicName: 'Mastershop Seller' },
         description: raw.description || raw.body_html || raw.descripcion || '',
@@ -560,12 +560,12 @@ export default function Publish() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
             <div>
               <label style={{ color: '#27272a', fontWeight: 600, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                <DollarSign size={16} /> Precio Base (${editableProduct.basePrice} {editableProduct.baseCurrencyPrice})
+                <DollarSign size={16} /> Precio Base ({editableProduct.basePrice} {editableProduct.baseCurrencyPrice})
               </label>
               <input
                 type="text"
                 readOnly
-                value={`$${editableProduct.basePrice} ${editableProduct.baseCurrencyPrice}`}
+                value={`${editableProduct.basePrice} ${editableProduct.baseCurrencyPrice}`}
                 style={{ width: '100%', padding: '0.75rem 1rem', borderRadius: '8px', background: '#f4f4f5', color: '#52525b', border: '1px solid #d4d4d8', fontSize: '1rem', outline: 'none', boxSizing: 'border-box' }}
               />
             </div>

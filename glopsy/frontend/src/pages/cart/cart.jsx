@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { ShoppingCart, Trash2, CreditCard } from 'lucide-react';
 import { trackEvent } from '../../utils/analytics';
 import { useMoney } from '../../utils/money';
-import { isMixedCart } from '../../utils/cartMode';
+import { isMixedCart, cartCurrency, isInternationalItem } from '../../utils/cartMode';
 import './cart.css';
 
 export default function Cart() {
@@ -74,8 +74,11 @@ export default function Cart() {
     window.dispatchEvent(new Event('storage'));
   };
 
-  const { format: formatPrice, currency } = useMoney();
+  const { format: formatPrice, currency: storeCurrency } = useMoney();
 
+  // La moneda del carrito la fija el primer ítem (COP o USDT).
+  const currency = cartCurrency(cartItems) || storeCurrency;
+  const esUsdt = isInternationalItem(cartItems[0] || {});
   const subtotal = cartItems.reduce((acc, item) => acc + (Number(item.price || 0) * Number(item.quantity || 1)), 0);
 
   if (cartItems.length === 0) {
@@ -136,14 +139,19 @@ export default function Cart() {
                         </div>
                       )}
                       <span className="text-xs text-slate-400 block">
-                        Precio unitario: {formatPrice(item.price)}
+                        Precio unitario: {formatPrice(item.price, item.currency)}
                       </span>
+                      {item.internacional && (
+                        <span className="inline-block mt-1 text-[10px] font-bold text-fuchsia-700 bg-fuchsia-50 px-2 py-0.5 rounded">
+                          Internacional · USDT
+                        </span>
+                      )}
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between sm:justify-end gap-6 w-full sm:w-auto border-t sm:border-t-0 pt-3 sm:pt-0 border-fuchsia-50">
                     <span className="font-bold text-slate-900 text-base sm:text-lg">
-                      {formatPrice(itemTotal)}
+                      {formatPrice(itemTotal, item.currency)}
                     </span>
 
                     <div className="flex items-center border border-fuchsia-200 rounded-xl overflow-hidden bg-slate-50">
@@ -185,17 +193,21 @@ export default function Cart() {
               <div className="space-y-3 mb-6 text-sm">
                 <div className="flex justify-between text-slate-600">
                   <span>Subtotal</span>
-                  <span className="font-semibold text-slate-800">{formatPrice(subtotal)}</span>
+                  <span className="font-semibold text-slate-800">{formatPrice(subtotal, currency)}</span>
                 </div>
                 <div className="border-t border-fuchsia-100 pt-3 flex justify-between text-base font-bold text-slate-900">
                   <span>Total estimado</span>
-                  <span className="text-fuchsia-600">{formatPrice(subtotal)}</span>
+                  <span className="text-fuchsia-600">{formatPrice(subtotal, currency)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-slate-500">
+                  <span>Pago</span>
+                  <span className="font-semibold">{esUsdt ? 'Glopsy Pay (USDT)' : 'Bold (COP)'}</span>
                 </div>
               </div>
 
               {isMixedCart(cartItems) && (
                 <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl p-3 mb-3">
-                  Tu carrito mezcla artículos locales con internacionales, no se puede pagar así. Vacíalo y arma una sola compra (todos locales o todos internacionales).
+                  Tu carrito mezcla artículos en pesos (COP) con internacionales (USDT), no se puede pagar así porque usan pasarelas distintas. Vacíalo y arma una sola compra.
                   <button
                     type="button"
                     onClick={() => { localStorage.removeItem('glopsy_cart'); window.dispatchEvent(new Event('storage')); setCartItems([]); }}

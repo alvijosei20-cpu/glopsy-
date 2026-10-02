@@ -20,7 +20,9 @@ export const defaultConfig = () => CONFIG.CO;
 
 export const formatPrice = (monto, config = CONFIG.CO) => {
   const n = Number(monto) || 0;
-  return `${config.simbolo}${Math.round(n).toLocaleString(config.locale)} ${config.moneda}`.trim();
+  // USD y USDT se muestran como "USDT" (etiqueta visible de la divisa).
+  const label = String(config.moneda || '').toUpperCase() === 'USD' ? 'USDT' : config.moneda;
+  return `${config.simbolo}${Math.round(n).toLocaleString(config.locale)} ${label}`.trim();
 };
 
 // Deriva la config de formato a partir de la moneda/locale de una tienda.

@@ -119,7 +119,9 @@ export default function Favorites() {
           price: finalPrice,
           image: getProductImage(p),
           quantity: 1,
-          tienda_id: p.tienda_id
+          tienda_id: p.tienda_id,
+          internacional: p.internacional === true,
+          currency: p.currency || (p.internacional ? 'USDT' : 'COP'),
         });
       }
       localStorage.setItem('glopsy_cart', JSON.stringify(existingCart));

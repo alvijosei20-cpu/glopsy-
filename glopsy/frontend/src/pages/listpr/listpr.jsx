@@ -123,6 +123,7 @@ export default function Listpr() {
           quantity: 1,
           tienda_id: p.tienda_id,
           internacional: p.internacional === true,
+          currency: p.currency || (p.internacional ? 'USDT' : 'COP'),
         });
       }
       localStorage.setItem('glopsy_cart', JSON.stringify(existingCart));
@@ -906,12 +907,12 @@ export default function Listpr() {
                         <div>
                           {hasDiscount && (
                             <span className="text-[11px] text-slate-400 line-through block">
-                              {formatPrice(baseP)}
+                              {formatPrice(baseP, p.currency)}
                             </span>
                           )}
                           <div className="flex items-baseline gap-1.5 flex-wrap">
                             <span className="text-base sm:text-lg font-bold text-slate-900">
-                              {formatPrice(hasDiscount ? finalPrice : baseP)}
+                              {formatPrice(hasDiscount ? finalPrice : baseP, p.currency)}
                             </span>
                             {hasDiscount && (
                               <span className="text-[11px] font-bold text-pink-600">

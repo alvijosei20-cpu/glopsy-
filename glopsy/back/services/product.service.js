@@ -847,6 +847,7 @@ export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadNam
       p.description,
       p.created_at,
       (t.usd_activation_status = 'approved' AND COALESCE(t.international_dispatch_provider, '') <> '') AS internacional,
+      COALESCE(t.moneda, pa.moneda, 'COP') AS currency,
       c.nombre AS ciudad_nombre,
       cat.id AS categoria_id,
       cat.nombre AS categoria_nombre,
@@ -879,6 +880,7 @@ export const searchQueryProducts = async ({ q, limit = 12, offset = 0, ciudadNam
     LEFT JOIN ciudades c ON f.ciudad_id = c.id
     LEFT JOIN categorias cat ON p.categoria_id = cat.id
     LEFT JOIN tiendas t ON t.usrid = p.tienda_id
+    LEFT JOIN paises pa ON pa.id = t.pais_id
     WHERE ${buildSearchWhere(mainIdx)}${scopeClause ? ` AND ${scopeClause}` : ''}
     ORDER BY ${orderBy}
     LIMIT $3 OFFSET $4
@@ -971,12 +973,14 @@ export const getStorefrontProducts = async ({ slug = '', q = '', limit = 48, off
            p.images, p.stock_total, p.created_at,
            c.nombre AS ciudad,
            (t.usd_activation_status = 'approved' AND COALESCE(t.international_dispatch_provider, '') <> '') AS internacional,
+           COALESCE(t.moneda, pa.moneda, 'COP') AS currency,
            (SELECT COALESCE(AVG(rv.rating), 0)::numeric(3,2) FROM reviews rv WHERE rv.product_id = p.id) AS avg_rating,
            (SELECT COUNT(*) FROM reviews rv WHERE rv.product_id = p.id) AS review_count
     FROM produc p
     LEFT JOIN fullments f ON p.fullm_id = f.id
     LEFT JOIN ciudades c ON f.ciudad_id = c.id
     LEFT JOIN tiendas t ON t.usrid = p.tienda_id
+    LEFT JOIN paises pa ON pa.id = t.pais_id
     WHERE ${conds.join(' AND ')}`;
 
   const [{ rows }, { rows: countRows }] = await Promise.all([
@@ -1005,6 +1009,7 @@ export const getStorefrontProducts = async ({ slug = '', q = '', limit = 48, off
       avg_rating: Number(r.avg_rating || 0),
       review_count: Number(r.review_count || 0),
       internacional: r.internacional === true,
+      currency: r.currency || 'COP',
       ciudad: r.ciudad || '',
     })),
     total: countRows[0]?.total || 0,
@@ -1019,6 +1024,7 @@ const mapStorefrontCard = (r) => ({
   price: Number(r.price ?? r.suggested_price ?? 0),
   avg_rating: Number(r.avg_rating || 0),
   review_count: Number(r.review_count || 0),
+  currency: r.currency || 'COP',
 });
 
 // Datos para la vitrina tipo dashboard: últimos publicados, promociones y descuentos.
@@ -1067,8 +1073,11 @@ export const getStorefrontHome = async ({ slug = '', ciudadName = null } = {}) =
     const params = hasGlobal ? [tiendaId] : [tiendaId, [...discountIds]];
     const cond = hasGlobal ? '1 = 1' : 'p.id = ANY($2::int[])';
     const { rows } = await pool.query(
-      `SELECT p.public_id, p.name, p.images, COALESCE(p.suggested_price, p.base_price) AS price
+      `SELECT p.public_id, p.name, p.images, COALESCE(p.suggested_price, p.base_price) AS price,
+              COALESCE(t.moneda, pa.moneda, 'COP') AS currency
        FROM produc p
+       LEFT JOIN tiendas t ON t.usrid = p.tienda_id
+       LEFT JOIN paises pa ON pa.id = t.pais_id
        WHERE p.status = 'active' AND p.tienda_id = $1 AND ${cond}
        ORDER BY p.created_at DESC
        LIMIT 12`,
@@ -1136,6 +1145,7 @@ export const getProductByPublicId = async (identifier, ciudad = null) => {
       t.slug AS tienda_slug, t.nombres AS tienda_nombre,
       COALESCE(t.activa, true) AS tienda_activa,
       COALESCE(t.moneda, pa.moneda, 'COP') AS moneda,
+      COALESCE(t.moneda, pa.moneda, 'COP') AS currency,
       COALESCE(t.locale, pa.locale, 'es-CO') AS locale,
       (t.usd_activation_status = 'approved' AND COALESCE(t.international_dispatch_provider, '') <> '') AS internacional,
       (COALESCE(p.suggested_price, p.base_price) + ${freeShippingCostoExpr('$2')}) AS suggested_price_efectivo,
@@ -1890,10 +1900,12 @@ export const getFavoriteProductsDetails = async (userId, ciudad = null) => {
   const values = [userId, ciudad, ...(mainId ? [mainId] : [])];
   const { rows } = await pool.query(
     `SELECT p.*, f.created_at as favorited_at,
+       COALESCE(t.moneda, pa.moneda, 'COP') AS currency,
        (COALESCE(p.suggested_price, p.base_price) + ${freeShippingCostoExpr('$2')}) AS suggested_price_efectivo
      FROM favoritos f
      JOIN produc p ON f.product_id = p.id
      JOIN tiendas t ON t.usrid = p.tienda_id
+     LEFT JOIN paises pa ON pa.id = t.pais_id
      WHERE f.user_id = $1
        AND COALESCE(t.activa, true) = true${extraWhere}
      ORDER BY f.created_at DESC`,

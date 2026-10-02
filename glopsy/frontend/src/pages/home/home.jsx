@@ -216,10 +216,10 @@ const ProductCard = ({ p, favorites, onToggleFavorite, onAddToCart, formatPrice,
         <div className="flex items-end justify-between gap-2 mt-auto pt-1">
           <div>
             {hasDiscount && (
-              <span className="text-[10px] text-slate-400 line-through block">{formatPrice(baseP)}</span>
+              <span className="text-[10px] text-slate-400 line-through block">{formatPrice(baseP, p.currency)}</span>
             )}
             <span className="text-sm font-bold text-slate-900 dark:text-white">
-              {formatPrice(finalPrice)}
+              {formatPrice(finalPrice, p.currency)}
             </span>
           </div>
           <button
@@ -553,6 +553,7 @@ export default function Home() {
           quantity: 1,
           tienda_id: p.tienda_id,
           internacional: p.internacional === true,
+          currency: p.currency || (p.internacional ? 'USDT' : 'COP'),
         });
       }
       localStorage.setItem('glopsy_cart', JSON.stringify(existingCart));

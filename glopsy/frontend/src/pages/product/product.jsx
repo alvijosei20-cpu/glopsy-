@@ -459,7 +459,11 @@ export default function ProductDetail() {
 
     try {
       const existingCart = JSON.parse(localStorage.getItem('glopsy_cart') || '[]');
-      const modeItem = { ...cartItem, internacional: product.internacional === true };
+      const modeItem = {
+        ...cartItem,
+        internacional: product.internacional === true,
+        currency: product.currency || product.moneda || (product.internacional ? 'USDT' : 'COP'),
+      };
       const compat = checkCartCompatibility(existingCart, modeItem);
       if (!compat.ok) {
         setError('No se puede mezclar artículos locales con internacionales en el mismo carrito. Todos internacionales o todos locales.');
@@ -838,11 +842,11 @@ export default function ProductDetail() {
                 </button>
                 {mainHasDiscount && (
                   <span className="text-sm text-slate-400 line-through block">
-                    {formatPrice(mainBase)}
+                    {formatPrice(mainBase, product.currency || product.moneda)}
                   </span>
                 )}
                 <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 block mb-1">
-                  {formatPrice(mainPrice)}
+                  {formatPrice(mainPrice, product.currency || product.moneda)}
                 </span>
                 <div className="flex items-center gap-2">
                   <p className="text-xs text-slate-500">
@@ -1080,11 +1084,11 @@ export default function ProductDetail() {
                       <div>
                         {rpHasDiscount && (
                           <span className="block text-[10px] text-slate-400 line-through">
-                            {formatPrice(rpBase)}
+                            {formatPrice(rpBase, rp.currency)}
                           </span>
                         )}
                         <div className="text-sm font-bold text-slate-950">
-                          {formatPrice(rpHasDiscount ? rpPrice : rpBase)}
+                          {formatPrice(rpHasDiscount ? rpPrice : rpBase, rp.currency)}
                         </div>
                       </div>
                     </div>

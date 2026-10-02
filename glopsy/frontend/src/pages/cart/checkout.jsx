@@ -6,6 +6,7 @@ import { isLoggedIn } from '../../utils/session';
 import { requireBiometricPayment } from '../../utils/webauthn';
 import { trackEvent } from '../../utils/analytics';
 import { useMoney } from '../../utils/money';
+import { cartCurrency } from '../../utils/cartMode';
 import { useStorefront } from '../../storefront/StorefrontContext';
 import { useAuth } from '../../context/AuthContext';
 import BoldPayment from '../../components/BoldPayment';
@@ -13,19 +14,21 @@ import RetractoNotice from '../../components/RetractoNotice';
 import './cart.css';
 
 export default function Checkout() {
-  const { format: formatPrice, currency, locale, rate: currencyRate = 1 } = useMoney();
+  const { format: formatPrice, currency: storeCurrency, locale, rate: currencyRate = 1 } = useMoney();
   const { store } = useStorefront();
   const { user } = useAuth();
   const paisId = store?.paisId || null;
-  const isCOP = String(currency || '').toUpperCase() === 'COP';
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [cartItems, setCartItems] = useState([]);
+  // La moneda la fija el carrito (COP -> Bold, USDT -> Glopsy Pay).
+  const currency = cartCurrency(cartItems) || storeCurrency;
+  const isCOP = String(currency || '').toUpperCase() === 'COP';
   const [guestHash, setGuestHash] = useState('');
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
 
-  const isInternationalStore = String(currency || '').toUpperCase() === 'USD'
-    && String(store?.internationalDispatchProvider || '').toLowerCase() === 'mastershop';
+  // Carrito en USDT (Venezuela o compra internacional): usa Glopsy Pay y logística internacional.
+  const isInternationalStore = !isCOP;
   const [shippingMode, setShippingMode] = useState('national');
   const [paises, setPaises] = useState([]);
   const [intlDestination, setIntlDestination] = useState({ country: '', state: '', city: '', postalCode: '', address: '' });
@@ -409,6 +412,10 @@ export default function Checkout() {
 
   const handleCheckout = async (e) => {
     e.preventDefault();
+    if (!isCOP) {
+      alert('El pago internacional con Glopsy Pay (USDT) estará disponible pronto.');
+      return;
+    }
     if (isIntlUI) {
       if (
         !intlDestination.country || !intlDestination.state.trim() || !intlDestination.city.trim() ||
@@ -570,22 +577,29 @@ export default function Checkout() {
             <form onSubmit={handleCheckout} className="space-y-6">
             <div className="space-y-2">
               <label className="block text-xs font-bold text-slate-700">Método de pago</label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setPaymentProvider('mercadopago')}
-                  className={`p-3 rounded-xl border text-sm font-bold transition-all cursor-pointer ${paymentProvider === 'mercadopago' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-                >
-                  Mercado Pago
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentProvider('bold')}
-                  className={`p-3 rounded-xl border text-sm font-bold transition-all cursor-pointer ${paymentProvider === 'bold' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-                >
-                  Tarjeta / PSE (Bold)
-                </button>
-              </div>
+              {isCOP ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentProvider('mercadopago')}
+                    className={`p-3 rounded-xl border text-sm font-bold transition-all cursor-pointer ${paymentProvider === 'mercadopago' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    Mercado Pago
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentProvider('bold')}
+                    className={`p-3 rounded-xl border text-sm font-bold transition-all cursor-pointer ${paymentProvider === 'bold' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    Tarjeta / PSE (Bold)
+                  </button>
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl border border-fuchsia-200 bg-fuchsia-50 text-sm">
+                  <p className="font-bold text-fuchsia-700">Glopsy Pay (USDT)</p>
+                  <p className="text-xs text-fuchsia-600 mt-0.5">Pago internacional en USDT. Disponible próximamente.</p>
+                </div>
+              )}
             </div>
             {isInternationalStore && (
               <div className="space-y-2">
@@ -954,13 +968,15 @@ export default function Checkout() {
 
             <button
               type="submit"
-              disabled={loadingCheckout || loadingShipping}
+              disabled={loadingCheckout || loadingShipping || !isCOP}
               className="w-full text-white font-bold py-4 rounded-2xl shadow-lg text-base transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 shadow-blue-600/30"
             >
               <ShieldCheck size={20} />
-              {loadingCheckout
-                ? 'Procesando pago con Mercado Pago...'
-                : paymentProvider === 'bold' ? 'Continuar con Bold' : 'Pagar con Mercado Pago'}
+              {!isCOP
+                ? 'Glopsy Pay (USDT) — próximamente'
+                : loadingCheckout
+                  ? 'Procesando pago con Mercado Pago...'
+                  : paymentProvider === 'bold' ? 'Continuar con Bold' : 'Pagar con Mercado Pago'}
             </button>
           </form>
           )}
