@@ -603,7 +603,7 @@ export default function Checkout() {
               <label className="block text-xs font-bold text-slate-700">Método de pago</label>
               {isCOP ? (
                 <div className="p-3 rounded-xl border border-blue-600 bg-blue-50 text-blue-700 text-sm font-bold">
-                  Tarjeta / PSE (Bold)
+                  Tarjeta / PSE
                 </div>
               ) : (
                 <div className="p-3 rounded-xl border border-fuchsia-200 bg-fuchsia-50 text-sm">
@@ -985,7 +985,7 @@ export default function Checkout() {
                 ? 'Glopsy Pay (USDT) — próximamente'
                 : loadingCheckout
                   ? 'Procesando pago...'
-                  : 'Continuar con Bold'}
+                  : 'Continuar con Glopsy'}
             </button>
           </form>
           )}

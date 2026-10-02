@@ -206,7 +206,7 @@ export default function BoldPayment({
     <form onSubmit={handlePay} className="space-y-5">
       <div className="flex items-center justify-between pb-4 border-b border-slate-200">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">Pago con Bold</h2>
+          <h2 className="text-xl font-bold text-slate-900">Pago con Glopsy</h2>
           <p className="text-xs text-slate-500">
             Subtotal: {formatPrice ? formatPrice(total) : total}. Elige el método de pago, la tarifa se agrega al total.
           </p>
@@ -218,7 +218,7 @@ export default function BoldPayment({
 
       {!opened && (
         <div className="space-y-2 bg-slate-50 border border-slate-200 rounded-xl p-4">
-          <label className="block text-xs font-bold text-slate-700">Método de pago Bold (tarifa por transacción)</label>
+          <label className="block text-xs font-bold text-slate-700">Método de pago</label>
           <div className="grid grid-cols-1 gap-2">
             {Object.entries(BOLD_METHOD_FEES).map(([key, m]) => (
               <label key={key} className={`flex items-center justify-between gap-2 p-2.5 rounded-lg border cursor-pointer text-sm ${method === key ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white'}`}>
@@ -226,15 +226,11 @@ export default function BoldPayment({
                   <input type="radio" name="bold-method" checked={method === key} onChange={() => setMethod(key)} />
                   {m.label}
                 </span>
-                <span className="text-xs font-bold text-slate-500">{m.percent}%{fee.method === m ? ` + ${formatPrice ? formatPrice(fee.base) : fee.base}` : ''}</span>
               </label>
             ))}
           </div>
           <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-sm">
-            <span className="font-bold text-slate-700">
-              Tarifa {fee.method.label}
-              {` (${fee.method.percent}%${fee.base ? ` + fijo` : ''}${fee.iva ? ` + IVA 19%` : ''})`}
-            </span>
+            <span className="font-bold text-slate-700">Tarifa de pago</span>
             <strong className="text-slate-900">{formatPrice ? formatPrice(fee.total) : fee.total}</strong>
           </div>
           <div className="flex items-center justify-between text-sm font-extrabold text-slate-900">
@@ -247,7 +243,7 @@ export default function BoldPayment({
       {opened ? (
         <div className="space-y-4 text-sm text-slate-600 bg-blue-50 border border-blue-100 rounded-xl p-4">
           <p className="flex items-center gap-2 font-bold text-blue-800">
-            <CreditCard size={16} /> Completa el pago en la ventana de Bold.
+            <CreditCard size={16} /> Completa el pago en la ventana de Glopsy.
           </p>
           <p>Si cerraste la ventana, puedes verificar el estado de tu pago.</p>
           <div className="flex gap-3">
