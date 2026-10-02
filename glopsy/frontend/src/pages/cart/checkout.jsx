@@ -36,6 +36,7 @@ export default function Checkout() {
   const [selectedIntlOptionId, setSelectedIntlOptionId] = useState('');
   const [loadingIntl, setLoadingIntl] = useState(false);
   const [intlError, setIntlError] = useState('');
+  const [intlConsent, setIntlConsent] = useState(false);
 
   const [departamentos, setDepartamentos] = useState([]);
   const [ciudades, setCiudades] = useState([]);
@@ -331,6 +332,7 @@ export default function Checkout() {
     setLoadingIntl(true);
     setIntlOptions([]);
     setIntlDuties(null);
+    setIntlConsent(false);
     setSelectedIntlOptionId('');
     try {
       const country = paises.find((p) => String(p.codigo_iso).toUpperCase() === String(intlDestination.country).toUpperCase());
@@ -447,6 +449,10 @@ export default function Checkout() {
         !intlDestination.address.trim() || !telefono.trim() || !selectedIntlOptionId
       ) {
         alert('Completa el destino internacional y selecciona una opción de envío.');
+        return;
+      }
+      if (intlDuties?.pais === 'VE' && !intlConsent) {
+        alert('Debes aceptar las condiciones de importación a Venezuela para continuar.');
         return;
       }
     } else {
@@ -757,6 +763,32 @@ export default function Checkout() {
                     <p className="mt-1 text-amber-700">
                       Este valor es un estimado informativo. La aduana de {intlDuties.paisNombre} lo cobra al momento de la entrega y el monto final puede variar.
                     </p>
+                  </div>
+                )}
+
+                {intlDuties?.ok && intlDuties.pais === 'VE' && (
+                  <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-[11px] leading-snug text-slate-600">
+                    <p className="font-bold text-slate-800">Importante para tu envío a Venezuela (uso personal)</p>
+                    <p className="mt-1">Para que tu envío por courier puerta a puerta quede exento de aranceles e IVA (hasta USD 100):</p>
+                    <ul className="mt-1 ml-4 list-disc space-y-0.5">
+                      <li>Debe ser para <strong>uso personal o familiar</strong>, no para reventa.</li>
+                      <li>El <strong>valor declarado de la guía no debe superar USD 100</strong>. Si tu carrito lo supera, pagará tributos al recibir.</li>
+                      <li>Evita <strong>muchas unidades del mismo artículo</strong> (más de ~6) o envíos repetidos: la aduana puede tratarlo como comercial.</li>
+                    </ul>
+                    <p className="mt-1">Declara siempre el <strong>valor real</strong>: la aduana lo cruza con facturas; una subdeclaración genera multas y retención.</p>
+                    <p className="mt-1">Datos del receptor completos (nombre, cédula, dirección y teléfono) agilizan la entrega.</p>
+                    <label className="mt-2 flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={intlConsent}
+                        onChange={(e) => setIntlConsent(e.target.checked)}
+                        className="mt-0.5"
+                        required
+                      />
+                      <span className="font-semibold text-slate-700">
+                        Entiendo y acepto las condiciones de importación a Venezuela (uso personal, valor real declarado y límite de USD 100 por guía).
+                      </span>
+                    </label>
                   </div>
                 )}
               </div>
