@@ -13,6 +13,7 @@ import {
   scheduleEnviaPickup,
   getStateCode,
   ensure8DigitDane,
+  createCommercialInvoice,
 } from './envia.service.js';
 import {
   getMastershopIntegrationForStore,
@@ -28,6 +29,21 @@ const ratePrice = (r) =>
       r?.amount ??
       Infinity
   );
+
+// Costo de derechos/impuestos de importación (DDP) devuelto por envia.com.
+// En /ship/rate viene en landedCostTotal (si Envia Guaranteed está disponible).
+const rateLandedCost = (r) => {
+  const v = r?.landedCostTotal ?? r?.landed_cost_total ?? null;
+  return v === null || v === undefined ? null : Number(v);
+};
+
+// Flete sin impuestos: totalPrice - landedCost cuando hay landed cost.
+const rateShippingOnly = (r) => {
+  const total = ratePrice(r);
+  const landed = rateLandedCost(r);
+  if (landed === null || !Number.isFinite(total)) return total;
+  return Math.max(0, total - landed);
+};
 
 const pickCheapest = (rates) => {
   if (!Array.isArray(rates) || rates.length === 0) return null;
@@ -89,32 +105,49 @@ const resolveOriginAddress = async (items, tiendaId) => {
   };
 };
 
-// Paquetes a cotizar (peso/dimensiones del producto).
+// Paquetes a cotizar (peso/dimensiones del producto) + datos de aduana.
 const buildPackages = async (items) => {
   const ids = items.map((i) => Number(i.id)).filter(Boolean);
   let map = new Map();
   if (ids.length > 0) {
     const { rows } = await pool.query(
-      `SELECT id, peso, largo, alto, ancho FROM produc WHERE id = ANY($1::int[])`,
+      `SELECT id, peso, largo, alto, ancho, hs_code, country_of_manufacture
+       FROM produc WHERE id = ANY($1::int[])`,
       [ids]
     );
     map = new Map(rows.map((r) => [Number(r.id), r]));
   }
   return items.map((it) => {
     const p = map.get(Number(it.id)) || {};
+    const qty = Number(it.quantity) || 1;
+    const unitPrice = Number(it.price) || 0;
+    const hsCode = p.hs_code || null;
+    const originCountry = p.country_of_manufacture || null;
+    const content =
+      String(it.name || 'Mercancía General').replace(/[^\w\s\+\-\.]/gi, '').trim() || 'Mercancia General';
     return {
       type: 'box',
-      content: String(it.name || 'Mercancía General').replace(/[^\w\s\+\-\.]/gi, '').trim() || 'Mercancia General',
-      amount: Number(it.quantity) || 1,
+      content,
+      amount: qty,
       weight: Number(p.peso) || Number(process.env.ENVIA_DEFAULT_WEIGHT) || 1,
       weightUnit: 'KG',
       lengthUnit: 'CM',
-      declaredValue: Number(it.price) || 0,
+      declaredValue: unitPrice * qty,
       dimensions: {
         length: Number(p.largo) || Number(process.env.ENVIA_DEFAULT_LENGTH) || 10,
         width: Number(p.ancho) || Number(process.env.ENVIA_DEFAULT_WIDTH) || 10,
         height: Number(p.alto) || Number(process.env.ENVIA_DEFAULT_HEIGHT) || 10,
       },
+      // Detalle por ítem requerido por aduana (HS code + valor unitario).
+      items: [
+        {
+          description: content,
+          ...(hsCode ? { hsCode } : {}),
+          quantity: qty,
+          price: unitPrice,
+          ...(originCountry ? { countryOfManufacture: originCountry } : {}),
+        },
+      ],
     };
   });
 };
@@ -155,6 +188,9 @@ export const getInternationalShippingOptions = async ({
 
   const origin = await resolveOriginAddress(items, tiendaId);
   const packages = await buildPackages(items);
+
+  // DDP garantizado: envia.com cotiza flete + derechos/impuestos de importación.
+  const customsSettings = { dutiesPaymentEntity: 'envia_guaranteed', exportReason: 'sale' };
 
   let carriers = [];
   try {
@@ -199,6 +235,7 @@ export const getInternationalShippingOptions = async ({
             destination: branchAddress,
             packages,
             currency,
+            customsSettings,
           }),
           // Tramo 2: oficina -> cliente (última milla con la transportadora de la oficina).
           getInternationalShippingRates({
@@ -214,6 +251,10 @@ export const getInternationalShippingOptions = async ({
         const leg1 = pickCheapest(leg1Rates);
         const leg2 = pickCheapest(leg2Rates);
         if (!leg1 || !leg2) continue;
+        const leg1Total = ratePrice(leg1);
+        const landedCost = rateLandedCost(leg1);
+        const leg1Shipping = rateShippingOnly(leg1);
+        const leg2Total = ratePrice(leg2);
         options.push({
           carrier,
           branch: {
@@ -225,16 +266,20 @@ export const getInternationalShippingOptions = async ({
           leg1: {
             carrier: rateCarrier(leg1) || carrier,
             service: rateService(leg1),
-            amount: ratePrice(leg1),
+            amount: leg1Shipping,
             currency: rateCurrency(leg1),
+            dutiesAndTaxes: landedCost,
+            totalWithDuties: Number.isFinite(leg1Total) ? leg1Total : leg1Shipping,
           },
           leg2: {
             carrier: rateCarrier(leg2) || carrier,
             service: rateService(leg2),
-            amount: ratePrice(leg2),
+            amount: leg2Total,
             currency: rateCurrency(leg2),
           },
-          total: ratePrice(leg1) + ratePrice(leg2),
+          dutiesAndTaxes: landedCost,
+          shippingTotal: leg1Shipping + leg2Total,
+          total: Number.isFinite(leg1Total) ? leg1Total + leg2Total : leg1Shipping + leg2Total,
         });
       } catch {
         // Se ignora esta combinación y se continúa con las demás.
@@ -310,6 +355,16 @@ export const dispatchInternationalOrder = async (orderId) => {
     const ms = await getMastershopIntegrationForStore(order.tienda_id);
     if (ms?.apiKey) {
       try {
+        const shippingTotal = Math.round(Number(option.shippingTotal ?? option.total) || 0);
+        const additionalCharges = [
+          { type_charge: 'Envío internacional', value: shippingTotal },
+        ];
+        if (option.dutiesAndTaxes != null) {
+          additionalCharges.push({
+            type_charge: 'Aranceles e impuestos',
+            value: Math.round(Number(option.dutiesAndTaxes) || 0),
+          });
+        }
         result.mastershop = await createMastershopDispatchOrder({
           apiKey: ms.apiKey,
           orderId: order.order_number || order.id,
@@ -317,9 +372,7 @@ export const dispatchInternationalOrder = async (orderId) => {
           items,
           total: Number(order.amount) || 0,
           currency: store.moneda || 'COP',
-          additionalCharges: [
-            { type_charge: 'Envío internacional', value: Math.round(Number(option.total) || 0) },
-          ],
+          additionalCharges,
         });
       } catch (e) {
         console.error('[dispatch] MasterShop:', orderId, e.message);
@@ -341,6 +394,7 @@ export const dispatchInternationalOrder = async (orderId) => {
           service: option.leg2?.service,
           currency: 'USD',
           orderReference: order.order_number || String(order.id),
+          customsSettings: { dutiesPaymentEntity: 'envia_guaranteed', exportReason: 'sale' },
         });
         result.tracking = label?.trackingNumber || label?.tracking || null;
         result.label = label?.label || label?.labelUrl || null;

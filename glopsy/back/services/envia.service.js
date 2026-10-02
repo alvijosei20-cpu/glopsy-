@@ -429,6 +429,7 @@ export const getInternationalShippingRates = async ({
   packages = [],
   currency = 'USD',
   carrier = null,
+  customsSettings = null,
 } = {}) => {
   if (!accessToken) throw new Error('Falta el token de ENVIA para cotizar envíos internacionales.');
   if (!origin?.country || !destination?.country) {
@@ -463,6 +464,7 @@ export const getInternationalShippingRates = async ({
     packages: normPackages,
     shipment: carrier ? { type: 1, carrier } : { type: 1 },
     settings: { currency },
+    ...(customsSettings ? { customsSettings } : {}),
   };
 
   const res = await axios.post(apiUrl, payload, {
@@ -618,6 +620,72 @@ export const scheduleEnviaPickup = async ({
   });
   const data = res.data?.data || res.data?.response || res.data || [];
   return Array.isArray(data) ? data[0] : data;
+};
+
+// Clasifica un HS code (Sistema Armonizado) a partir de la descripción del
+// producto o valida uno existente (envia.com /utils/classify-hscode).
+// Devuelve { hsCode, description, fullDescription, confidenceScore } o null.
+export const classifyHsCode = async ({
+  accessToken,
+  mode = 'prueba',
+  description = null,
+  hsCodeProvided = null,
+  shipToCountries = null,
+} = {}) => {
+  if (!description && !hsCodeProvided) return null;
+  const isProd = String(mode).toLowerCase() === 'produccion';
+  const apiUrl = `${getBaseEnviaUrl(isProd).replace(/\/$/, '')}/utils/classify-hscode`;
+  const body = {
+    ...(description ? { description: String(description).slice(0, 500) } : {}),
+    ...(hsCodeProvided ? { hsCodeProvided } : {}),
+    ...(Array.isArray(shipToCountries) && shipToCountries.length > 0
+      ? { shipToCountries: shipToCountries.map((c) => String(c).toUpperCase()) }
+      : {}),
+    includeAlternatives: false,
+  };
+  const res = await axios.post(apiUrl, body, {
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    timeout: Number(process.env.ENVIA_REQUEST_TIMEOUT || 8000),
+  });
+  const data = res.data?.data || null;
+  if (!data?.hsCode) return null;
+  return {
+    hsCode: data.hsCode,
+    description: data.description || null,
+    fullDescription: data.fullDescription || null,
+    confidenceScore: Number(data.confidenceScore) || 0,
+  };
+};
+
+// Genera la factura comercial para un envío internacional (requerida en la
+// mayoría de aduanas). Devuelve { carrier, trackingNumber, billOfLading }.
+export const createCommercialInvoice = async ({
+  accessToken,
+  mode = 'prueba',
+  origin,
+  destination,
+  shipment,
+  packages = [],
+  customsSettings = null,
+} = {}) => {
+  if (!accessToken) throw new Error('Falta el token de ENVIA.');
+  if (!shipment?.carrier || !shipment?.trackingNumber) {
+    throw new Error('La factura comercial requiere transportadora y número de guía.');
+  }
+  const isProd = String(mode).toLowerCase() === 'produccion';
+  const apiUrl = `${getBaseEnviaUrl(isProd).replace(/\/$/, '')}/ship/commercial-invoice`;
+  const body = {
+    origin,
+    destination,
+    shipment,
+    packages,
+    customsSettings: customsSettings || { dutiesPaymentEntity: 'envia_guaranteed', exportReason: 'sale' },
+  };
+  const res = await axios.post(apiUrl, body, {
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    timeout: Number(process.env.ENVIA_REQUEST_TIMEOUT || 12000),
+  });
+  return res.data?.data || res.data || null;
 };
 
 export default { getShippingOptionsFromEnvia };

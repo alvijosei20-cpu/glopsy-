@@ -1,7 +1,7 @@
 import { pool } from '../db.js';
 import crypto from 'crypto';
 import axios from 'axios';
-import { getShippingOptionsFromEnvia, invalidateRatesCacheForStore } from './envia.service.js';
+import { getShippingOptionsFromEnvia, invalidateRatesCacheForStore, classifyHsCode, getStoreEnviaCredentials } from './envia.service.js';
 import { findZoomCityCode, quoteZoomShipping } from './zoom.service.js';
 import { getVeUsdRate } from './rates.service.js';
 import { resolveCheckoutCurrency } from './checkoutCurrency.service.js';
@@ -95,6 +95,35 @@ const sanitizeProductImage = (value) => {
     return str.length <= PRODUCT_IMAGE_MAX_BYTES ? str : null;
   }
   return cleanUrl(str, { maxLength: 2048 });
+};
+
+// Infiere el HS code (Sistema Armonizado) de un producto con envia.com y lo
+// cachea por descripción. Best-effort: si falla, no bloquea el guardado.
+const inferHsCodeForProduct = async (tiendaId, name, description) => {
+  const text = [name, description].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().slice(0, 400);
+  if (!text) return null;
+  const cacheKey = `envia:hscode:${crypto.createHash('md5').update(text.toLowerCase()).digest('hex')}`;
+  try {
+    const cached = await redisClient.get(cacheKey).catch(() => null);
+    if (cached) return cached === 'null' ? null : cached;
+  } catch {}
+  try {
+    const creds = await getStoreEnviaCredentials(tiendaId).catch(() => null);
+    const accessToken = creds?.accessToken || process.env.ENVIA_API_TOKEN || process.env.ENVIA_TOKEN || null;
+    if (!accessToken) return null;
+    const result = await classifyHsCode({
+      accessToken,
+      mode: creds?.mode || 'produccion',
+      description: text,
+      shipToCountries: ['CO', 'VE'],
+    });
+    const hsCode = result?.hsCode || null;
+    try { await redisClient.set(cacheKey, hsCode || 'null', { EX: 60 * 60 * 24 * 30 }).catch(() => {}); } catch {}
+    return hsCode;
+  } catch (e) {
+    console.error('[hscode] no se pudo clasificar:', e.message);
+    return null;
+  }
 };
 
 export const saveProductForUser = async (userId, productData) => {
@@ -256,6 +285,17 @@ export const saveProductForUser = async (userId, productData) => {
   const cleanProductOwner = productOwner ? sanitizeObject(productOwner, { maxSize: 50 }) : null;
   const cleanSelectedOptions = selectedOptions ? sanitizeObject(selectedOptions, { maxSize: 100 }) : null;
 
+  // Datos aduaneros: HS code explícito o inferido; país de fabricación.
+  const explicitHsCode = cleanString(productData.hs_code ?? productData.hsCode, { maxLength: 20 });
+  const countryOfManufacture = cleanString(
+    productData.country_of_manufacture ?? productData.countryOfManufacture,
+    { maxLength: 2 }
+  )?.toUpperCase() || null;
+  let hsCode = explicitHsCode || null;
+  if (!hsCode && name) {
+    hsCode = await inferHsCodeForProduct(userId, name, description).catch(() => null);
+  }
+
   let resolvedIntegracionId = integracionId !== undefined ? integracionId : tiendaIntegracionId;
   if (!resolvedIntegracionId && cleanProvider) {
     const intRow = await pool.query(
@@ -319,9 +359,11 @@ export const saveProductForUser = async (userId, productData) => {
         tipo_empaque_id = $18,
         perfil_envio_id = $19,
         categoria_id = $20,
+        hs_code = $22,
+        country_of_manufacture = $23,
         updated_at = NOW()
       WHERE id = $21 AND tienda_id = $1
-      RETURNING id, name, external_product_id, selected_variant_id, suggested_price, fullm_id, tipo_empaque_id, perfil_envio_id, integracion_id, created_at
+      RETURNING id, name, external_product_id, selected_variant_id, suggested_price, fullm_id, tipo_empaque_id, perfil_envio_id, integracion_id, hs_code, country_of_manufacture, created_at
     `;
     const updateValues = [
       userId,
@@ -345,6 +387,8 @@ export const saveProductForUser = async (userId, productData) => {
       resolvedPerfilEnvioId ? Number(resolvedPerfilEnvioId) : null,
       categoriaId ? Number(categoriaId) : null,
       existingId,
+      hsCode || null,
+      countryOfManufacture || null,
     ];
     const { rows } = await pool.query(updateQuery, updateValues);
     resultRow = rows[0];
@@ -373,9 +417,11 @@ export const saveProductForUser = async (userId, productData) => {
         tipo_empaque_id,
         perfil_envio_id,
         categoria_id,
+        hs_code,
+        country_of_manufacture,
         updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, NOW())
-      RETURNING id, public_id, name, external_product_id, selected_variant_id, suggested_price, fullm_id, tipo_empaque_id, perfil_envio_id, integracion_id, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, NOW())
+      RETURNING id, public_id, name, external_product_id, selected_variant_id, suggested_price, fullm_id, tipo_empaque_id, perfil_envio_id, integracion_id, hs_code, country_of_manufacture, created_at
     `;
     const insertValues = [
       userId,
@@ -399,6 +445,8 @@ export const saveProductForUser = async (userId, productData) => {
       resolvedTipoEmpaqueId ? Number(resolvedTipoEmpaqueId) : null,
       resolvedPerfilEnvioId ? Number(resolvedPerfilEnvioId) : null,
       categoriaId ? Number(categoriaId) : null,
+      hsCode || null,
+      countryOfManufacture || null,
     ];
     const { rows } = await pool.query(insertQuery, insertValues);
     resultRow = rows[0];

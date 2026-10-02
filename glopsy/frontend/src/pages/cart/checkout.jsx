@@ -731,6 +731,12 @@ export default function Checkout() {
                           <div>
                             <p className="font-bold text-slate-800 uppercase">{opt.carrier}{opt.branch?.reference ? ` · ${opt.branch.reference}` : ''}</p>
                             <p className="text-[11px] text-slate-500">{opt.leg1?.service || 'Internacional'} + última milla</p>
+                            {opt.dutiesAndTaxes != null && (
+                              <p className="text-[11px] text-slate-500">
+                                Flete {formatPrice(opt.shippingTotal ?? opt.total)}
+                                {' · '}Aranceles e impuestos {formatPrice(opt.dutiesAndTaxes)}
+                              </p>
+                            )}
                           </div>
                         </div>
                         <span className="font-extrabold text-slate-900">{formatPrice(opt.total)}</span>
