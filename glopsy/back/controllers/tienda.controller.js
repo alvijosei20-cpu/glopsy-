@@ -770,7 +770,7 @@ const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
     const webhook_secret = cleanString(req.body.webhook_secret, { maxLength: 2048 });
     const is_default = req.body.is_default === true;
 
-    if (!provider || !isAllowedEnum(provider, ['mercadopago', 'envia', 'bold'])) {
+    if (!provider || !isAllowedEnum(provider, ['mercadopago', 'envia', 'bold', 'zonos'])) {
       return res.status(400).json({ ok: false, message: 'Proveedor no válido.' });
     }
 
@@ -809,7 +809,7 @@ const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
         webhookSecret: cleanWebhookSecret || undefined,
         isDefault: is_default,
       });
-      const provName = provider === 'mercadopago' ? 'Mercado Pago' : provider === 'bold' ? 'Bold' : 'ENVIA';
+      const provName = provider === 'mercadopago' ? 'Mercado Pago' : provider === 'bold' ? 'Bold' : provider === 'zonos' ? 'Zonos' : 'ENVIA';
       const modeName = integrationMode === 'prueba' ? 'Prueba' : 'Producción';
       return res.json({ ok: true, integration: saved, message: `Configuración de ${provName} (${modeName}) guardada con éxito.` });
     } catch (error) {
@@ -821,7 +821,7 @@ const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
   deleteCheckoutIntegration: async (req, res) => {
     const provider = cleanString(req.params.provider, { maxLength: 50 });
     const mode = cleanString(req.query.mode || req.body?.mode, { maxLength: 20 });
-    if (!provider || !isAllowedEnum(provider, ['mercadopago', 'envia', 'bold'])) {
+    if (!provider || !isAllowedEnum(provider, ['mercadopago', 'envia', 'bold', 'zonos'])) {
       return res.status(400).json({ ok: false, message: 'Proveedor no válido.' });
     }
 
@@ -832,7 +832,7 @@ const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
       if (!deleted) {
         return res.status(404).json({ ok: false, message: 'No se encontró la configuración para eliminar.' });
       }
-      const provName = provider === 'mercadopago' ? 'Mercado Pago' : provider === 'bold' ? 'Bold' : 'ENVIA';
+      const provName = provider === 'mercadopago' ? 'Mercado Pago' : provider === 'bold' ? 'Bold' : provider === 'zonos' ? 'Zonos' : 'ENVIA';
       const modeName = integrationMode === 'prueba' ? 'Prueba' : 'Producción';
       return res.json({ ok: true, message: `Configuración de ${provName} (${modeName}) eliminada con éxito.` });
     } catch (error) {
