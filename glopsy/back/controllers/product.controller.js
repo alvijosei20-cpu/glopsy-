@@ -4,6 +4,7 @@ import { visitorCountryFromReq } from '../services/checkoutCurrency.service.js';
 import { saveProductForUser, getProductsForUser, getProductsForUserManagement, setProductStatusForUser, deleteProductForUser, addProductImagesForUser, updateProductNameForUser, searchQueryProductsCached, getCategories, getGlobalCommission, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, getMainStoreId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, cancelOrderForUser, updateOrderAddressForUser, getProductReviews, getUserReviewStatus, getOrderReviewsStatus, addProductReview, updateProductReview, deleteProductReview } from '../services/product.service.js';
 import { validatePaymentBiometricNonce } from '../services/auth.service.js';
 import { getInternationalShippingOptions } from '../services/internationalShipping.service.js';
+import { estimateImportDuties } from '../services/tariff.service.js';
 import { pool } from '../db.js';
 import {
   cleanString,
@@ -392,7 +393,24 @@ export const internationalShippingController = async (req, res) => {
     }
 
     const result = await getInternationalShippingOptions({ tiendaId, items, destination });
-    res.json({ ok: true, ...result });
+
+    // Estimado informativo de aranceles/IVA que pagará el cliente en aduana
+    // (DAP). Se calcula sobre la opción más económica cotizada.
+    let dutiesEstimate = null;
+    try {
+      const cheapest = (result.options || [])[0];
+      const shippingCost = cheapest ? Number(cheapest.shippingTotal ?? cheapest.total) || 0 : 0;
+      dutiesEstimate = await estimateImportDuties({
+        paisDestino: destination.country,
+        items,
+        shippingCost,
+        currency: result.currency || 'USD',
+      });
+    } catch (e) {
+      console.warn('No se pudo estimar aranceles:', e.message);
+    }
+
+    res.json({ ok: true, ...result, dutiesEstimate });
   } catch (error) {
     console.error('Error al cotizar envío internacional:', error.message);
     res.status(400).json({ ok: false, message: error.message || 'No fue posible cotizar el envío internacional.' });

@@ -32,6 +32,7 @@ export default function Checkout() {
   const [paises, setPaises] = useState([]);
   const [intlDestination, setIntlDestination] = useState({ country: '', state: '', city: '', postalCode: '', address: '' });
   const [intlOptions, setIntlOptions] = useState([]);
+  const [intlDuties, setIntlDuties] = useState(null);
   const [selectedIntlOptionId, setSelectedIntlOptionId] = useState('');
   const [loadingIntl, setLoadingIntl] = useState(false);
   const [intlError, setIntlError] = useState('');
@@ -329,6 +330,7 @@ export default function Checkout() {
     setIntlError('');
     setLoadingIntl(true);
     setIntlOptions([]);
+    setIntlDuties(null);
     setSelectedIntlOptionId('');
     try {
       const country = paises.find((p) => String(p.codigo_iso).toUpperCase() === String(intlDestination.country).toUpperCase());
@@ -350,6 +352,7 @@ export default function Checkout() {
       });
       if (res.data?.ok) {
         setIntlOptions(res.data.options || []);
+        setIntlDuties(res.data.dutiesEstimate || null);
         if ((res.data.options || []).length === 0) {
           setIntlError('No hay opciones de envío disponibles para ese destino.');
         }
@@ -731,17 +734,29 @@ export default function Checkout() {
                           <div>
                             <p className="font-bold text-slate-800 uppercase">{opt.carrier}{opt.branch?.reference ? ` · ${opt.branch.reference}` : ''}</p>
                             <p className="text-[11px] text-slate-500">{opt.direct ? 'Envío internacional directo' : `${opt.leg1?.service || 'Internacional'} + última milla`}</p>
-                            {opt.dutiesAndTaxes != null && (
-                              <p className="text-[11px] text-slate-500">
-                                Flete {formatPrice(opt.shippingTotal ?? opt.total)}
-                                {' · '}Aranceles e impuestos {formatPrice(opt.dutiesAndTaxes)}
-                              </p>
-                            )}
                           </div>
                         </div>
                         <span className="font-extrabold text-slate-900">{formatPrice(opt.total)}</span>
                       </label>
                     ))}
+                  </div>
+                )}
+                {intlDuties?.ok && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-[11px] leading-snug text-amber-800">
+                    <p className="font-bold">Aranceles estimados al recibir (aprox.)</p>
+                    {intlDuties.deMinimisAplicado ? (
+                      <p>Tu compra califica como envío de bajo valor: no debería pagar aranceles ni IVA de importación en {intlDuties.paisNombre}.</p>
+                    ) : (
+                      <>
+                        <p>
+                          Arancel: {formatPrice(intlDuties.duty)} · IVA ({intlDuties.ivaPct}%): {formatPrice(intlDuties.iva)}
+                        </p>
+                        <p className="font-extrabold text-amber-900">Total estimado en aduana: {formatPrice(intlDuties.total)}</p>
+                      </>
+                    )}
+                    <p className="mt-1 text-amber-700">
+                      Este valor es un estimado informativo. La aduana de {intlDuties.paisNombre} lo cobra al momento de la entrega y el monto final puede variar.
+                    </p>
                   </div>
                 )}
               </div>
