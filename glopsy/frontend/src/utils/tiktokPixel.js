@@ -79,7 +79,9 @@ const EVENT_MAP = {
 };
 
 export function trackTikTokEvent(name, params = {}) {
-  if (configured.size === 0 || typeof window === 'undefined' || !window.ttq) return;
+  // Se apoya en window.ttq (cargado por el HTML o por initTikTokPixel), no en el
+  // set interno, para que la tienda principal (pixel en el HTML) también envíe.
+  if (typeof window === 'undefined' || !window.ttq) return;
   const event = EVENT_MAP[name];
   if (!event) return;
 
@@ -100,7 +102,7 @@ export function trackTikTokEvent(name, params = {}) {
 }
 
 export function trackTikTokPage() {
-  if (configured.size === 0 || typeof window === 'undefined' || !window.ttq) return;
+  if (typeof window === 'undefined' || !window.ttq) return;
   window.ttq.page();
 }
 
