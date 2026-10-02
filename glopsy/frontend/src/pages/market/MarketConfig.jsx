@@ -309,7 +309,11 @@ const MarketConfig = () => {
   };
 
   useEffect(() => {
-    if (tienda?.paisId) setPaisId(String(tienda.paisId));
+    if (tienda?.paisId) {
+      setPaisId(String(tienda.paisId));
+      // Preselecciona el país de origen para que carguen las ciudades de una vez.
+      setOriginPaisId((prev) => prev || String(tienda.paisId));
+    }
   }, [tienda?.paisId]);
 
   const loadOriginCiudades = async (paisId) => {
@@ -370,8 +374,8 @@ const MarketConfig = () => {
     const fetchData = async () => {
       try {
         const [resCiudades, resFullments, resDian, resCheckout] = await Promise.all([
-          api.get('/geo/ciudades', { params: tienda?.paisId ? { pais_id: tienda.paisId } : {} }),
-          api.get('/geo/fullments/mine'),
+          api.get('/geo/ciudades', { params: tienda?.paisId ? { pais_id: tienda.paisId } : {} }).catch(() => ({ data: { ciudades: [] } })),
+          api.get('/geo/fullments/mine').catch(() => ({ data: { fullments: [] } })),
           api.get('/tienda/dian').catch(() => ({ data: {} })),
           api.get('/tienda/checkout-integrations').catch(() => ({ data: { integrations: [] } }))
         ]);
