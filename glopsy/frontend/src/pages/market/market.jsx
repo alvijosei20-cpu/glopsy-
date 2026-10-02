@@ -325,7 +325,8 @@ const Market = () => {
           />
 
           <label style={{ display: 'block', color: '#334155', fontWeight: 600, fontSize: '0.8rem', marginTop: '0.6rem' }}>
-            Access Token <span style={{ color: '#94a3b8', fontWeight: 400 }}>(Events API, opcional)</span>
+            Access Token <span style={{ color: '#94a3b8', fontWeight: 400 }}>(Events API)</span>
+            {pixel.hasToken && <span style={{ color: '#15803d', fontWeight: 700 }}> · Guardado ✓</span>}
           </label>
           <input
             type="password"
