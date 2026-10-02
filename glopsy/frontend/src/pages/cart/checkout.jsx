@@ -38,6 +38,7 @@ export default function Checkout() {
 
   const [departamentos, setDepartamentos] = useState([]);
   const [ciudades, setCiudades] = useState([]);
+  const [ciudadesDepartamento, setCiudadesDepartamento] = useState([]);
   const [selectedDepartamentoId, setSelectedDepartamentoId] = useState('');
   const [selectedCiudadId, setSelectedCiudadId] = useState('');
   const [direccion, setDireccion] = useState('');
@@ -240,6 +241,10 @@ export default function Checkout() {
         }
         if (resCius.data?.ciudades?.length > 0) {
           setCiudades(resCius.data.ciudades);
+        } else if (paisId) {
+          // Fallback: si el filtro por país no devolvió ciudades, cargar todas.
+          const all = await api.get('/geo/ciudades').catch(() => ({ data: { ciudades: [] } }));
+          if (all.data?.ciudades?.length > 0) setCiudades(all.data.ciudades);
         }
         if (resPaises.data?.paises?.length > 0) {
           setPaises(resPaises.data.paises);
@@ -250,6 +255,23 @@ export default function Checkout() {
     };
     fetchGeo();
   }, [searchParams, paisId]);
+
+  // Carga directa de las ciudades del departamento seleccionado (más robusto
+  // que filtrar en memoria: evita depender de que la carga inicial traiga todas).
+  useEffect(() => {
+    if (!selectedDepartamentoId) {
+      setCiudadesDepartamento([]);
+      return;
+    }
+    let alive = true;
+    api.get('/geo/ciudades', { params: { departamento_id: selectedDepartamentoId } })
+      .then(res => {
+        if (!alive) return;
+        setCiudadesDepartamento(res.data?.ciudades || []);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [selectedDepartamentoId]);
 
   useEffect(() => {
     const calculateShipping = async () => {
@@ -525,7 +547,9 @@ export default function Checkout() {
   }
 
   const filteredCiudades = selectedDepartamentoId
-    ? ciudades.filter(c => String(c.departamento_id) === String(selectedDepartamentoId))
+    ? (ciudadesDepartamento.length > 0
+        ? ciudadesDepartamento
+        : ciudades.filter(c => String(c.departamento_id) === String(selectedDepartamentoId)))
     : ciudades;
 
   return (
