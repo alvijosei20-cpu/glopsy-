@@ -161,18 +161,6 @@ const MarketConfig = () => {
   });
   const boldConfig = boldConfigs[boldMode];
   const initialBoldConfig = initialBoldConfigs[boldMode];
-
-  const [zonosMode, setZonosMode] = useState('prueba');
-  const [zonosConfigs, setZonosConfigs] = useState({
-    prueba: { account_id: '', access_token: '' },
-    produccion: { account_id: '', access_token: '' }
-  });
-  const [initialZonosConfigs, setInitialZonosConfigs] = useState({
-    prueba: { account_id: '', access_token: '' },
-    produccion: { account_id: '', access_token: '' }
-  });
-  const zonosConfig = zonosConfigs[zonosMode];
-  const initialZonosConfig = initialZonosConfigs[zonosMode];
   const [usdStatus, setUsdStatus] = useState({ usd_activation_status: 'none' });
   const [requestingUsd, setRequestingUsd] = useState(false);
   const [payoutAccount, setPayoutAccount] = useState({ banco_codigo: '', banco_nombre: '', tipo_cuenta: '', numero_cuenta: '', titular_cuenta: '', tipo_documento: '', titular_documento: '', tipo_proveedor: '', responsable_iva: false });
@@ -240,18 +228,6 @@ const MarketConfig = () => {
       [enviaMode]: typeof updater === 'function' ? updater(prev[enviaMode]) : updater
     }));
   };
-
-  const setZonosConfig = (updater) => {
-    setZonosConfigs(prev => ({
-      ...prev,
-      [zonosMode]: typeof updater === 'function' ? updater(prev[zonosMode]) : updater
-    }));
-  };
-
-  const hasZonosChanges = () => (
-    (zonosConfig.access_token !== initialZonosConfig.access_token && zonosConfig.access_token.trim() !== '') ||
-    zonosConfig.account_id !== initialZonosConfig.account_id
-  );
 
   // Cuenta de pagos del proveedor (banco según el país de la tienda).
   useEffect(() => {
@@ -463,15 +439,6 @@ const MarketConfig = () => {
           };
           setBoldConfigs(newBold);
           setInitialBoldConfigs(JSON.parse(JSON.stringify(newBold)));
-
-          const zonosPrueba = integrations.find(i => i.provider === 'zonos' && (i.mode === 'prueba' || !i.mode));
-          const zonosProd = integrations.find(i => i.provider === 'zonos' && i.mode === 'produccion');
-          const newZonos = {
-            prueba: { account_id: zonosPrueba?.public_key || '', access_token: zonosPrueba?.access_token || '' },
-            produccion: { account_id: zonosProd?.public_key || '', access_token: zonosProd?.access_token || '' }
-          };
-          setZonosConfigs(newZonos);
-          setInitialZonosConfigs(JSON.parse(JSON.stringify(newZonos)));
         }
         // fetch shipping profiles
         const resPerfiles = await api.get('/tienda/perfiles-envio').catch(() => ({ data: { perfiles: [] } }));
@@ -611,34 +578,6 @@ const MarketConfig = () => {
     }
   };
 
-  const handleSaveZonos = async (e) => {
-    e.preventDefault();
-    if (!zonosConfig.account_id || !zonosConfig.account_id.trim()) {
-      setNotice('Error: El Account ID de Zonos es obligatorio.');
-      return;
-    }
-    if (!zonosConfig.access_token || !zonosConfig.access_token.trim()) {
-      setNotice('Error: El API Token (secreto) de Zonos es obligatorio.');
-      return;
-    }
-    try {
-      const tokenChanged = zonosConfig.access_token !== initialZonosConfig.access_token && zonosConfig.access_token.trim() !== '';
-      const res = await api.post('/tienda/checkout-integrations', {
-        provider: 'zonos',
-        mode: zonosMode,
-        public_key: zonosConfig.account_id,
-        ...(tokenChanged ? { access_token: zonosConfig.access_token } : {}),
-      });
-      setNotice(res.data.message || 'Configuración de Zonos guardada con éxito.');
-      setInitialZonosConfigs(prev => ({ ...prev, [zonosMode]: { ...zonosConfig } }));
-      const resCheckout = await api.get('/tienda/checkout-integrations');
-      if (resCheckout.data?.integrations) setSavedCheckoutIntegrations(resCheckout.data.integrations);
-    } catch (err) {
-      console.error('Error al guardar Zonos:', err);
-      setNotice(err.response?.data?.message || 'Error al guardar la configuración de Zonos.');
-    }
-  };
-
   const handleSaveBold = async (e) => {
     e.preventDefault();
     if (!boldConfig.public_key || !boldConfig.public_key.trim()) {
@@ -707,13 +646,11 @@ const MarketConfig = () => {
   const handleDeleteCheckoutIntegration = async (provider) => {
     const currentMode =
       provider === 'mercadopago' ? mpMode :
-      provider === 'bold' ? boldMode :
-      provider === 'zonos' ? zonosMode : enviaMode;
+      provider === 'bold' ? boldMode : enviaMode;
     const modeName = currentMode === 'prueba' ? 'Prueba' : 'Producción';
     const provName =
       provider === 'mercadopago' ? 'Mercado Pago' :
-      provider === 'bold' ? 'Bold' :
-      provider === 'zonos' ? 'Zonos' : 'ENVIA';
+      provider === 'bold' ? 'Bold' : 'ENVIA';
     if (!window.confirm(`¿Estás seguro de eliminar la configuración de ${provName} (${modeName})?`)) {
       return;
     }
@@ -727,10 +664,6 @@ const MarketConfig = () => {
         const cleared = { public_key: '', access_token: '', webhook_secret: '', is_default: false };
         setBoldConfigs({ ...boldConfigs, [currentMode]: cleared });
         setInitialBoldConfigs({ ...initialBoldConfigs, [currentMode]: cleared });
-      } else if (provider === 'zonos') {
-        const cleared = { account_id: '', access_token: '' };
-        setZonosConfigs({ ...zonosConfigs, [currentMode]: cleared });
-        setInitialZonosConfigs({ ...initialZonosConfigs, [currentMode]: cleared });
       } else {
         setEnviaConfigs({ ...enviaConfigs, [currentMode]: { access_token: '' } });
         setInitialEnviaConfigs({ ...initialEnviaConfigs, [currentMode]: { access_token: '' } });
@@ -1156,7 +1089,6 @@ const MarketConfig = () => {
 
   const mpSaved = savedCheckoutIntegrations.find(i => i.provider === 'mercadopago' && (i.mode === mpMode || (!i.mode && mpMode === 'prueba')));
   const boldSaved = savedCheckoutIntegrations.find(i => i.provider === 'bold' && (i.mode === boldMode || (!i.mode && boldMode === 'prueba')));
-  const zonosSaved = savedCheckoutIntegrations.find(i => i.provider === 'zonos' && (i.mode === zonosMode || (!i.mode && zonosMode === 'prueba')));
   const storePaisIso = paises.find((p) => Number(p.id) === Number(tienda?.paisId))?.codigo_iso || null;
   const isVenezuela = storePaisIso === 'VE';
   const internationalDispatch = tienda?.internationalDispatchProvider || '';
@@ -2437,72 +2369,6 @@ const MarketConfig = () => {
                 </form>
               </div>
 
-              {/* Zonos Section */}
-              <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginBottom: '2rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
-                  <div style={{ background: '#4f46e5', color: 'white', fontWeight: 900, padding: '0.5rem 0.9rem', borderRadius: '0.5rem', fontSize: '1.1rem', letterSpacing: '1px' }}>
-                    Z
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>Zonos</h4>
-                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Aranceles e impuestos de importación (landed cost) para envíos internacionales.</p>
-                  </div>
-                  {zonosSaved && (
-                    <span style={{ background: '#dcfce7', color: '#166534', padding: '0.25rem 0.75rem', borderRadius: '999px', fontSize: '0.8rem', fontWeight: 600 }}>
-                      {`Guardado (${zonosMode === 'prueba' ? 'Prueba' : 'Producción'})`}
-                    </span>
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.25rem', background: '#f8fafc', padding: '0.75rem 1rem', borderRadius: '0.75rem', border: '1px solid #e2e8f0', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#475569' }}>Modo de credenciales:</span>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button
-                      type="button"
-                      onClick={() => setZonosMode('prueba')}
-                      style={{ padding: '0.4rem 1rem', borderRadius: '0.5rem', border: '1px solid #4f46e5', background: zonosMode === 'prueba' ? '#4f46e5' : 'white', color: zonosMode === 'prueba' ? 'white' : '#4f46e5', fontWeight: 600, cursor: 'pointer', fontSize: '0.85rem', transition: 'all 0.2s' }}
-                    >
-                      Prueba / Sandbox
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setZonosMode('produccion')}
-                      style={{ padding: '0.4rem 1rem', borderRadius: '0.5rem', border: '1px solid #4f46e5', background: zonosMode === 'produccion' ? '#4f46e5' : 'white', color: zonosMode === 'produccion' ? 'white' : '#4f46e5', fontWeight: 600, cursor: 'pointer', fontSize: '0.85rem', transition: 'all 0.2s' }}
-                    >
-                      Producción
-                    </button>
-                  </div>
-                </div>
-
-                <form onSubmit={handleSaveZonos}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                    <div className="config-form-group" style={{ margin: 0 }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#334155', fontWeight: 600 }}>
-                        <Hash size={16} color="#4f46e5" /> Account ID ({zonosMode === 'prueba' ? 'Sandbox' : 'Producción'})
-                      </label>
-                      <input type="text" value={zonosConfig.account_id} onChange={(e) => setZonosConfigs({ ...zonosConfigs, [zonosMode]: { ...zonosConfig, account_id: e.target.value } })} placeholder="Account ID de Zonos" />
-                    </div>
-                    <div className="config-form-group" style={{ margin: 0 }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#334155', fontWeight: 600 }}>
-                        <Shield size={16} color="#4f46e5" /> API Token ({zonosMode === 'prueba' ? 'Sandbox' : 'Producción'})
-                      </label>
-                      <input type="password" value={zonosConfig.access_token} onChange={(e) => setZonosConfigs({ ...zonosConfigs, [zonosMode]: { ...zonosConfig, access_token: e.target.value } })} placeholder="Token de API de Zonos (secreto)" />
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.25rem' }}>
-                    {savedCheckoutIntegrations.some(i => i.provider === 'zonos' && (i.mode === zonosMode || (!i.mode && zonosMode === 'prueba'))) ? (
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteCheckoutIntegration('zonos')}
-                        style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', padding: '0.5rem 1rem', borderRadius: '0.5rem', fontWeight: 600, cursor: 'pointer' }}
-                      >
-                        Eliminar credenciales
-                      </button>
-                    ) : <span />}
-                    <button type="submit" className="config-btn-primary" disabled={!hasZonosChanges()}>Guardar Zonos</button>
-                  </div>
-                </form>
-              </div>
                 </>
               ) : (
                 <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
