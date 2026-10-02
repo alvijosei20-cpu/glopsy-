@@ -745,7 +745,7 @@ export default function Checkout() {
                   <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-[11px] leading-snug text-amber-800">
                     <p className="font-bold">Aranceles estimados al recibir (aprox.)</p>
                     {intlDuties.deMinimisAplicado ? (
-                      <p>Tu compra califica como envío de bajo valor: no debería pagar aranceles ni IVA de importación en {intlDuties.paisNombre}.</p>
+                      <p>Tu compra califica como envío de bajo valor: no debería pagar aranceles ni IVA de importación en {intlDuties.paisNombre} por courier y para uso personal.</p>
                     ) : (
                       <>
                         <p>
