@@ -161,6 +161,10 @@ const MarketConfig = () => {
   });
   const boldConfig = boldConfigs[boldMode];
   const initialBoldConfig = initialBoldConfigs[boldMode];
+
+  const [tariffCountries, setTariffCountries] = useState([]);
+  const [tariffRules, setTariffRules] = useState([]);
+  const [tariffSaving, setTariffSaving] = useState(false);
   const [usdStatus, setUsdStatus] = useState({ usd_activation_status: 'none' });
   const [requestingUsd, setRequestingUsd] = useState(false);
   const [payoutAccount, setPayoutAccount] = useState({ banco_codigo: '', banco_nombre: '', tipo_cuenta: '', numero_cuenta: '', titular_cuenta: '', tipo_documento: '', titular_documento: '', tipo_proveedor: '', responsable_iva: false });
@@ -214,6 +218,18 @@ const MarketConfig = () => {
     }
   };
   const isMainStore = tienda?.isMain === true;
+
+  useEffect(() => {
+    if (!isMainStore) return;
+    api.get('/tienda/tariffs')
+      .then(res => {
+        if (res.data?.ok) {
+          setTariffCountries(res.data.countries || []);
+          setTariffRules(res.data.rules || []);
+        }
+      })
+      .catch(() => {});
+  }, [isMainStore]);
 
   const setMercadoPagoConfig = (updater) => {
     setMercadoPagoConfigs(prev => ({
@@ -606,6 +622,63 @@ const MarketConfig = () => {
       console.error('Error al guardar Bold:', err);
       setNotice(err.response?.data?.message || 'Error al guardar la configuración de Bold.');
     }
+  };
+
+  const loadTariffs = async () => {
+    try {
+      const res = await api.get('/tienda/tariffs');
+      if (res.data?.ok) {
+        setTariffCountries(res.data.countries || []);
+        setTariffRules(res.data.rules || []);
+      }
+    } catch {
+      // la sección solo se muestra a la tienda principal
+    }
+  };
+
+  const handleSaveTariffCountry = async (country) => {
+    setTariffSaving(true);
+    try {
+      const res = await api.put('/tienda/tariffs/country', {
+        pais_iso: country.pais_iso,
+        iva_pct: Number(country.iva_pct),
+        de_minimis_usd: country.de_minimis_usd === '' || country.de_minimis_usd === null ? null : Number(country.de_minimis_usd),
+      });
+      setNotice(res.data?.message || 'País actualizado.');
+      setTimeout(() => setNotice(''), 3000);
+      loadTariffs();
+    } catch (err) {
+      setNotice(err.response?.data?.message || 'Error al guardar el país.');
+    } finally {
+      setTariffSaving(false);
+    }
+  };
+
+  const handleSaveTariffRule = async (rule) => {
+    setTariffSaving(true);
+    try {
+      const res = await api.put('/tienda/tariffs/rule', {
+        pais_iso: rule.pais_iso,
+        scope: rule.scope,
+        scope_id: rule.scope === 'categoria' ? rule.scope_id : null,
+        arancel_pct: Number(rule.arancel_pct),
+      });
+      setNotice(res.data?.message || 'Regla actualizada.');
+      setTimeout(() => setNotice(''), 3000);
+      loadTariffs();
+    } catch (err) {
+      setNotice(err.response?.data?.message || 'Error al guardar la regla.');
+    } finally {
+      setTariffSaving(false);
+    }
+  };
+
+  const updateTariffCountryField = (paisIso, field, value) => {
+    setTariffCountries(prev => prev.map(c => c.pais_iso === paisIso ? { ...c, [field]: value } : c));
+  };
+
+  const updateTariffRuleField = (id, value) => {
+    setTariffRules(prev => prev.map(r => r.id === id ? { ...r, arancel_pct: value } : r));
   };
 
   const handleSavePayoutAccount = async (e) => {
@@ -2369,6 +2442,102 @@ const MarketConfig = () => {
                 </form>
               </div>
 
+              {/* Aranceles Section */}
+              <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginBottom: '2rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
+                  <div style={{ background: '#b45309', color: 'white', fontWeight: 900, padding: '0.5rem 0.9rem', borderRadius: '0.5rem', fontSize: '1.1rem', letterSpacing: '1px' }}>
+                    A
+                  </div>
+                  <div>
+                    <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>Aranceles de importación</h4>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>
+                      Tasas estimadas por país y categoría. Se muestran al cliente en el checkout internacional (paga al recibir).
+                    </p>
+                  </div>
+                </div>
+
+                {tariffCountries.length === 0 ? (
+                  <p style={{ color: '#64748b', fontSize: '0.9rem' }}>No hay países configurados.</p>
+                ) : (
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+                      {tariffCountries.map((c) => (
+                        <div key={c.pais_iso} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '0.75rem', padding: '1rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                            <strong style={{ color: '#0f172a' }}>{c.nombre} ({c.pais_iso})</strong>
+                            <button
+                              type="button"
+                              className="config-btn-primary"
+                              style={{ fontSize: '0.8rem', padding: '0.3rem 0.7rem' }}
+                              disabled={tariffSaving}
+                              onClick={() => handleSaveTariffCountry(c)}
+                            >
+                              Guardar
+                            </button>
+                          </div>
+                          <div className="config-form-group" style={{ margin: 0, marginBottom: '0.5rem' }}>
+                            <label style={{ fontSize: '0.8rem', color: '#334155', fontWeight: 600 }}>IVA (%)</label>
+                            <input
+                              type="number" min="0" max="100" step="0.1"
+                              value={c.iva_pct}
+                              onChange={(e) => updateTariffCountryField(c.pais_iso, 'iva_pct', e.target.value)}
+                            />
+                          </div>
+                          <div className="config-form-group" style={{ margin: 0 }}>
+                            <label style={{ fontSize: '0.8rem', color: '#334155', fontWeight: 600 }}>De minimis (USD, opcional)</label>
+                            <input
+                              type="number" min="0" step="1"
+                              placeholder="Sin de minimis"
+                              value={c.de_minimis_usd ?? ''}
+                              onChange={(e) => updateTariffCountryField(c.pais_iso, 'de_minimis_usd', e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                        <thead>
+                          <tr style={{ background: '#f1f5f9', textAlign: 'left' }}>
+                            <th style={{ padding: '0.5rem' }}>País</th>
+                            <th style={{ padding: '0.5rem' }}>Categoría</th>
+                            <th style={{ padding: '0.5rem' }}>Arancel (%)</th>
+                            <th style={{ padding: '0.5rem' }}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tariffRules.map((r) => (
+                            <tr key={r.id} style={{ borderTop: '1px solid #e2e8f0' }}>
+                              <td style={{ padding: '0.5rem' }}>{r.pais_iso}</td>
+                              <td style={{ padding: '0.5rem' }}>{r.scope === 'default' ? <em>General (respaldo)</em> : (r.categoria_nombre || `Categoría ${r.scope_id}`)}</td>
+                              <td style={{ padding: '0.5rem' }}>
+                                <input
+                                  type="number" min="0" max="100" step="0.1"
+                                  value={r.arancel_pct}
+                                  onChange={(e) => updateTariffRuleField(r.id, e.target.value)}
+                                  style={{ width: '90px', padding: '0.3rem', borderRadius: '0.4rem', border: '1px solid #cbd5e1' }}
+                                />
+                              </td>
+                              <td style={{ padding: '0.5rem' }}>
+                                <button
+                                  type="button"
+                                  className="config-btn-primary"
+                                  style={{ fontSize: '0.8rem', padding: '0.3rem 0.7rem' }}
+                                  disabled={tariffSaving}
+                                  onClick={() => handleSaveTariffRule(r)}
+                                >
+                                  Guardar
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+              </div>
                 </>
               ) : (
                 <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>

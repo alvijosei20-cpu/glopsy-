@@ -16,6 +16,7 @@ import {
   saveStorefrontAppearanceForUser,
 } from '../services/tienda.service.js';
 import { getBaVenNif12Report } from '../services/fiscalReport.service.js';
+import { clearTariffCache } from '../services/tariff.service.js';
 import { buildDianPlantillaFromStore } from '../services/dianStorePlantilla.service.js';
 import { getLibroVentasData, buildLibroVentasPdf } from '../services/libroVentas.service.js';
 import { buildMandateReport, buildMandateReportPdf } from '../services/mandateReport.service.js';
@@ -30,7 +31,7 @@ import { getStoreLedgerForUser, listPayoutsForStore, approvePayout, confirmPayou
 import { getAccountBalances as getBoldAccountBalances } from '../services/bold.service.js';
 import { pool } from '../db.js';
 import { getShippingOptionsFromEnvia } from '../services/envia.service.js';
-import { cleanString, isAllowedEnum } from '../utils/validation.js';
+import { cleanString, isAllowedEnum, toNumber } from '../utils/validation.js';
 import { getDocumentType, isValidDocumentNumber, isValidPhoneForCountry, normalizePhone, isValidEmail } from '../utils/countryFields.js';
 
 const roundCurrency = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -840,6 +841,80 @@ const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
       return res.status(500).json({ ok: false, message: 'No fue posible eliminar la configuración.' });
     }
   },
+
+  // -------- Aranceles (configuración global, solo tienda principal) --------
+  getTariffConfig: async (req, res) => {
+    try {
+      const { rows: countries } = await pool.query(
+        `SELECT pais_iso, nombre, iva_pct, de_minimis_usd, activo FROM tariff_countries ORDER BY nombre`
+      );
+      const { rows: rules } = await pool.query(
+        `SELECT r.id, r.pais_iso, r.scope, r.scope_id, r.arancel_pct, r.activo, c.nombre AS categoria_nombre
+         FROM tariff_rules r
+         LEFT JOIN categorias c ON c.id = r.scope_id AND r.scope = 'categoria'
+         ORDER BY r.pais_iso, c.nombre NULLS LAST`
+      );
+      return res.json({ ok: true, countries, rules });
+    } catch (error) {
+      console.error('Error al obtener configuración de aranceles:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible obtener la configuración de aranceles.' });
+    }
+  },
+
+  saveTariffCountry: async (req, res) => {
+    const paisIso = cleanString(req.body.pais_iso, { maxLength: 2 })?.toUpperCase();
+    const ivaPct = toNumber(req.body.iva_pct, { min: 0, max: 100 });
+    const deMinimisRaw = req.body.de_minimis_usd;
+    const deMinimis = deMinimisRaw === '' || deMinimisRaw === null || deMinimisRaw === undefined
+      ? null
+      : toNumber(deMinimisRaw, { min: 0 });
+    if (!paisIso || !/^[A-Z]{2}$/.test(paisIso)) {
+      return res.status(400).json({ ok: false, message: 'País inválido.' });
+    }
+    if (ivaPct === null || ivaPct === undefined) {
+      return res.status(400).json({ ok: false, message: 'IVA inválido.' });
+    }
+    try {
+      await pool.query(
+        `UPDATE tariff_countries SET iva_pct = $2, de_minimis_usd = $3, updated_at = NOW() WHERE pais_iso = $1`,
+        [paisIso, ivaPct, deMinimis]
+      );
+      return res.json({ ok: true, message: `Configuración de ${paisIso} guardada.` });
+    } catch (error) {
+      console.error('Error al guardar país de aranceles:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible guardar el país.' });
+    }
+  },
+
+  saveTariffRule: async (req, res) => {
+    const paisIso = cleanString(req.body.pais_iso, { maxLength: 2 })?.toUpperCase();
+    const scope = cleanString(req.body.scope, { maxLength: 20 });
+    const scopeId = scope === 'categoria' ? toNumber(req.body.scope_id, { min: 1 }) : null;
+    const arancelPct = toNumber(req.body.arancel_pct, { min: 0, max: 100 });
+    if (!paisIso || !isAllowedEnum(scope, ['default', 'categoria'])) {
+      return res.status(400).json({ ok: false, message: 'Regla inválida.' });
+    }
+    if (scope === 'categoria' && !scopeId) {
+      return res.status(400).json({ ok: false, message: 'Categoría inválida.' });
+    }
+    if (arancelPct === null || arancelPct === undefined) {
+      return res.status(400).json({ ok: false, message: 'Porcentaje inválido.' });
+    }
+    try {
+      await pool.query(
+        `INSERT INTO tariff_rules (pais_iso, scope, scope_id, arancel_pct, updated_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (pais_iso, scope, COALESCE(scope_id, 0))
+         DO UPDATE SET arancel_pct = EXCLUDED.arancel_pct, updated_at = NOW()`,
+        [paisIso, scope, scopeId, arancelPct]
+      );
+      clearTariffCache();
+      return res.json({ ok: true, message: 'Regla de arancel guardada.' });
+    } catch (error) {
+      console.error('Error al guardar regla de arancel:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible guardar la regla.' });
+    }
+  },
 });
 
 const tiendaController = createTiendaController();
@@ -870,5 +945,8 @@ export const {
   getCheckoutIntegrations,
   saveCheckoutIntegration,
   deleteCheckoutIntegration,
-  getAnalytics
+  getAnalytics,
+  getTariffConfig,
+  saveTariffCountry,
+  saveTariffRule
 } = tiendaController;

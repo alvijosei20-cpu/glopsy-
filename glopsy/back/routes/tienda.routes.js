@@ -24,11 +24,14 @@ import {
   payPayout,
   confirmPayoutPaid,
   getCheckoutIntegrations,
+  getTariffConfig,
+  saveTariffCountry,
+  saveTariffRule,
   saveCheckoutIntegration,
   deleteCheckoutIntegration,
   getAnalytics
 } from '../controllers/tienda.controller.js';
-import { requireAuth, requireSeller } from '../middlewares/auth.js';
+import { requireAuth, requireSeller, requireMainStore } from '../middlewares/auth.js';
 import { tiendaLimiter } from '../middlewares/limiters.js';
 import { getPerfilesForUser, createPerfilForUser, deletePerfilForUser } from '../controllers/perfiles.controller.js';
 import { getOfertas, createOferta, updateOfertaProductos, deleteOferta } from '../controllers/ofertas.controller.js';
@@ -89,6 +92,10 @@ router.get('/reportes/mandato.pdf', getMandateReportPdf);
 router.get('/checkout-integrations', getCheckoutIntegrations);
 router.post('/checkout-integrations', saveCheckoutIntegration);
 router.delete('/checkout-integrations/:provider', deleteCheckoutIntegration);
+// Aranceles: configuración global (solo tienda principal)
+router.get('/tariffs', requireMainStore, getTariffConfig);
+router.put('/tariffs/country', requireMainStore, saveTariffCountry);
+router.put('/tariffs/rule', requireMainStore, saveTariffRule);
 // Perfiles de envío
 // Liquidaciones (payouts): saldos, aprobar liberación (verifica disputas y dispersa).
 router.get('/payouts', getStorePayouts);

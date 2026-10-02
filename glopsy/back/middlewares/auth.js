@@ -64,3 +64,24 @@ export const requireSeller = async (req, res, next) => {
     return res.status(500).json({ ok: false, message: 'No fue posible validar tu autorización.' });
   }
 };
+
+// Se usa DESPUÉS de requireAuth: solo la tienda principal de la plataforma
+// (is_main = true) puede administrar la configuración global (p.ej. aranceles).
+export const requireMainStore = async (req, res, next) => {
+  try {
+    if (!req.auth?.userId) {
+      return res.status(401).json({ ok: false, message: 'Autenticación requerida.' });
+    }
+    const { rows } = await pool.query(
+      `SELECT is_main FROM tiendas WHERE usrid = $1 LIMIT 1`,
+      [req.auth.userId]
+    );
+    if (!rows[0]?.is_main) {
+      return res.status(403).json({ ok: false, message: 'Solo la tienda principal puede administrar esta configuración.' });
+    }
+    next();
+  } catch (err) {
+    console.error('Error en requireMainStore:', err.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible validar los permisos.' });
+  }
+};
