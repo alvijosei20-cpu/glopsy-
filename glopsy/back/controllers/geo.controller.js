@@ -153,7 +153,7 @@ export const getDepartamentos = async (req, res) => {
         where.push(`p.codigo_iso = $${params.length}`);
       }
       const { rows } = await query(`
-        SELECT d.id, d.nombre, d.pais_id
+        SELECT d.id, d.nombre, d.pais_id, d.codigo_dane
         FROM departamentos d
         ${codigoIso ? 'JOIN paises p ON p.id = d.pais_id' : ''}
         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
@@ -191,7 +191,7 @@ export const getCiudades = async (req, res) => {
         where.push(`p.codigo_iso = $${params.length}`);
       }
       const { rows } = await query(`
-        SELECT c.id, c.nombre, c.departamento_id, c.codigo_postal
+        SELECT c.id, c.nombre, c.departamento_id, c.codigo_postal, c.codigo_dane
         FROM ciudades c
         JOIN departamentos d ON d.id = c.departamento_id
         ${codigoIso ? 'JOIN paises p ON p.id = d.pais_id' : ''}
