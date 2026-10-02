@@ -10,6 +10,7 @@ import { obtenerProductoPorId } from './mastershopService.js';
 import { dispatchInternationalOrder } from './internationalShipping.service.js';
 import { redisClient } from './redis.service.js';
 import { sendPushToUser } from './push.service.js';
+import { sendTikTokPurchase } from './tiktokEvents.service.js';
 import { decryptSecret } from '../utils/crypto.js';
 import { invalidateEdgeCache } from '../utils/cacheInvalidate.js';
 import {
@@ -2220,6 +2221,23 @@ export const recordPurchaseForUser = async (userId, items, options = {}) => {
     dispatchInternationalOrder(orderId).catch((e) =>
       console.error('[dispatch] Error en despacho internacional:', e.message)
     );
+  }
+
+  // TikTok Events API (server-side): envía CompletePayment solo para pedidos
+  // pagados (no para órdenes pendientes de cobro). Idempotente por pedido.
+  if (!/pending|cancel/i.test(String(status))) {
+    sendTikTokPurchase({
+      userId,
+      guestHash,
+      tiendaId,
+      orderId,
+      orderNumber,
+      orderHash,
+      value: totalAmount,
+      currency: currency || items[0]?.currency || 'COP',
+      items,
+      phone: telefono,
+    }).catch(() => {});
   }
 
   return { orderId, orderNumber, orderHash, totalAmount, tiendaId };
