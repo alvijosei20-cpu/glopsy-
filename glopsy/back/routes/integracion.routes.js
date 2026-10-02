@@ -3,6 +3,7 @@ import {
   getIntegraciones,
   saveIntegracion,
   queryProduct,
+  getTiktokPixel,
   getTiktokAuth,
   saveTiktokAuth,
 } from '../controllers/integracion.controller.js';
@@ -20,5 +21,8 @@ router.get('/query', queryProduct);
 // OAuth global de TikTok (Login Kit). Solo la tienda principal.
 router.get('/tiktok', getTiktokAuth);
 router.post('/tiktok', saveTiktokAuth);
+
+// Integración TikTok Pixel de la tienda del vendedor (estado enmascarado).
+router.get('/tiktok-pixel', getTiktokPixel);
 
 export default router;

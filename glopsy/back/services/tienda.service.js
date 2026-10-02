@@ -14,6 +14,8 @@ const mapTienda = (row) => ({
   isActive: row.activa,
   gaId: row.ga_id || null,
   tiktokPixelId: row.tiktok_pixel_id || null,
+  // Solo un booleano: el token nunca se expone en el payload público.
+  tiktokAccessTokenSet: Boolean(row.tiktok_access_token),
   registeredAt: row.fechareg,
   // Tienda principal de la plataforma: aquí se configuran las pasarelas globales.
   isMain: row.is_main === true,
@@ -85,7 +87,7 @@ const slugErrorMessage = (slug) => {
 // Incluye la config del país (moneda/locale/dominio) vía JOIN con aliases t_*.
 // Requiere que la consulta use alias `t` para tiendas y `pa` para paises.
 const STORE_COLUMNS = `
-  t.hashid, t.nombres, t.slug, t.avatar, t.activa, t.fechareg, t.ga_id, t.tiktok_pixel_id,
+  t.hashid, t.nombres, t.slug, t.avatar, t.activa, t.fechareg, t.ga_id, t.tiktok_pixel_id, t.tiktok_access_token,
   t.is_main,
   t.pais_id AS t_pais_id,
   pa.codigo_iso AS t_pais_codigo,
@@ -314,7 +316,7 @@ export const recordTiendaTermsAcceptance = async ({
 
 // Actualiza nombre/subdominio/GA de la tienda del usuario (valores null/undefined = no tocar;
 // ga_id '' o null explícito limpia el GA de la tienda).
-export const updateTiendaForUser = async (userId, { name = null, slug = null, ga_id = undefined, tiktok_pixel_id = undefined, pais_id = undefined, zoom_origen_codciudad = undefined, international_dispatch_provider = undefined } = {}) => {
+export const updateTiendaForUser = async (userId, { name = null, slug = null, ga_id = undefined, tiktok_pixel_id = undefined, tiktok_access_token = undefined, pais_id = undefined, zoom_origen_codciudad = undefined, international_dispatch_provider = undefined } = {}) => {
   const uid = Number(userId);
   const current = await getTiendaForUser(uid);
   if (!current) return null;
@@ -404,6 +406,18 @@ export const updateTiendaForUser = async (userId, { name = null, slug = null, ga
     if (tiktok_pixel_id !== undefined) {
       const cleanPixel = String(tiktok_pixel_id || '').trim().slice(0, 64) || null;
       await pool.query(`UPDATE tiendas SET tiktok_pixel_id = $1 WHERE usrid = $2`, [cleanPixel, uid]);
+      await redisClient.del(cacheKey(uid)).catch(() => {});
+    }
+
+    // Token de acceso de TikTok (Events API). Se cifra; vacío lo limpia; enmascarado no toca.
+    if (tiktok_access_token !== undefined) {
+      const raw = String(tiktok_access_token ?? '').trim();
+      const looksMasked = raw.includes('•') || raw.includes('*');
+      if (!raw) {
+        await pool.query(`UPDATE tiendas SET tiktok_access_token = NULL WHERE usrid = $1`, [uid]);
+      } else if (!looksMasked && !isEncryptedSecret(raw)) {
+        await pool.query(`UPDATE tiendas SET tiktok_access_token = $1 WHERE usrid = $2`, [encryptSecret(raw), uid]);
+      }
       await redisClient.del(cacheKey(uid)).catch(() => {});
     }
 
@@ -897,4 +911,20 @@ export const getStoreAnalytics = async (userId) => {
 
   await redisClient.set(analyticsKey, JSON.stringify(result), { EX: 60 }).catch(() => {});
   return result;
+};
+
+// Estado (enmascarado) de la integración TikTok por tienda para el panel del vendedor.
+export const getTiktokPixelForUser = async (userId) => {
+  const { rows } = await pool.query(
+    'SELECT tiktok_pixel_id, tiktok_access_token FROM tiendas WHERE usrid = $1 LIMIT 1',
+    [Number(userId)]
+  );
+  const r = rows[0];
+  if (!r) return { pixel_id: null, has_access_token: false, access_token_masked: '' };
+  const token = r.tiktok_access_token ? decryptSecret(r.tiktok_access_token) : null;
+  return {
+    pixel_id: r.tiktok_pixel_id || null,
+    has_access_token: Boolean(token),
+    access_token_masked: token ? maskSecret(token) : '',
+  };
 };

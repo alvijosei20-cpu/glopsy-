@@ -27,23 +27,43 @@ const Market = () => {
   const [tiktok, setTiktok] = useState({ client_id: '', client_secret: '', redirect_uri: '', scopes: '', enabled: true, configured: false, source: 'none' });
   const [savingTiktok, setSavingTiktok] = useState(false);
   const [tiktokMsg, setTiktokMsg] = useState('');
-  const [pixel, setPixel] = useState({ id: '', saving: false, msg: '' });
+  const [pixel, setPixel] = useState({ id: '', token: '', tokenMasked: '', hasToken: false, saving: false, msg: '' });
 
-  // Pixel de TikTok de la tienda (marketing).
+  // Pixel + token de TikTok de la tienda (marketing / Events API).
   useEffect(() => {
-    setPixel((p) => ({ ...p, id: tienda?.tiktokPixelId || '' }));
-  }, [tienda?.tiktokPixelId]);
+    setPixel((p) => ({ ...p, id: tienda?.tiktokPixelId || '', hasToken: Boolean(tienda?.tiktokAccessTokenSet) }));
+    if (!tienda?.id) return;
+    let alive = true;
+    api
+      .get('/tienda/integraciones/tiktok-pixel')
+      .then(({ data }) => {
+        if (!alive) return;
+        const p = data?.pixel || {};
+        setPixel((prev) => ({
+          ...prev,
+          id: p.pixel_id || prev.id,
+          tokenMasked: p.access_token_masked || '',
+          hasToken: Boolean(p.has_access_token),
+        }));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [tienda?.id, tienda?.tiktokPixelId, tienda?.tiktokAccessTokenSet]);
 
   const savePixel = async () => {
     setPixel((p) => ({ ...p, saving: true, msg: '' }));
     setError('');
     try {
-      await api.patch('/tienda', { tiktok_pixel_id: pixel.id.trim() });
+      const payload = { tiktok_pixel_id: pixel.id.trim() };
+      if (pixel.token.trim()) payload.tiktok_access_token = pixel.token.trim();
+      await api.patch('/tienda', payload);
       refreshTienda?.();
-      setPixel((p) => ({ ...p, msg: 'Pixel de TikTok guardado.' }));
+      setPixel((p) => ({ ...p, token: '', msg: 'Configuración de TikTok guardada.' }));
       setTimeout(() => setPixel((p) => ({ ...p, msg: '' })), 2500);
     } catch (err) {
-      setError(err.response?.data?.message || 'No se pudo guardar el Pixel de TikTok.');
+      setError(err.response?.data?.message || 'No se pudo guardar la integración de TikTok.');
     } finally {
       setPixel((p) => ({ ...p, saving: false }));
     }
@@ -303,6 +323,21 @@ const Market = () => {
             autoComplete="off"
             style={{ width: '100%', padding: '0.6rem 0.75rem', borderRadius: '0.6rem', border: '1px solid #cbd5e1', fontSize: '0.85rem', marginTop: '0.3rem' }}
           />
+
+          <label style={{ display: 'block', color: '#334155', fontWeight: 600, fontSize: '0.8rem', marginTop: '0.6rem' }}>
+            Access Token <span style={{ color: '#94a3b8', fontWeight: 400 }}>(Events API, opcional)</span>
+          </label>
+          <input
+            type="password"
+            value={pixel.token}
+            onChange={(e) => setPixel((p) => ({ ...p, token: e.target.value }))}
+            placeholder={pixel.hasToken ? 'Guardado (deja vacío para conservar)' : 'Pega el token de acceso de TikTok'}
+            autoComplete="new-password"
+            style={{ width: '100%', padding: '0.6rem 0.75rem', borderRadius: '0.6rem', border: '1px solid #cbd5e1', fontSize: '0.85rem', marginTop: '0.3rem' }}
+          />
+          <p className="market__hint" style={{ margin: '0.3rem 0 0' }}>
+            Se guarda cifrado y sirve para enviar conversiones server-side (Events API). No se muestra en la tienda.
+          </p>
           {pixel.msg && <p className="panel__notice" role="status" style={{ marginTop: '0.6rem' }}>{pixel.msg}</p>}
           <div className="integration-card__actions">
             <button

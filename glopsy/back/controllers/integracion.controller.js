@@ -4,7 +4,7 @@ import {
   queryIntegrationProduct,
 } from '../services/integracion.service.js';
 import { getOAuthStatus, saveOAuthConfig } from '../services/oauthConfig.service.js';
-import { getTiendaForUser } from '../services/tienda.service.js';
+import { getTiendaForUser, getTiktokPixelForUser } from '../services/tienda.service.js';
 import { cleanString, cleanUrl, isAllowedEnum } from '../utils/validation.js';
 
 export const createIntegracionController = ({
@@ -49,6 +49,16 @@ export const createIntegracionController = ({
     } catch (error) {
       console.error('Error al guardar integración:', error.message);
       return res.status(400).json({ ok: false, message: error.message || 'No fue posible guardar la integración.' });
+    }
+  },
+
+  // Estado (enmascarado) de la integración TikTok de la tienda del vendedor.
+  getTiktokPixel: async (req, res) => {
+    try {
+      return res.json({ ok: true, pixel: await getTiktokPixelForUser(req.auth.userId) });
+    } catch (error) {
+      console.error('Error al consultar TikTok Pixel:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible consultar la configuración.' });
     }
   },
 
@@ -127,6 +137,7 @@ export const {
   get: getIntegraciones,
   save: saveIntegracion,
   queryProduct,
+  getTiktokPixel,
   getTiktokAuth,
   saveTiktokAuth,
 } = integracionController;
