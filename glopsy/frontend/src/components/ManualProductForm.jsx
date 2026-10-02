@@ -62,6 +62,8 @@ const emptyForm = (currency) => ({
   supportEmail: '',
   warrantyPhone: '',
   acceptTerms: false,
+  hsCode: '',
+  countryOfManufacture: '',
 });
 
 export default function ManualProductForm({
@@ -248,6 +250,8 @@ export default function ManualProductForm({
       perfilEnvioId: selectedPerfilEnvioId ? Number(selectedPerfilEnvioId) : null,
       termsAccepted: form.acceptTerms,
       termsVersion: '2026-09-20',
+      hsCode: form.hsCode.trim() || null,
+      countryOfManufacture: form.countryOfManufacture.trim().toUpperCase() || null,
     };
 
     const ok = await onPublish(payload);
@@ -384,6 +388,37 @@ export default function ManualProductForm({
             ))}
           </select>
           {fieldErrors.categoriaId && <span style={errorStyle}>{fieldErrors.categoriaId}</span>}
+        </div>
+      </div>
+
+      {/* Aduana (envíos internacionales) */}
+      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1rem' }}>
+        <p style={{ margin: '0 0 0.6rem', fontWeight: 700, fontSize: '0.9rem', color: '#0f172a' }}>
+          Datos de aduana <span style={{ fontWeight: 400, color: '#64748b' }}>(solo envíos internacionales)</span>
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <div>
+            <label style={labelStyle}>Código HS</label>
+            <input
+              value={form.hsCode}
+              maxLength={20}
+              onChange={(e) => update({ hsCode: e.target.value })}
+              placeholder="Ej. 6109.10"
+              style={inputStyle}
+            />
+            <span style={{ color: '#64748b', fontSize: '0.72rem' }}>Si lo dejas vacío lo inferimos automáticamente.</span>
+          </div>
+          <div>
+            <label style={labelStyle}>País de fabricación</label>
+            <input
+              value={form.countryOfManufacture}
+              maxLength={2}
+              onChange={(e) => update({ countryOfManufacture: e.target.value.toUpperCase() })}
+              placeholder="Ej. CO"
+              style={inputStyle}
+            />
+            <span style={{ color: '#64748b', fontSize: '0.72rem' }}>Código ISO de 2 letras.</span>
+          </div>
         </div>
       </div>
 

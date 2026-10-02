@@ -404,13 +404,16 @@ export const dispatchInternationalOrder = async (orderId) => {
     if (creds?.accessToken && option?.branch?.code) {
       try {
         const packages = await buildPackages(items);
+        const destAddress = buildDestinationAddress(destination, order);
+        const originAddress = { ...branchAddress, branchCode: option.branch.code };
+        const labelCarrier = option.leg2?.carrier || option.carrier;
         const label = await generateEnviaLabel({
           accessToken: creds.accessToken,
           mode: creds.mode,
-          origin: { ...branchAddress, branchCode: option.branch.code },
-          destination: buildDestinationAddress(destination, order),
+          origin: originAddress,
+          destination: destAddress,
           packages,
-          carrier: option.leg2?.carrier || option.carrier,
+          carrier: labelCarrier,
           service: option.leg2?.service,
           currency: 'USD',
           orderReference: order.order_number || String(order.id),
@@ -427,16 +430,58 @@ export const dispatchInternationalOrder = async (orderId) => {
                payload = COALESCE(payload, '{}'::jsonb) || $4::jsonb,
                updated_at = NOW()
            WHERE order_id = $1`,
-          [orderId, result.tracking, option.leg2?.carrier || option.carrier, JSON.stringify({ international: true, option, enviaLabel: label })]
+          [orderId, result.tracking, labelCarrier, JSON.stringify({ international: true, option, enviaLabel: label })]
         );
+
+        // 3) Factura comercial (documento de exportación para la aduana).
+        if (result.tracking) {
+          try {
+            const invoice = await createCommercialInvoice({
+              accessToken: creds.accessToken,
+              mode: creds.mode,
+              origin: originAddress,
+              destination: destAddress,
+              shipment: { carrier: labelCarrier, trackingNumber: result.tracking },
+              packages: packages.map((p) => ({
+                items: (p.items || []).map((it) => ({
+                  description: it.description || p.content,
+                  productCode: it.hsCode || it.productCode || '',
+                  quantity: Number(it.quantity) || 1,
+                  price: Number(it.price) || 0,
+                  ...(it.countryOfManufacture ? { countryOfManufacture: it.countryOfManufacture } : {}),
+                })),
+              })),
+              customsSettings: { dutiesPaymentEntity: 'envia_guaranteed', exportReason: 'sale' },
+            });
+            result.commercialInvoice = invoice?.billOfLading || invoice?.commercialInvoice || null;
+            const customsPayload = {
+              option,
+              hsCodes: packages.flatMap((p) => (p.items || []).map((it) => it.hsCode)).filter(Boolean),
+              declaredValue: packages.reduce((s, p) => s + (Number(p.declaredValue) || 0), 0),
+              dutiesPaymentEntity: 'envia_guaranteed',
+              exportReason: 'sale',
+              commercialInvoiceUrl: result.commercialInvoice,
+            };
+            await pool.query(
+              `UPDATE orders
+               SET commercial_invoice_url = COALESCE($2, commercial_invoice_url),
+                   customs_payload = $3::jsonb,
+                   updated_at = NOW()
+               WHERE id = $1`,
+              [orderId, result.commercialInvoice, JSON.stringify(customsPayload)]
+            );
+          } catch (e) {
+            console.error('[dispatch] Factura comercial ENVIA:', orderId, e.message);
+          }
+        }
 
         if (String(process.env.ENVIA_SCHEDULE_PICKUP).toLowerCase() === 'true' && result.tracking) {
           try {
             const pickup = await scheduleEnviaPickup({
               accessToken: creds.accessToken,
               mode: creds.mode,
-              origin: { ...branchAddress, branchCode: option.branch.code },
-              carrier: option.leg2?.carrier || option.carrier,
+              origin: originAddress,
+              carrier: labelCarrier,
               trackingNumbers: [result.tracking],
               totalPackages: 1,
             });

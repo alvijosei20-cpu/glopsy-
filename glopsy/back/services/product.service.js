@@ -477,7 +477,8 @@ export const getProductsForUser = async (userId) => {
 export const getProductsForUserManagement = async (userId) => {
   const { rows } = await pool.query(
     `SELECT id, public_id, name, base_price, suggested_price, stock_total,
-            status, images, variants, external_product_id, created_at, updated_at
+            status, images, variants, external_product_id, hs_code, country_of_manufacture,
+            created_at, updated_at
      FROM produc
      WHERE tienda_id = $1 AND status != 'deleted'
      ORDER BY updated_at DESC, id DESC`,
