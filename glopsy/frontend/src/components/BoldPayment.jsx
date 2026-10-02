@@ -32,6 +32,20 @@ const DOC_TYPES = {
   CEDULA_EXTRANJERIA: 'CE',
 };
 
+// El perfil guarda el tipo de documento como CC/CE/NIT/PAS; Bold usa sus propias claves.
+const DOC_TYPE_FROM_PROFILE = {
+  CC: 'CEDULA',
+  CE: 'CEDULA_EXTRANJERIA',
+  PAS: 'PASAPORTE',
+  PP: 'PASAPORTE',
+  NIT: 'NIT',
+  CEDULA: 'CEDULA',
+  CEDULA_EXTRANJERIA: 'CEDULA_EXTRANJERIA',
+  PASAPORTE: 'PASAPORTE',
+};
+
+const normalizeDocType = (value) => DOC_TYPE_FROM_PROFILE[String(value || '').toUpperCase()] || 'CEDULA';
+
 export default function BoldPayment({
   total,
   items,
@@ -48,10 +62,10 @@ export default function BoldPayment({
   const [billing, setBilling] = useState({
     name: user?.name || '',
     email: user?.email || '',
-    document_type: 'CEDULA',
-    document_number: '',
-    phone: '',
-    address: '',
+    document_type: normalizeDocType(user?.document_type),
+    document_number: user?.document_number || '',
+    phone: user?.phone || customerInfo?.telefono || '',
+    address: customerInfo?.direccion || '',
   });
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -67,6 +81,19 @@ export default function BoldPayment({
     if (ref) pollStatus(ref);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Si el usuario se carga después de montar, completa los campos vacíos.
+  useEffect(() => {
+    if (!user) return;
+    setBilling(prev => ({
+      ...prev,
+      name: prev.name || user.name || '',
+      email: prev.email || user.email || '',
+      document_type: user.document_type ? normalizeDocType(user.document_type) : prev.document_type,
+      document_number: prev.document_number || user.document_number || '',
+      phone: prev.phone || user.phone || '',
+    }));
+  }, [user]);
 
   const pollStatus = async (reference, attempts = 0) => {
     setChecking(true);

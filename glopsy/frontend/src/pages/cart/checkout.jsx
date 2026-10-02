@@ -10,7 +10,6 @@ import { cartCurrency } from '../../utils/cartMode';
 import { useStorefront } from '../../storefront/StorefrontContext';
 import { useAuth } from '../../context/AuthContext';
 import BoldPayment from '../../components/BoldPayment';
-import RetractoNotice from '../../components/RetractoNotice';
 import './cart.css';
 
 export default function Checkout() {
@@ -79,14 +78,20 @@ export default function Checkout() {
       .then(res => {
         if (res.data.ok && res.data.defaults) {
           const d = res.data.defaults;
-          if (d.departamento_id) setSelectedDepartamentoId(String(d.departamento_id));
-          if (d.ciudad_id) setSelectedCiudadId(String(d.ciudad_id));
-          if (d.direccion) setDireccion(d.direccion);
-          if (d.telefono) setTelefono(d.telefono);
+          if (d.departamento_id) setSelectedDepartamentoId(prev => prev || String(d.departamento_id));
+          if (d.ciudad_id) setSelectedCiudadId(prev => prev || String(d.ciudad_id));
+          if (d.direccion) setDireccion(prev => prev || d.direccion);
+          if (d.telefono) setTelefono(prev => prev || d.telefono);
         }
       })
       .catch(() => {});
   }, []);
+
+  // Respaldo: datos de contacto del usuario logueado si no hay dirección guardada.
+  useEffect(() => {
+    if (!user) return;
+    if (user.phone) setTelefono(prev => prev || user.phone);
+  }, [user]);
 
   useEffect(() => {
     if (!showBricks || !preferenceData) return;
@@ -520,7 +525,7 @@ export default function Checkout() {
   }
 
   const filteredCiudades = selectedDepartamentoId
-    ? ciudades.filter(c => Number(c.departamento_id) === Number(selectedDepartamentoId))
+    ? ciudades.filter(c => String(c.departamento_id) === String(selectedDepartamentoId))
     : ciudades;
 
   return (
@@ -945,8 +950,6 @@ export default function Checkout() {
                 </div>
               </div>
             </div>
-
-            <RetractoNotice className="mb-3" />
 
             <button
               type="submit"
