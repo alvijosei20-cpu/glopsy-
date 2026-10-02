@@ -27,7 +27,27 @@ const Market = () => {
   const [tiktok, setTiktok] = useState({ client_id: '', client_secret: '', redirect_uri: '', scopes: '', enabled: true, configured: false, source: 'none' });
   const [savingTiktok, setSavingTiktok] = useState(false);
   const [tiktokMsg, setTiktokMsg] = useState('');
-  const [pixel, setPixel] = useState({ id: '', token: '', tokenMasked: '', hasToken: false, saving: false, msg: '' });
+  const [pixel, setPixel] = useState({ id: '', token: '', tokenMasked: '', hasToken: false, saving: false, msg: '', testCode: '', testing: false, testResult: '' });
+
+  const sendTestEvent = async () => {
+    setPixel((p) => ({ ...p, testing: true, testResult: '' }));
+    setError('');
+    try {
+      const { data } = await api.post('/tienda/integraciones/tiktok-pixel/test-event', {
+        test_event_code: pixel.testCode.trim() || undefined,
+      });
+      setPixel((p) => ({
+        ...p,
+        testResult: data?.ok
+          ? 'Evento de prueba enviado ✓ (revisa Events Manager → Test Events)'
+          : `TikTok respondió: ${data?.response?.message || data?.reason || 'error'}`,
+      }));
+    } catch (err) {
+      setPixel((p) => ({ ...p, testResult: err.response?.data?.message || 'No se pudo enviar el evento de prueba.' }));
+    } finally {
+      setPixel((p) => ({ ...p, testing: false }));
+    }
+  };
 
   // Pixel + token de TikTok de la tienda (marketing / Events API).
   useEffect(() => {
@@ -340,6 +360,34 @@ const Market = () => {
             Se guarda cifrado y sirve para enviar conversiones server-side (Events API). No se muestra en la tienda.
           </p>
           {pixel.msg && <p className="panel__notice" role="status" style={{ marginTop: '0.6rem' }}>{pixel.msg}</p>}
+
+          <label style={{ display: 'block', color: '#334155', fontWeight: 600, fontSize: '0.8rem', marginTop: '0.9rem' }}>
+            Test Event Code <span style={{ color: '#94a3b8', fontWeight: 400 }}>(opcional, para probar)</span>
+          </label>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.3rem' }}>
+            <input
+              type="text"
+              value={pixel.testCode}
+              onChange={(e) => setPixel((p) => ({ ...p, testCode: e.target.value.trim() }))}
+              placeholder="Ej. TEST12345"
+              autoComplete="off"
+              style={{ flex: 1, padding: '0.6rem 0.75rem', borderRadius: '0.6rem', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
+            />
+            <button
+              type="button"
+              onClick={sendTestEvent}
+              disabled={pixel.testing || !pixel.id || !pixel.hasToken}
+              className="integration-button integration-button--edit"
+            >
+              <Send size={15} /> {pixel.testing ? 'Enviando…' : 'Probar'}
+            </button>
+          </div>
+          {pixel.testResult && (
+            <p className="market__hint" style={{ marginTop: '0.4rem', color: pixel.testResult.includes('✓') ? '#15803d' : '#b91c1c' }}>
+              {pixel.testResult}
+            </p>
+          )}
+
           <div className="integration-card__actions">
             <button
               className="integration-button integration-button--send"

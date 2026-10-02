@@ -5,6 +5,7 @@ import {
 } from '../services/integracion.service.js';
 import { getOAuthStatus, saveOAuthConfig } from '../services/oauthConfig.service.js';
 import { getTiendaForUser, getTiktokPixelForUser } from '../services/tienda.service.js';
+import { sendTikTokTestEvent } from '../services/tiktokEvents.service.js';
 import { cleanString, cleanUrl, isAllowedEnum } from '../utils/validation.js';
 
 export const createIntegracionController = ({
@@ -59,6 +60,20 @@ export const createIntegracionController = ({
     } catch (error) {
       console.error('Error al consultar TikTok Pixel:', error.message);
       return res.status(500).json({ ok: false, message: 'No fue posible consultar la configuración.' });
+    }
+  },
+
+  // Envía un evento de prueba (Events API) sin afectar las conversiones reales.
+  sendTiktokTestEvent: async (req, res) => {
+    try {
+      const result = await sendTikTokTestEvent({
+        tiendaId: req.auth.userId,
+        testEventCode: cleanString(req.body?.test_event_code, { maxLength: 60 }) || null,
+      });
+      return res.json({ ok: true, ...result });
+    } catch (error) {
+      console.error('Error al enviar evento de prueba TikTok:', error.message);
+      return res.status(400).json({ ok: false, message: error.message || 'No fue posible enviar el evento de prueba.' });
     }
   },
 
@@ -138,6 +153,7 @@ export const {
   save: saveIntegracion,
   queryProduct,
   getTiktokPixel,
+  sendTiktokTestEvent,
   getTiktokAuth,
   saveTiktokAuth,
 } = integracionController;

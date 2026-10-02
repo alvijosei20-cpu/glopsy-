@@ -39,11 +39,13 @@ const getPixelConfig = async (tiendaId = null) => {
   return null;
 };
 
-const postEvent = async ({ pixelId, token, data }) => {
+const postEvent = async ({ pixelId, token, data, testEventCode = null }) => {
+  const body = { event_source: 'web', event_source_id: pixelId, data };
+  if (testEventCode) body.test_event_code = String(testEventCode).trim();
   const res = await fetch(ENDPOINT, {
     method: 'POST',
     headers: { 'Access-Token': token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ event_source: 'web', event_source_id: pixelId, data }),
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(8000),
   });
   const json = await res.json().catch(() => ({}));
@@ -63,6 +65,7 @@ export const sendTikTokPurchase = async ({
   items = [],
   phone = null,
   eventTime = null,
+  testEventCode = null,
 } = {}) => {
   try {
     const cfg = await getPixelConfig(tiendaId);
@@ -112,7 +115,7 @@ export const sendTikTokPurchase = async ({
       },
     ];
 
-    const { httpStatus, json, ok } = await postEvent({ pixelId: cfg.pixelId, token: cfg.token, data });
+    const { httpStatus, json, ok } = await postEvent({ pixelId: cfg.pixelId, token: cfg.token, data, testEventCode });
 
     await pool.query(
       `UPDATE tiktok_events SET status = $2, http_status = $3, response = $4::jsonb, sent_at = now() WHERE id = $1`,
@@ -125,4 +128,41 @@ export const sendTikTokPurchase = async ({
     console.error('[tiktok-events] error al enviar:', error.message);
     return { ok: false, error: error.message };
   }
+};
+
+// Envía un evento de prueba (CompletePayment) con test_event_code. No afecta las
+// conversiones reales; sirve para validar la integración en Events Manager.
+export const sendTikTokTestEvent = async ({ tiendaId = null, testEventCode = null } = {}) => {
+  const cfg = await getPixelConfig(tiendaId);
+  if (!cfg) return { ok: false, skipped: true, reason: 'sin pixel/token configurado' };
+
+  const eventId = `test_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const data = [
+    {
+      event: 'CompletePayment',
+      event_time: Math.floor(Date.now() / 1000),
+      event_id: eventId,
+      user: { external_id: sha256(`test_${eventId}`) },
+      properties: {
+        value: 1,
+        currency: 'COP',
+        content_type: 'product',
+        order_id: 'TEST',
+        contents: [{ content_id: 'test', content_name: 'Evento de prueba', quantity: 1, price: 1 }],
+      },
+    },
+  ];
+
+  const result = await postEvent({ pixelId: cfg.pixelId, token: cfg.token, data, testEventCode });
+
+  await pool
+    .query(
+      `INSERT INTO tiktok_events (event_id, event_name, tienda_id, pixel_id, status, http_status, response, sent_at)
+       VALUES ($1, 'CompletePayment (test)', $2, $3, $4, $5, $6::jsonb, now())
+       ON CONFLICT (event_id) DO NOTHING`,
+      [eventId, tiendaId, cfg.pixelId, result.ok ? 'sent' : 'error', result.httpStatus, JSON.stringify(result.json)]
+    )
+    .catch(() => {});
+
+  return { ok: result.ok, http_status: result.httpStatus, response: result.json, event_id: eventId, test_event_code: testEventCode || null };
 };

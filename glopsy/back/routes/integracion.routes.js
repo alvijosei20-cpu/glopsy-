@@ -4,6 +4,7 @@ import {
   saveIntegracion,
   queryProduct,
   getTiktokPixel,
+  sendTiktokTestEvent,
   getTiktokAuth,
   saveTiktokAuth,
 } from '../controllers/integracion.controller.js';
@@ -24,5 +25,6 @@ router.post('/tiktok', saveTiktokAuth);
 
 // Integración TikTok Pixel de la tienda del vendedor (estado enmascarado).
 router.get('/tiktok-pixel', getTiktokPixel);
+router.post('/tiktok-pixel/test-event', sendTiktokTestEvent);
 
 export default router;
