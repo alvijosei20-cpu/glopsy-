@@ -19,6 +19,7 @@ import {
   getMastershopIntegrationForStore,
   createMastershopDispatchOrder,
 } from './mastershopOrder.service.js';
+import { resolvePackagingForProduct } from './tariff.service.js';
 
 const ratePrice = (r) =>
   Number(
@@ -131,7 +132,7 @@ const buildPackages = async (items) => {
   let map = new Map();
   if (ids.length > 0) {
     const { rows } = await pool.query(
-      `SELECT id, peso, largo, alto, ancho, hs_code, country_of_manufacture
+      `SELECT id, peso, largo, alto, ancho, hs_code, country_of_manufacture, categoria_id
        FROM produc WHERE id = ANY($1::int[])`,
       [ids]
     );
@@ -154,10 +155,20 @@ const buildPackages = async (items) => {
     const content =
       String(it.name || 'Mercancía General').replace(/[^\w\s\+\-\.]/gi, '').trim() || 'Mercancia General';
 
-    totalWeight += (Number(p.peso) || Number(process.env.ENVIA_DEFAULT_WEIGHT) || 1) * qty;
-    maxLength = Math.max(maxLength, Number(p.largo) || Number(process.env.ENVIA_DEFAULT_LENGTH) || 10);
-    maxWidth = Math.max(maxWidth, Number(p.ancho) || Number(process.env.ENVIA_DEFAULT_WIDTH) || 10);
-    maxHeight = Math.max(maxHeight, Number(p.alto) || Number(process.env.ENVIA_DEFAULT_HEIGHT) || 10);
+    // Empaque optimizado por categoría (evita cobrar el volumen de una caja
+    // demasiado grande que sobrefactura el peso volumétrico).
+    const pack = await resolvePackagingForProduct({
+      categoriaId: p.categoria_id,
+      peso: p.peso,
+      largo: p.largo,
+      alto: p.alto,
+      ancho: p.ancho,
+    });
+
+    totalWeight += pack.weight * qty;
+    maxLength = Math.max(maxLength, pack.length);
+    maxWidth = Math.max(maxWidth, pack.width);
+    maxHeight = Math.max(maxHeight, pack.height);
     declaredValue += unitPrice * qty;
 
     customsItems.push({

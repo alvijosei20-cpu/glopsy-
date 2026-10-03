@@ -130,4 +130,62 @@ export const estimateImportDuties = async ({ paisDestino, items = [], shippingCo
 // Limpia la cache (por si se editan reglas desde el panel).
 export const clearTariffCache = () => cache.clear();
 
-export default { estimateImportDuties, clearTariffCache };
+// -------- Optimización de empaque (peso volumétrico) --------
+// El courier cobra por peso volumétrico (LxWxH/5000). Para no sobrefacturar,
+// se usa un empaque típico por categoría y se acota al contenido real.
+const PACKAGING_DIVISOR = Number(process.env.PACKAGING_VOLUMETRIC_DIVISOR) || 5000;
+const packagingCache = new Map();
+
+const loadPackagingRules = async () => {
+  const hit = packagingCache.get('all');
+  if (hit && Date.now() - hit.at < 5 * 60 * 1000) return hit.value;
+  const { rows } = await pool.query(
+    `SELECT scope, scope_id, largo_cm, ancho_cm, alto_cm, peso_min_kg, product_peso_factor
+     FROM packaging_rules WHERE activo = true`
+  );
+  const byCategoria = new Map();
+  let fallback = null;
+  for (const r of rows) {
+    const rule = {
+      largo: num(r.largo_cm),
+      ancho: num(r.ancho_cm),
+      alto: num(r.alto_cm),
+      pesoMin: num(r.peso_min_kg),
+      factor: num(r.product_peso_factor) || 1,
+    };
+    if (r.scope === 'categoria' && r.scope_id != null) byCategoria.set(Number(r.scope_id), rule);
+    else fallback = rule;
+  }
+  const value = { byCategoria, fallback: fallback || { largo: 35, ancho: 30, alto: 20, pesoMin: 1, factor: 1.15 } };
+  packagingCache.set('all', { at: Date.now(), value });
+  return value;
+};
+
+export const clearPackagingCache = () => packagingCache.clear();
+
+// Devuelve { length, width, height, weight } optimizados para un producto.
+// - Usa la caja típica de su categoría (o el respaldo).
+// - Acota el volumen al peso real del producto para no inflar el cobro.
+export const resolvePackagingForProduct = async ({ categoriaId, peso, largo, alto, ancho } = {}) => {
+  const rules = await loadPackagingRules();
+  const rule = (categoriaId != null && rules.byCategoria.get(Number(categoriaId))) || rules.fallback;
+
+  const pesoReal = num(peso) > 0 ? num(peso) : 0;
+  const weight = Math.max(rule.pesoMin, round2(pesoReal * rule.factor));
+
+  const dims = {
+    length: num(largo) > 0 ? num(largo) : rule.largo,
+    width: num(ancho) > 0 ? num(ancho) : rule.ancho,
+    height: num(alto) > 0 ? num(alto) : rule.alto,
+  };
+  const volumetric = (dims.length * dims.width * dims.height) / PACKAGING_DIVISOR;
+  if (pesoReal > 0 && volumetric > pesoReal * 3) {
+    const scale = Math.cbrt((pesoReal * 3 * PACKAGING_DIVISOR) / (dims.length * dims.width * dims.height));
+    dims.length = round2(dims.length * scale);
+    dims.width = round2(dims.width * scale);
+    dims.height = round2(dims.height * scale);
+  }
+  return { length: dims.length, width: dims.width, height: dims.height, weight };
+};
+
+export default { estimateImportDuties, clearTariffCache, resolvePackagingForProduct, clearPackagingCache };
