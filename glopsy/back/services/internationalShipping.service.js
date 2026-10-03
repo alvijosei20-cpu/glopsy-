@@ -121,7 +121,11 @@ const resolveOriginAddress = async (items, tiendaId) => {
   };
 };
 
-// Paquetes a cotizar (peso/dimensiones del producto) + datos de aduana.
+// Paquete consolidado a cotizar + datos de aduana.
+// Se consolida TODO el pedido en un único paquete/guía para no fragmentar el
+// envío: el régimen de bajo valor (p.ej. Venezuela <= USD 100) se evalúa por
+// guía, así que varios paquetes romperían la exención. El detalle por ítem
+// (HS code + valor unitario) se envía dentro del arreglo de la aduana.
 const buildPackages = async (items) => {
   const ids = items.map((i) => Number(i.id)).filter(Boolean);
   let map = new Map();
@@ -133,7 +137,15 @@ const buildPackages = async (items) => {
     );
     map = new Map(rows.map((r) => [Number(r.id), r]));
   }
-  return items.map((it) => {
+
+  let totalWeight = 0;
+  let maxLength = 0;
+  let maxWidth = 0;
+  let maxHeight = 0;
+  let declaredValue = 0;
+  const customsItems = [];
+
+  for (const it of items) {
     const p = map.get(Number(it.id)) || {};
     const qty = Number(it.quantity) || 1;
     const unitPrice = Number(it.price) || 0;
@@ -141,31 +153,36 @@ const buildPackages = async (items) => {
     const originCountry = p.country_of_manufacture || null;
     const content =
       String(it.name || 'Mercancía General').replace(/[^\w\s\+\-\.]/gi, '').trim() || 'Mercancia General';
-    return {
+
+    totalWeight += (Number(p.peso) || Number(process.env.ENVIA_DEFAULT_WEIGHT) || 1) * qty;
+    maxLength = Math.max(maxLength, Number(p.largo) || Number(process.env.ENVIA_DEFAULT_LENGTH) || 10);
+    maxWidth = Math.max(maxWidth, Number(p.ancho) || Number(process.env.ENVIA_DEFAULT_WIDTH) || 10);
+    maxHeight = Math.max(maxHeight, Number(p.alto) || Number(process.env.ENVIA_DEFAULT_HEIGHT) || 10);
+    declaredValue += unitPrice * qty;
+
+    customsItems.push({
+      description: content,
+      ...(hsCode ? { hsCode } : {}),
+      quantity: qty,
+      price: unitPrice,
+      ...(originCountry ? { countryOfManufacture: originCountry } : {}),
+    });
+  }
+
+  const content = customsItems.length > 0 ? customsItems[0].description : 'Mercancia General';
+  return [
+    {
       type: 'box',
       content,
-      amount: qty,
-      weight: Number(p.peso) || Number(process.env.ENVIA_DEFAULT_WEIGHT) || 1,
+      amount: customsItems.reduce((a, x) => a + (Number(x.quantity) || 1), 0) || 1,
+      weight: Math.max(1, Math.round(totalWeight * 100) / 100),
       weightUnit: 'KG',
       lengthUnit: 'CM',
-      declaredValue: unitPrice * qty,
-      dimensions: {
-        length: Number(p.largo) || Number(process.env.ENVIA_DEFAULT_LENGTH) || 10,
-        width: Number(p.ancho) || Number(process.env.ENVIA_DEFAULT_WIDTH) || 10,
-        height: Number(p.alto) || Number(process.env.ENVIA_DEFAULT_HEIGHT) || 10,
-      },
-      // Detalle por ítem requerido por aduana (HS code + valor unitario).
-      items: [
-        {
-          description: content,
-          ...(hsCode ? { hsCode } : {}),
-          quantity: qty,
-          price: unitPrice,
-          ...(originCountry ? { countryOfManufacture: originCountry } : {}),
-        },
-      ],
-    };
-  });
+      declaredValue: Math.round(declaredValue * 100) / 100,
+      dimensions: { length: maxLength, width: maxWidth, height: maxHeight },
+      items: customsItems,
+    },
+  ];
 };
 
 const buildBranchAddress = (branch, dest) => {

@@ -451,8 +451,8 @@ export default function Checkout() {
         alert('Completa el destino internacional y selecciona una opción de envío.');
         return;
       }
-      if (intlDuties?.pais === 'VE' && !intlConsent) {
-        alert('Debes aceptar las condiciones de importación a Venezuela para continuar.');
+      if (intlDuties?.ok && !intlConsent) {
+        alert('Debes aceptar las condiciones de importación para continuar.');
         return;
       }
     } else {
@@ -766,15 +766,28 @@ export default function Checkout() {
                   </div>
                 )}
 
-                {intlDuties?.ok && intlDuties.pais === 'VE' && (
+                {intlDuties?.ok && (intlDuties.pais === 'VE' || intlDuties.pais === 'CO') && (
                   <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-[11px] leading-snug text-slate-600">
-                    <p className="font-bold text-slate-800">Importante para tu envío a Venezuela (uso personal)</p>
-                    <p className="mt-1">Para que tu envío por courier puerta a puerta quede exento de aranceles e IVA (hasta USD 100):</p>
-                    <ul className="mt-1 ml-4 list-disc space-y-0.5">
-                      <li>Debe ser para <strong>uso personal o familiar</strong>, no para reventa.</li>
-                      <li>El <strong>valor declarado de la guía no debe superar USD 100</strong>. Si tu carrito lo supera, pagará tributos al recibir.</li>
-                      <li>Evita <strong>muchas unidades del mismo artículo</strong> (más de ~6) o envíos repetidos: la aduana puede tratarlo como comercial.</li>
-                    </ul>
+                    <p className="font-bold text-slate-800">Importante para tu envío a {intlDuties.paisNombre} (uso personal)</p>
+                    {intlDuties.pais === 'VE' ? (
+                      <>
+                        <p className="mt-1">Para que tu envío por courier puerta a puerta quede exento de aranceles e IVA (hasta USD 100):</p>
+                        <ul className="mt-1 ml-4 list-disc space-y-0.5">
+                          <li>Debe ser para <strong>uso personal o familiar</strong>, no para reventa.</li>
+                          <li>El <strong>valor declarado de la guía no debe superar USD 100</strong>. Si tu carrito lo supera, pagará tributos al recibir.</li>
+                          <li>Evita <strong>muchas unidades del mismo artículo</strong> (más de ~6) o envíos repetidos: la aduana puede tratarlo como comercial.</li>
+                        </ul>
+                      </>
+                    ) : (
+                      <>
+                        <p className="mt-1">Al importar a Colombia:</p>
+                        <ul className="mt-1 ml-4 list-disc space-y-0.5">
+                          <li>Debe ser para <strong>uso personal</strong>, no para reventa.</li>
+                          <li>Los envíos de bajo valor (hasta USD 200) pueden no pagar arancel ni IVA; si tu carrito lo supera, la aduana cobra arancel e IVA (19%) al recibir.</li>
+                          <li>Evita <strong>cantidades comerciales</strong> del mismo artículo: la DIAN puede tratarlo como importación comercial.</li>
+                        </ul>
+                      </>
+                    )}
                     <p className="mt-1">Declara siempre el <strong>valor real</strong>: la aduana lo cruza con facturas; una subdeclaración genera multas y retención.</p>
                     <p className="mt-1">Datos del receptor completos (nombre, cédula, dirección y teléfono) agilizan la entrega.</p>
                     <label className="mt-2 flex items-start gap-2 cursor-pointer">
@@ -786,7 +799,7 @@ export default function Checkout() {
                         required
                       />
                       <span className="font-semibold text-slate-700">
-                        Entiendo y acepto las condiciones de importación a Venezuela (uso personal, valor real declarado y límite de USD 100 por guía).
+                        Entiendo y acepto las condiciones de importación a {intlDuties.paisNombre} (uso personal, valor real declarado y límites aplicables).
                       </span>
                     </label>
                   </div>
