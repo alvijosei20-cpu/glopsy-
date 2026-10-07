@@ -9,6 +9,7 @@ const cacheKey = (userId) => `integraciones:${userId}`;
 const GLOBAL_API_URLS = {
   mastershop: process.env.MASTERSHOP_API_URL || 'https://prod.api.mastershop.com/api',
   dropi: process.env.DROPI_API_URL || 'https://api.dropi.co/api',
+  dropanas: process.env.DROPANAS_API_URL || 'https://app.dropanas.com/api/v1',
 };
 
 // Sanitización y prevención de código malicioso / XSS básico
@@ -46,9 +47,21 @@ export const getIntegracionesForUser = async (userId) => {
 };
 
 export const saveIntegracionForUser = async (userId, provider, apiKey) => {
-  const allowedProviders = ['mastershop', 'dropi'];
+  const allowedProviders = ['mastershop', 'dropi', 'dropanas'];
   if (!allowedProviders.includes(provider)) {
     throw new Error('Proveedor de integración no válido.');
+  }
+
+  const { rows: storeRows } = await pool.query(
+    `SELECT p.codigo_iso FROM tiendas t LEFT JOIN paises p ON p.id = t.pais_id WHERE t.usrid = $1 LIMIT 1`,
+    [userId]
+  );
+  const isVE = storeRows[0]?.codigo_iso === 'VE';
+  if (isVE && provider === 'mastershop') {
+    throw new Error('Mastershop no está disponible para tiendas venezolanas. Usa DropPanas.');
+  }
+  if (!isVE && provider === 'dropanas') {
+    throw new Error('DropPanas es exclusivo para tiendas venezolanas.');
   }
 
   const sanitizedKey = apiKey ? sanitizeInput(apiKey) : '';
@@ -76,7 +89,7 @@ export const saveIntegracionForUser = async (userId, provider, apiKey) => {
 };
 
 export const queryIntegrationProduct = async (userId, provider, productId) => {
-  const allowedProviders = ['mastershop', 'dropi'];
+  const allowedProviders = ['mastershop', 'dropi', 'dropanas'];
   if (!allowedProviders.includes(provider)) {
     throw new Error('Proveedor de integración no válido.');
   }
@@ -114,6 +127,26 @@ export const queryIntegrationProduct = async (userId, provider, productId) => {
     const response = await axios.get(targetUrl, {
       headers: {
         'ms-api-key': apiKey,
+      },
+    });
+
+    const data = response.data;
+    await redisClient.set(redisCacheKey, JSON.stringify(data), { EX: 3600 });
+    return data;
+  }
+
+  if (provider === 'dropanas') {
+    const targetUrl = `${baseUrl}/productos/${sanitizedProductId}`;
+    const redisCacheKey = `product:query:${provider}:${sanitizedProductId}`;
+    const cachedProduct = await redisClient.get(redisCacheKey);
+    if (cachedProduct) {
+      return JSON.parse(cachedProduct);
+    }
+
+    const response = await axios.get(targetUrl, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'X-DroPanas-Mode': apiKey.startsWith('test_sk_') ? 'sandbox' : 'live',
       },
     });
 

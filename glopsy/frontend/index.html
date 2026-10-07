@@ -60,12 +60,10 @@
     }
     </script>
 
-    <!-- TikTok Pixel (código base; solo marketplace principal).
-         Se carga y dispara para que TikTok reconozca el pixel y mida
-         conversiones de campañas. -->
+    <!-- TikTok Pixel (código base oficial; solo marketplace principal) -->
     <script>
-      (function (w, d, t) {
-        var host = d.location.hostname.toLowerCase();
+      (function () {
+        var host = document.location.hostname.toLowerCase();
         var roots = ['glopsy.shop', 'glopsy.com.ve'];
         var isMain = false;
         for (var r = 0; r < roots.length; r++) {
@@ -74,22 +72,12 @@
         }
         if (!isMain) return;
 
-        var ttq = (w[t] = w[t] || []);
-        ttq.methods = ['page','track','identify','instances','debug','on','off','once','ready','alias','group','enableCookie','disableCookie','holdConsent','revokeConsent','grantConsent'];
-        ttq.setAndDefer = function (o, e) { o[e] = function () { o.push([e].concat(Array.prototype.slice.call(arguments, 0))); }; };
-        for (var i = 0; i < ttq.methods.length; i++) ttq.setAndDefer(ttq, ttq.methods[i]);
-        ttq.load = function (id, n) {
-          var url = 'https://analytics.tiktok.com/i18n/pixel/events.js?lib=' + t + '&sdkid=' + id;
-          ttq._i = ttq._i || {}; ttq._i[id] = []; ttq._i[id]._u = url;
-          ttq._t = ttq._t || {}; ttq._t[id] = +new Date();
-          ttq._o = ttq._o || {}; ttq._o[id] = n || {};
-          var s = d.createElement('script'); s.type = 'text/javascript'; s.async = true; s.src = url;
-          var f = d.getElementsByTagName('script')[0]; f.parentNode.insertBefore(s, f);
-        };
-
-        ttq.load('DAVCV7JC77U17TEHUKF0');
-        ttq.page();
-      })(window, document, 'ttq');
+        !function (w, d, t) {
+          w.TiktokAnalyticsObject = t; var ttq = w[t] = w[t] || []; ttq.methods = ["page", "track", "identify", "instances", "debug", "on", "off", "once", "ready", "alias", "group", "enableCookie", "disableCookie", "holdConsent", "revokeConsent", "grantConsent"], ttq.setAndDefer = function (t, e) { t[e] = function () { t.push([e].concat(Array.prototype.slice.call(arguments, 0))) } }; for (var i = 0; i < ttq.methods.length; i++)ttq.setAndDefer(ttq, ttq.methods[i]); ttq.instance = function (t) { for (var e = ttq._i[t] || [], n = 0; n < ttq.methods.length; n++)ttq.setAndDefer(e, ttq.methods[n]); return e }, ttq.load = function (e, n) { var r = "https://analytics.tiktok.com/i18n/pixel/events.js", o = n && n.partner; ttq._i = ttq._i || {}, ttq._i[e] = [], ttq._i[e]._u = r, ttq._t = ttq._t || {}, ttq._t[e] = +new Date, ttq._o = ttq._o || {}, ttq._o[e] = n || {}; n = document.createElement("script"); n.type = "text/javascript", n.async = !0, n.src = r + "?sdkid=" + e + "&lib=" + t; e = document.getElementsByTagName("script")[0]; e.parentNode.insertBefore(n, e) };
+          ttq.load('DAVCV7JC77U17TEHUKF0');
+          ttq.page();
+        }(window, document, 'ttq');
+      })();
     </script>
   </head>
   <body>

@@ -19,6 +19,10 @@ import {
   getMastershopIntegrationForStore,
   createMastershopDispatchOrder,
 } from './mastershopOrder.service.js';
+import {
+  getDropanasIntegrationForStore,
+  createDropanasDispatchOrder,
+} from './dropanasOrder.service.js';
 import { resolvePackagingForProduct } from './tariff.service.js';
 
 const ratePrice = (r) =>
@@ -433,7 +437,7 @@ export const dispatchInternationalOrder = async (orderId) => {
       [order.tienda_id]
     );
     const store = storeRows[0];
-    if (!store || store.international_dispatch_provider !== 'mastershop') {
+    if (!store || !['mastershop', 'dropanas'].includes(store.international_dispatch_provider)) {
       return { ok: false, reason: 'no_dispatch_provider' };
     }
 
@@ -464,31 +468,49 @@ export const dispatchInternationalOrder = async (orderId) => {
 
     const result = { ok: true, mastershop: null, tracking: null, label: null };
 
-    // 1) Pedido de despacho en MasterShop (paquete -> oficina o comprador).
-    const ms = await getMastershopIntegrationForStore(order.tienda_id);
-    if (ms?.apiKey) {
-      try {
-        const shippingTotal = Math.round(Number(option.shippingTotal ?? option.total) || 0);
-        const additionalCharges = [
-          { type_charge: 'Envío internacional', value: shippingTotal },
-        ];
-        if (option.dutiesAndTaxes != null) {
-          additionalCharges.push({
-            type_charge: 'Aranceles e impuestos',
-            value: Math.round(Number(option.dutiesAndTaxes) || 0),
+    // 1) Pedido de despacho en MasterShop / DropPanas (paquete -> oficina o comprador).
+    if (store.international_dispatch_provider === 'dropanas') {
+      const dp = await getDropanasIntegrationForStore(order.tienda_id);
+      if (dp?.apiKey) {
+        try {
+          result.mastershop = await createDropanasDispatchOrder({
+            apiKey: dp.apiKey,
+            orderId: order.order_number || order.id,
+            shippingAddress: isDirect ? destAddress : branchAddress,
+            items,
+            total: Number(order.amount) || 0,
+            currency: store.moneda || 'USD',
           });
+        } catch (e) {
+          console.error('[dispatch] DropPanas:', orderId, e.message);
         }
-        result.mastershop = await createMastershopDispatchOrder({
-          apiKey: ms.apiKey,
-          orderId: order.order_number || order.id,
-          shippingAddress: isDirect ? destAddress : branchAddress,
-          items,
-          total: Number(order.amount) || 0,
-          currency: store.moneda || 'COP',
-          additionalCharges,
-        });
-      } catch (e) {
-        console.error('[dispatch] MasterShop:', orderId, e.message);
+      }
+    } else {
+      const ms = await getMastershopIntegrationForStore(order.tienda_id);
+      if (ms?.apiKey) {
+        try {
+          const shippingTotal = Math.round(Number(option.shippingTotal ?? option.total) || 0);
+          const additionalCharges = [
+            { type_charge: 'Envío internacional', value: shippingTotal },
+          ];
+          if (option.dutiesAndTaxes != null) {
+            additionalCharges.push({
+              type_charge: 'Aranceles e impuestos',
+              value: Math.round(Number(option.dutiesAndTaxes) || 0),
+            });
+          }
+          result.mastershop = await createMastershopDispatchOrder({
+            apiKey: ms.apiKey,
+            orderId: order.order_number || order.id,
+            shippingAddress: isDirect ? destAddress : branchAddress,
+            items,
+            total: Number(order.amount) || 0,
+            currency: store.moneda || 'COP',
+            additionalCharges,
+          });
+        } catch (e) {
+          console.error('[dispatch] MasterShop:', orderId, e.message);
+        }
       }
     }
 

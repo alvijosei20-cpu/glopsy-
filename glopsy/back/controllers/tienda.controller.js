@@ -314,7 +314,7 @@ const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
         zoom_origen_codciudad: hasZoomOrigen ? Number(zoomOrigenRaw) : undefined,
         international_dispatch_provider: internationalDispatchRaw === null || internationalDispatchRaw === ''
           ? null
-          : (['mastershop'].includes(internationalDispatchRaw) ? internationalDispatchRaw : undefined),
+          : (['mastershop', 'dropanas'].includes(internationalDispatchRaw) ? internationalDispatchRaw : undefined),
       });
       if (!tienda) {
         return res.status(404).json({ ok: false, message: 'No tienes una tienda registrada.' });

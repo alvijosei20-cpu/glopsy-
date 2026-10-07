@@ -423,9 +423,20 @@ export const updateTiendaForUser = async (userId, { name = null, slug = null, ga
 
     // Proveedor de despacho internacional (Venezuela). null lo limpia; undefined no toca.
     if (international_dispatch_provider !== undefined) {
+      const { rows: storeRows } = await pool.query(
+        `SELECT p.codigo_iso FROM tiendas t LEFT JOIN paises p ON p.id = t.pais_id WHERE t.usrid = $1 LIMIT 1`,
+        [uid]
+      );
+      const isVE = storeRows[0]?.codigo_iso === 'VE';
+      if (isVE && international_dispatch_provider === 'mastershop') {
+        throw new Error('Mastershop no está disponible para tiendas venezolanas. Usa DropPanas.');
+      }
+      if (!isVE && international_dispatch_provider === 'dropanas') {
+        throw new Error('DropPanas es exclusivo para tiendas venezolanas.');
+      }
       const cleanDispatch = international_dispatch_provider === null
         ? null
-        : (['mastershop'].includes(international_dispatch_provider) ? international_dispatch_provider : null);
+        : (['mastershop', 'dropanas'].includes(international_dispatch_provider) ? international_dispatch_provider : null);
       await pool.query(`UPDATE tiendas SET international_dispatch_provider = $1 WHERE usrid = $2`, [cleanDispatch, uid]);
       await redisClient.del(cacheKey(uid)).catch(() => {});
     }

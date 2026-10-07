@@ -33,7 +33,7 @@ export const createIntegracionController = ({
         message: 'Proveedor y clave de API son requeridos.',
       });
     }
-    if (!isAllowedEnum(provider, ['mastershop', 'dropi'])) {
+    if (!isAllowedEnum(provider, ['mastershop', 'dropi', 'dropanas'])) {
       return res.status(400).json({
         ok: false,
         message: 'Proveedor de integración no válido.',
