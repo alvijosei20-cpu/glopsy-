@@ -18,7 +18,6 @@ import {
   saveStorefrontAppearance,
   getFiscalReport,
   getLibroVentasPdf,
-  getMandateReportPdf,
   getStorePayouts,
   getPayoutBalances,
   payPayout,
@@ -87,8 +86,6 @@ router.put('/storefront', saveStorefrontAppearance);
 router.get('/reportes/ba-ven-nif-12', getFiscalReport);
 // Libro de Ventas (SENIAT) en PDF
 router.get('/reportes/libro-ventas.pdf', getLibroVentasPdf);
-// Informe de Recaudos por Mandato (soporte DIAN para dinero de terceros)
-router.get('/reportes/mandato.pdf', getMandateReportPdf);
 router.get('/checkout-integrations', getCheckoutIntegrations);
 router.post('/checkout-integrations', saveCheckoutIntegration);
 router.delete('/checkout-integrations/:provider', deleteCheckoutIntegration);

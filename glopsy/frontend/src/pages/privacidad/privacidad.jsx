@@ -60,7 +60,7 @@ const SECTIONS = [
     icon: Mail,
     title: '6. Cómo ejercer tus derechos',
     body: [
-      'Para ejercer tus derechos como titular podrás contactarnos al correo electrónico soporte@glopsy.com indicando tu nombre, documento de identificación, el derecho que deseas ejercer y los motivos de tu solicitud.',
+      'Para ejercer tus derechos como titular podrás contactarnos al correo electrónico contacto@glopsy.shop indicando tu nombre, documento de identificación, el derecho que deseas ejercer y los motivos de tu solicitud.',
       'Toda solicitud será respondida en un término máximo de quince (15) días hábiles, contados desde la fecha de su recibo. Cuando no sea posible atenderla en dicho término, se te informará el motivo de la demora y la fecha en que se dará respuesta, la cual no podrá superar los ocho (8) días hábiles adicionales.',
       'En caso de que consideres que tus derechos han sido vulnerados, podrás interponer una queja ante la Superintendencia de Industria y Comercio (SIC), autoridad nacional encargada de la protección de datos personales en Colombia.',
     ],
@@ -123,7 +123,7 @@ const SECTIONS = [
     icon: FileWarning,
     title: '13. Contacto y autoridad de control',
     body: [
-      'Si tienes inquietudes, solicitudes o reclamos relacionados con el tratamiento de tus datos personales, escríbenos a soporte@glopsy.com.',
+      'Si tienes inquietudes, solicitudes o reclamos relacionados con el tratamiento de tus datos personales, escríbenos a contacto@glopsy.shop.',
       'La autoridad de control en materia de protección de datos personales en Colombia es la Superintendencia de Industria y Comercio (SIC), a la cual podrás acudir en caso de no obtener respuesta satisfactoria.',
     ],
   },

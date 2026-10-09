@@ -49,11 +49,11 @@ export default function Footer() {
               Envíos nacionales
             </span>
             <a
-              href="mailto:soporte@glopsy.com"
+              href="mailto:contacto@glopsy.shop"
               className="flex items-center gap-1 hover:text-white transition-colors text-white/50"
             >
               <Mail size={12} className="text-white/40" />
-              soporte@glopsy.com
+              contacto@glopsy.shop
             </a>
           </div>
         </div>

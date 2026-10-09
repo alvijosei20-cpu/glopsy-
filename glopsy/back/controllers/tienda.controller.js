@@ -19,7 +19,6 @@ import { getBaVenNif12Report } from '../services/fiscalReport.service.js';
 import { clearTariffCache } from '../services/tariff.service.js';
 import { buildDianPlantillaFromStore } from '../services/dianStorePlantilla.service.js';
 import { getLibroVentasData, buildLibroVentasPdf } from '../services/libroVentas.service.js';
-import { buildMandateReport, buildMandateReportPdf } from '../services/mandateReport.service.js';
 import {
   getCheckoutIntegrationsForUser,
   saveCheckoutIntegrationForUser,
@@ -147,18 +146,11 @@ export const createTiendaController = ({
       }
       const contactoTelefono = normalizePhone(paisCodigo, contactoTelefonoRaw);
 
-      // Aceptación de Términos y Condiciones (y Contrato de Mandato): obligatoria.
+      // Aceptación de Términos (opcional; se quitó el Contrato de Mandato).
       const terms = req.body?.terms && typeof req.body.terms === 'object' && !Array.isArray(req.body.terms)
         ? req.body.terms
-        : {};
-      if (terms.accepted !== true) {
-        return res.status(400).json({
-          ok: false,
-          code: 'TERMS_REQUIRED',
-          message: 'Debes aceptar los Términos y Condiciones y el Contrato de Mandato para crear tu tienda.',
-        });
-      }
-const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
+        : null;
+      const termsVersion = terms ? cleanString(terms.version, { maxLength: 30 }) || 'v1' : null;
 
       // Cuenta de pagos del vendedor (se envía en el formulario de registro de /vender).
       // Es opcional en la petición.
@@ -240,32 +232,33 @@ const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
         }
       }
 
-      // Trazabilidad clara de la aceptación: usuario, IP, timestamp, navegador,
-      // dispositivo, país, idioma y coordenadas. No bloquea la creación si falla.
-      try {
-        const visitorCountry = String(req.get('x-visitor-country') || req.get('cf-ipcountry') || '').trim();
-        await recordTiendaTermsAcceptance({
-          userId: req.auth.userId,
-          tiendaUsrid: req.auth.userId,
-          termsVersion,
-          ip: req.ip,
-          forwardedFor: req.get('x-forwarded-for'),
-          userAgent: req.get('user-agent'),
-          language: req.get('accept-language') || terms.language,
-          timezone: terms.timezone,
-          country: visitorCountry,
-          latitude: terms.latitude,
-          longitude: terms.longitude,
-          referrer: terms.referrer || req.get('referer'),
-          metadata: {
-            screen: terms.screen || null,
-            platform: terms.platform || null,
-            visitorCountry: visitorCountry || null,
-            acceptLanguage: req.get('accept-language') || null,
-          },
-        });
-      } catch (auditError) {
-        console.error('Error al registrar la aceptación de términos:', auditError.message);
+      // Trazabilidad de la aceptación (solo si el cliente la envió). No bloquea.
+      if (terms?.accepted === true) {
+        try {
+          const visitorCountry = String(req.get('x-visitor-country') || req.get('cf-ipcountry') || '').trim();
+          await recordTiendaTermsAcceptance({
+            userId: req.auth.userId,
+            tiendaUsrid: req.auth.userId,
+            termsVersion,
+            ip: req.ip,
+            forwardedFor: req.get('x-forwarded-for'),
+            userAgent: req.get('user-agent'),
+            language: req.get('accept-language') || terms.language,
+            timezone: terms.timezone,
+            country: visitorCountry,
+            latitude: terms.latitude,
+            longitude: terms.longitude,
+            referrer: terms.referrer || req.get('referer'),
+            metadata: {
+              screen: terms.screen || null,
+              platform: terms.platform || null,
+              visitorCountry: visitorCountry || null,
+              acceptLanguage: req.get('accept-language') || null,
+            },
+          });
+        } catch (auditError) {
+          console.error('Error al registrar la aceptación de términos:', auditError.message);
+        }
       }
 
       await invalidateCatalogCache().catch(() => {});
@@ -500,15 +493,10 @@ const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
     const direccion_fiscal = cleanString(req.body?.direccion_fiscal, { maxLength: 200 });
     const regimen = cleanString(req.body?.regimen, { maxLength: 5 });
     const responsabilidad = cleanString(req.body?.responsabilidad, { maxLength: 10 });
-    const mandato_activo = req.body?.mandato_activo === true || req.body?.mandato_activo === 'true';
-    const mandato_tercero_nombre = cleanString(req.body?.mandato_tercero_nombre, { maxLength: 150 });
-    const mandato_tercero_tipo_documento = cleanString(req.body?.mandato_tercero_tipo_documento, { maxLength: 10 });
-    const mandato_tercero_documento = cleanString(req.body?.mandato_tercero_documento, { maxLength: 20 });
     try {
       const fiscal = await saveDianFiscalForUser(req.auth.userId, {
         numero_resolucion, resolucion_fecha_desde, resolucion_fecha_hasta,
         direccion_fiscal, regimen, responsabilidad,
-        mandato_activo, mandato_tercero_nombre, mandato_tercero_tipo_documento, mandato_tercero_documento,
       });
       return res.json({ ok: true, fiscal, message: 'Datos fiscales DIAN guardados.' });
     } catch (error) {
@@ -747,22 +735,6 @@ const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
     }
   },
 
-  getMandateReportPdf: async (req, res) => {
-    const desde = cleanString(req.query.desde, { maxLength: 10 });
-    const hasta = cleanString(req.query.hasta, { maxLength: 10 });
-    try {
-      const data = await buildMandateReport(req.auth.userId, { desde, hasta });
-      if (!data.ok) return res.status(404).json({ ok: false, message: 'No tienes una tienda registrada.' });
-      const pdf = await buildMandateReportPdf(data);
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="informe-mandato-${data.periodo.hasta}.pdf"`);
-      return res.send(pdf);
-    } catch (error) {
-      console.error('Error al generar el informe de mandato:', error.message);
-      return res.status(500).json({ ok: false, message: 'No fue posible generar el informe de mandato.' });
-    }
-  },
-
   saveCheckoutIntegration: async (req, res) => {
     const provider = cleanString(req.body.provider, { maxLength: 50 });
     const mode = cleanString(req.body.mode, { maxLength: 20 });
@@ -937,7 +909,6 @@ export const {
   saveStorefrontAppearance,
   getFiscalReport,
   getLibroVentasPdf,
-  getMandateReportPdf,
   getStorePayouts,
   getPayoutBalances,
   payPayout,

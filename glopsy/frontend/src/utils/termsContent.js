@@ -1,5 +1,5 @@
-// Fuente única de los Términos y Condiciones y del Contrato de Mandato.
-// Se usa en la página /terminos y en el modal de aceptación al crear tienda.
+// Fuente única de los Términos y Condiciones.
+// Se usa en la página /terminos.
 // Al cambiar el contenido, actualizar TERMS_VERSION (queda registrada en la DB).
 export const TERMS_VERSION = '2026-10-01';
 export const PRIVACY_VERSION = '2026-10-01';
@@ -9,7 +9,7 @@ export const PRIVACY_VERSION = '2026-10-01';
 export const PROVIDER = {
   legalName: 'Nodux Technology',
   nit: '700351291',
-  email: 'soporte@glopsy.com',
+  email: 'contacto@glopsy.shop',
   country: 'Colombia',
 };
 
@@ -23,19 +23,7 @@ export const TERMS_SECTIONS = [
     ],
   },
   {
-    title: '2. Contrato de Mandato (Vendedores)',
-    body: [
-      'Al publicar un producto en Glopsy, el Vendedor otorga a Nodux Technology (operadora de Glopsy) un mandato comercial de carácter oneroso, regido por los artículos 1262 y siguientes del Código de Comercio colombiano, para que actúe en su nombre y por su cuenta en la publicación, promoción, gestión de pagos y coordinación logística de los bienes ofertados.',
-      'El presente mandato no transfiere la propiedad de los productos, los cuales permanecen en cabeza del Vendedor, quien asume íntegramente los riesgos y responsabilidades derivados de su comercialización.',
-      'Obligaciones del mandatario (Glopsy): publicar la información suministrada por el Vendedor, procesar los pagos a través de pasarelas autorizadas, coordinar la logística de entrega, rendir cuentas de las ventas realizadas y transferir los recaudos conforme a las políticas de la plataforma, sin modificar unilateralmente los precios autorizados.',
-      'Obligaciones del mandante (Vendedor): garantizar la veracidad, legalidad y calidad de la información y de los productos publicados; cumplir el Estatuto del Consumidor (Ley 1480 de 2011); atender las garantías, devoluciones y reclamaciones; acreditar registro mercantil y RUT cuando la actividad lo exija; y dar cumplimiento a la Ley 1581 de 2012 en el tratamiento de datos personales.',
-      'El Vendedor declara que el producto que publica es lícito, no se encuentra prohibido por la normativa colombiana y no vulnera derechos de propiedad intelectual de terceros.',
-      'El mandato podrá darse por terminado por mutuo acuerdo o por revocatoria de cualquiera de las partes, sin perjuicio de los pedidos que se encuentren en curso al momento de la terminación.',
-      'Este contrato de mandato se rige por la legislación de la República de Colombia, incluida la Ley 527 de 1999 sobre comercio electrónico, el Decreto 1074 de 2015 y las normas que las modifiquen o sustituyan.',
-    ],
-  },
-  {
-    title: '3. Limitación de responsabilidad',
+    title: '2. Limitación de responsabilidad',
     body: [
       'En virtud de lo dispuesto en el artículo 16 de la Ley 1480 de 2011 (Estatuto del Consumidor) y demás normas concordantes, la responsabilidad sobre los bienes ofertados corresponde directamente al Vendedor.',
       'Glopsy no responde por vicios ocultos, defectos de calidad, incumplimiento en la entrega, diferencias en el producto recibido, ni por cualquier daño derivado de la relación entre el Comprador y el Vendedor.',
@@ -43,7 +31,7 @@ export const TERMS_SECTIONS = [
     ],
   },
   {
-    title: '4. Envíos y entrega',
+    title: '3. Envíos y entrega',
     body: [
       'El envío de los productos es coordinado directamente entre el Vendedor y el Comprador a través de transportadoras y mensajerías de terceros.',
       'Los tiempos de entrega, costos de envío y cobertura geográfica son responsabilidad exclusiva del Vendedor y de las empresas de mensajería contratadas.',
@@ -51,7 +39,7 @@ export const TERMS_SECTIONS = [
     ],
   },
   {
-    title: '5. Devoluciones, garantías y derecho de retracto',
+    title: '4. Devoluciones, garantías y derecho de retracto',
     body: [
       'Las garantías legales previstas en la Ley 1480 de 2011 serán atendidas por el Vendedor responsable del producto.',
       'Derecho de retracto (artículo 47 de la Ley 1480 de 2011): en las ventas realizadas por medios electrónicos, el Comprador podrá retractarse de la compra dentro de los cinco (5) días hábiles siguientes a la entrega del producto, sin necesidad de justificar su decisión, siempre que el bien se encuentre en las mismas condiciones en que lo recibió.',
@@ -63,7 +51,7 @@ export const TERMS_SECTIONS = [
     ],
   },
   {
-    title: '6. Pagos y transacciones',
+    title: '5. Pagos y transacciones',
     body: [
       'Los pagos se procesan a través de pasarelas de pago autorizadas por las autoridades colombianas (como Mercado Pago) bajo sus propios términos.',
       'Glopsy no almacena, procesa ni tiene acceso a los datos de tarjetas de crédito, débito ni credenciales bancarias de los usuarios.',
@@ -71,7 +59,7 @@ export const TERMS_SECTIONS = [
     ],
   },
   {
-    title: '7. Protección de datos personales',
+    title: '6. Protección de datos personales',
     body: [
       'El tratamiento de datos personales se rige por la Ley 1581 de 2012 y el Decreto 1377 de 2013.',
       'Al registrarte, autorizas el tratamiento de tus datos personales de conformidad con nuestra Política de Privacidad para la prestación del servicio.',
@@ -79,7 +67,7 @@ export const TERMS_SECTIONS = [
     ],
   },
   {
-    title: '8. Ley aplicable y jurisdicción',
+    title: '7. Ley aplicable y jurisdicción',
     body: [
       'Estos términos se rigen por las leyes de la República de Colombia.',
       'Cualquier controversia será sometida a la jurisdicción ordinaria de Colombia, de acuerdo con las normas de competencia aplicables.',
@@ -92,10 +80,10 @@ export const TERMS_SECTIONS = [
     ],
   },
   {
-    title: '9. Identificación del proveedor y contacto',
+    title: '8. Identificación del proveedor y contacto',
     body: [
       'La plataforma Glopsy® es operada por Nodux Technology, identificada con NIT 700351291.',
-      'Domicilio: Colombia. Canal de atención al cliente: correo electrónico soporte@glopsy.com y la sección de soporte dentro de la aplicación.',
+      'Domicilio: Colombia. Canal de atención al cliente: correo electrónico contacto@glopsy.shop y la sección de soporte dentro de la aplicación.',
       'Si tienes inquietudes sobre estos términos, escríbenos al correo de soporte indicado.',
     ],
   },

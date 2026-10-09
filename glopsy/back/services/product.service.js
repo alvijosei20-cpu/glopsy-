@@ -198,7 +198,7 @@ export const saveProductForUser = async (userId, productData) => {
       throw new Error('Las condiciones de garantía son obligatorias.');
     }
     if (termsAccepted !== true) {
-      throw new Error('Debes aceptar los términos, condiciones y el contrato de mandato.');
+      throw new Error('Debes aceptar los términos y condiciones.');
     }
   }
 
