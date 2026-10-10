@@ -22,9 +22,24 @@ body {
   min-height: 100dvh;
 }
 
+/* Fondo animado del menú (gradiente en movimiento) */
+@keyframes navGradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
 /* Modo Día (Light) */
 html:not(.dark) nav {
-  background-color: #ffffff !important;
+  background: linear-gradient(120deg, #ffffff 0%, #fae8ff 25%, #f5d0fe 50%, #ede9fe 75%, #ffffff 100%) !important;
+  background-size: 300% 300% !important;
+  animation: navGradientShift 16s ease infinite;
   color: #000000 !important;
   border-bottom: none !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
@@ -52,10 +67,19 @@ html.dark #root {
 }
 
 html.dark nav {
-  background-color: #000000 !important;
+  background: linear-gradient(120deg, #000000 0%, #1e1b2e 25%, #4c1d95 50%, #7e22ce 65%, #1e1b2e 85%, #000000 100%) !important;
+  background-size: 300% 300% !important;
+  animation: navGradientShift 18s ease infinite;
   color: #f1f5f9 !important;
   border-bottom: none !important;
   box-shadow: 0 1px 3px rgba(255, 255, 255, 0.05);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:not(.dark) nav,
+  html.dark nav {
+    animation: none;
+  }
 }
 
 html.dark .bg-white,
