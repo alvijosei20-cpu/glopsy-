@@ -20,6 +20,7 @@ export const BOLD_METHOD_FEES = {
   otras_tarjetas: { label: 'Otras tarjetas', percent: 3.29, fixed: 900, ivaOnFee: 19 },
   pse_bancolombia: { label: 'PSE / Bancolombia / Billeteras', percent: 2.89, fixed: 900, ivaOnFee: 19 },
   internacional: { label: 'Tarjeta internacional (+1%)', percent: 4.29, fixed: 900, ivaOnFee: 19 },
+  qr_breb: { label: 'QR Bre-B (transferencia)', percent: 2.89, fixed: 0, ivaOnFee: 19 },
 };
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;

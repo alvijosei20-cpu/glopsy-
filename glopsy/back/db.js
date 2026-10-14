@@ -11,7 +11,7 @@ dotenv.config({ path: path.join(__dirname, '.env') });
 const { Pool } = pg;
 
 // Configuración de la conexión a PostgreSQL
-// Usa DATABASE_URL si existe (patrón Render/Neon) o variables DB_* individuales.
+// Usa DATABASE_URL si existe (patrón Railway/Neon) o variables DB_* individuales.
 const pool = createPool();
 
 // Manejo de errores globales del pool de conexiones

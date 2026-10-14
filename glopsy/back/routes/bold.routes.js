@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import express from 'express';
-import { boldStart, boldWebhook, boldStatus } from '../controllers/bold.controller.js';
+import { boldStart, boldWebhook, boldStatus, boldQrStart, boldQrStatus, boldQrWebhook } from '../controllers/bold.controller.js';
 import { optionalAuth } from '../middlewares/auth.js';
 
 const router = Router();
@@ -16,5 +16,10 @@ router.post(
 // Checkout Onpage: crea la orden pendiente y entrega los parámetros de Bold.
 router.post('/bold/checkout', optionalAuth, boldStart);
 router.get('/bold/status/:reference', boldStatus);
+
+// Cobro por QR Bre-B (API de Pagos en Línea).
+router.post('/bold/qr/start', optionalAuth, boldQrStart);
+router.get('/bold/qr/status/:reference', boldQrStatus);
+router.post('/bold/qr/webhook', boldQrWebhook);
 
 export default router;
