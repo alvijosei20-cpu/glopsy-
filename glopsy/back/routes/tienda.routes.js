@@ -30,7 +30,11 @@ import {
   saveTariffRule,
   saveCheckoutIntegration,
   deleteCheckoutIntegration,
-  getAnalytics
+  getAnalytics,
+  getSellerRequest,
+  requestSeller,
+  getOrders,
+  getOrderTracking,
 } from '../controllers/tienda.controller.js';
 import { requireAuth, requireSeller, requireMainStore } from '../middlewares/auth.js';
 import { tiendaLimiter } from '../middlewares/limiters.js';
@@ -60,7 +64,14 @@ router.get('/', requireAuth, tiendaLimiter, getMine);
 // Público: pasarelas disponibles y predeterminada (lo usa el checkout del comprador).
 router.get('/payment-methods', getPaymentMethods);
 
+// Solicitud para ser vendedor (para usuarios sin can_sell, antes de requireSeller).
+router.get('/seller-request', requireAuth, tiendaLimiter, getSellerRequest);
+router.post('/seller-request', requireAuth, tiendaLimiter, requestSeller);
+
 router.use(requireAuth, requireSeller, tiendaLimiter);
+// Pedidos del vendedor + rastreo por guía
+router.get('/orders', getOrders);
+router.get('/orders/:ref/tracking', getOrderTracking);
 // Alta de tienda para un vendedor nuevo (idempotente)
 router.post('/', createStore);
 // Cambiar nombre/subdominio de la tienda

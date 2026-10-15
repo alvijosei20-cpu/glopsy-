@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getProductById, saveProduct, uploadProductImages, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, suggestCategoryController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, internationalShippingController, createPreferenceController, processMpPaymentController, processSavedCardPaymentController, getTiposEmpaqueController, getUserComprasController, searchOrdersController, getOrderByHashController, getOrderReviewsStatusController, recordPurchaseController, cancelOrderController, updateOrderAddressController, getProductReviewsController, getUserReviewController, addReviewController, updateReviewController, deleteReviewController, getMyProductsManagement, pauseProduct, activateProduct, deleteProduct, addProductImages, updateProductName } from '../controllers/product.controller.js';
+import { getProductById, saveProduct, uploadProductImages, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, suggestCategoryController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, internationalShippingController, createPreferenceController, processMpPaymentController, processSavedCardPaymentController, getTiposEmpaqueController, getUserComprasController, searchOrdersController, getOrderByHashController, getOrderTrackingController, getOrderReviewsStatusController, recordPurchaseController, cancelOrderController, updateOrderAddressController, getProductReviewsController, getUserReviewController, addReviewController, updateReviewController, deleteReviewController, getMyProductsManagement, pauseProduct, activateProduct, deleteProduct, addProductImages, updateProductName } from '../controllers/product.controller.js';
 import { productAssistant } from '../controllers/product.assistant.controller.js';
 import { requireAuth, optionalAuth, requireSeller } from '../middlewares/auth.js';
 import { tiendaLimiter, heavyLimiter } from '../middlewares/limiters.js';
@@ -32,6 +32,7 @@ router.get('/mine', requireAuth, requireSeller, getMyProducts);
 router.get('/compras', optionalAuth, getUserComprasController);
 router.get('/compras/buscar', optionalAuth, searchOrdersController);
 router.get('/compras/hash/:hash', optionalAuth, getOrderByHashController);
+router.get('/compras/hash/:hash/tracking', optionalAuth, getOrderTrackingController);
 router.get('/compras/hash/:hash/reviews', optionalAuth, getOrderReviewsStatusController);
 router.patch('/compras/:hash/cancel', optionalAuth, cancelOrderController);
 router.patch('/compras/:hash/address', optionalAuth, updateOrderAddressController);

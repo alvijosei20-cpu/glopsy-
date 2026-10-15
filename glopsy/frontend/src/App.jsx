@@ -29,6 +29,7 @@ const MarketConfig = lazy(() => import('./pages/market/MarketConfig'));
 const Vitrina = lazy(() => import('./pages/market/Vitrina'));
 const Analytics = lazy(() => import('./pages/market/Analytics'));
 const ProductsManage = lazy(() => import('./pages/market/ProductsManage'));
+const Pedidos = lazy(() => import('./pages/market/Pedidos'));
 const Marketing = lazy(() => import('./pages/market/Marketing'));
 const Liquidaciones = lazy(() => import('./pages/market/Liquidaciones'));
 const Publish = lazy(() => import('./pages/publish/publish'));
@@ -39,6 +40,7 @@ const CompraDetail = lazy(() => import('./pages/compras/compraDetail'));
 const ConsultarPedido = lazy(() => import('./pages/compras/consultarPedido'));
 const Profile = lazy(() => import('./pages/profile/profile'));
 const DeepLinkPage = lazy(() => import('./pages/DeepLinkPage'));
+const AdminPanel = lazy(() => import('./pages/admin/AdminPanel'));
 const Terms = lazy(() => import('./pages/terms/terms'));
 const Privacidad = lazy(() => import('./pages/privacidad/privacidad'));
 
@@ -278,12 +280,13 @@ function MainApp() {
           <Route path="/market/vitrina" element={<StoreRoute><Vitrina /></StoreRoute>} />
           <Route path="/market/analytics" element={<StoreRoute><Analytics /></StoreRoute>} />
           <Route path="/market/products" element={<StoreRoute><ProductsManage /></StoreRoute>} />
+          <Route path="/market/pedidos" element={<StoreRoute><Pedidos /></StoreRoute>} />
           <Route path="/market/marketing" element={<StoreRoute><Marketing /></StoreRoute>} />
           <Route path="/publish" element={<StoreRoute><Publish /></StoreRoute>} />
           <Route path="/market/liquidaciones" element={<StoreRoute><Liquidaciones /></StoreRoute>} />
 
           
-         <Route 
+          <Route 
             path="/panel" 
             element={
               <ProtectedRoute>
@@ -291,6 +294,9 @@ function MainApp() {
               </ProtectedRoute>
             }
           />
+
+          {/* Panel de administración (protegido por clave Bearer, no por sesión). */}
+          <Route path="/admin-panel" element={<ErrorBoundary><AdminPanel /></ErrorBoundary>} />
         </Routes>
         </Suspense>
       </main>

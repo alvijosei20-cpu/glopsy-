@@ -27,4 +27,8 @@ server.listen(PORT, () => {
     import('./services/marketing/worker.js').then(({ scheduleMarketingWorker }) => scheduleMarketingWorker());
   }
   import('./services/stockReserve.cleaner.js').then(({ scheduleStockReserveCleaner }) => scheduleStockReserveCleaner());
+  import('./services/boldRefund.worker.js').then(({ scheduleBoldRefundWorker }) => scheduleBoldRefundWorker());
+  import('./services/enviaBalance.worker.js').then(({ scheduleEnviaBalanceWorker }) => scheduleEnviaBalanceWorker());
+  import('./services/ledgerRelease.worker.js').then(({ scheduleLedgerWorker }) => scheduleLedgerWorker());
+  import('./services/dbBackup.worker.js').then(({ scheduleBackupWorker }) => scheduleBackupWorker());
 });

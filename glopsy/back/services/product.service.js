@@ -2,12 +2,23 @@ import { pool } from '../db.js';
 import crypto from 'crypto';
 import axios from 'axios';
 import { getShippingOptionsFromEnvia, invalidateRatesCacheForStore, classifyHsCode, getStoreEnviaCredentials } from './envia.service.js';
+import { getOrderShipmentsTracking } from './tracking.service.js';
 import { findZoomCityCode, quoteZoomShipping } from './zoom.service.js';
 import { getVeUsdRate } from './rates.service.js';
 import { resolveCheckoutCurrency } from './checkoutCurrency.service.js';
 import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
 import { obtenerProductoPorId } from './mastershopService.js';
-import { dispatchInternationalOrder } from './internationalShipping.service.js';
+import { fulfillPaidOrder } from './internationalShipping.service.js';
+import { reverseBoldOnlinePaymentForOrder } from './boldReversal.service.js';
+import {
+  getMastershopIntegrationForStore,
+  cancelMastershopDispatchOrder,
+  resolveMastershopOrderRef,
+  getMastershopOrder,
+  updateMastershopOrder,
+  extractMastershopTracking,
+  toMastershopShippingAddress,
+} from './mastershopOrder.service.js';
 import { redisClient } from './redis.service.js';
 import { sendPushToUser } from './push.service.js';
 import { sendTikTokPurchase } from './tiktokEvents.service.js';
@@ -1783,6 +1794,9 @@ export const calculateShippingCost = async (items, destinationCiudadId) => {
         selectedCarrier = {
           carrier: best.carrier || best.carrierDescription || best.provider || best.name || null,
           service: best.service || best.serviceName || best.serviceDescription || null,
+          // Códigos que exige ENVIA al generar la guía (carrier/servicio reales).
+          carrier_code: best.carrier_code || null,
+          service_code: best.service_code || null,
           price: Number(best.price || best.totalprice || best.totalPrice || best.rate || best.cost || best.total || best.servicePrice || best.basePrice || 0)
         };
       }
@@ -1991,7 +2005,7 @@ export const processMpPaymentForCart = async (userId, formData, preferenceId, cu
     const chargeTotal = Math.round(
       (resolvedItems.reduce((acc, it) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0) + Number(shippingCost || 0)) * rate * 100
     ) / 100;
-    await recordPurchaseForUser(userId, resolvedItems, {
+    const { orderId: createdOrderId } = await recordPurchaseForUser(userId, resolvedItems, {
       preferenceId,
       paymentResponse,
       customerInfo,
@@ -2003,6 +2017,12 @@ export const processMpPaymentForCart = async (userId, formData, preferenceId, cu
     });
     if (foundKey) {
       await redisClient.del(foundKey);
+    }
+    // Envío internacional: despacha a MasterShop/DropPanas solo si el pago fue aprobado.
+    if (status === 'approved') {
+      await fulfillPaidOrder(createdOrderId).catch((e) =>
+        console.error('[dispatch] Error despachando pedido MP aprobado:', e.message)
+      );
     }
   }
 
@@ -2342,13 +2362,9 @@ export const recordPurchaseForUser = async (userId, items, options = {}) => {
     }
   }
 
-  // Envíos internacionales (Venezuela + MasterShop): despacha a la oficina de ENVIA
-  // y genera la guía de última milla sin bloquear la confirmación de compra.
-  if (shippingPayload && typeof shippingPayload === 'object' && shippingPayload.international) {
-    dispatchInternationalOrder(orderId).catch((e) =>
-      console.error('[dispatch] Error en despacho internacional:', e.message)
-    );
-  }
+  // El despacho a MasterShop/DropPanas (envíos internacionales) NO se hace aquí:
+  // la orden puede estar "pending" (checkout Bold). Se despacha cuando el pago se
+  // confirma, desde fulfillPaidOrder() en las confirmaciones de pago.
 
   // TikTok Events API (server-side): envía CompletePayment solo para pedidos
   // pagados (no para órdenes pendientes de cobro). Idempotente por pedido.
@@ -2516,32 +2532,47 @@ export const getOrderByHash = async (orderHash, userId = null, guestHash = null)
   };
 };
 
+// Rastreo (ENVIA o MasterShop) de los envíos de un pedido.
+export const getOrderTrackingForUser = async (orderHash, userId = null, guestHash = null) => {
+  const order = await getOrderByHash(orderHash, userId, guestHash);
+  if (!order) return { ok: false, reason: 'order_not_found' };
+
+  const shipments = order.shipments || [];
+  if (shipments.length === 0) return { ok: true, shipments: [] };
+
+  // El detalle público no expone payload; lo leemos para saber el proveedor.
+  const { rows } = await pool.query(
+    `SELECT payload, shipping_payload FROM orders WHERE id = $1`,
+    [order.id]
+  );
+  const raw = rows[0] || {};
+  const orderWithProvider = { ...order, payload: raw.payload, shipping_payload: raw.shipping_payload };
+
+  const res = await getOrderShipmentsTracking({
+    tiendaId: order.tienda_id,
+    order: orderWithProvider,
+    shipments,
+  });
+  return { ok: true, ...res };
+};
+
 export const cancelMastershopOrderOrShipments = async (order, shipmentIds, totalCancel) => {
   try {
-    const { rows: integrationRows } = await pool.query(
-      `SELECT api_key FROM tienda_integraciones WHERE user_id = $1 AND provider = 'mastershop' LIMIT 1`,
-      [order.tienda_id || 1]
-    );
-    if (!integrationRows[0] || !integrationRows[0].api_key) return;
+    const ms = await getMastershopIntegrationForStore(order?.tienda_id);
+    if (!ms?.apiKey) return false;
 
-    const apiKey = integrationRows[0].api_key;
-    const baseUrl = process.env.MASTERSHOP_API_URL || 'https://prod.api.mastershop.com/api';
+    const ref = resolveMastershopOrderRef(order);
+    if (!ref) return false;
 
-    const endpoint = totalCancel ? `${baseUrl}/orders/${order.id}/cancel` : `${baseUrl}/orders/${order.id}/shipments/cancel`;
-    await axios.post(endpoint, {
-      shipment_ids: shipmentIds,
-      total_cancel: totalCancel
-    }, {
-      headers: { 'ms-api-key': apiKey, 'Content-Type': 'application/json' },
-      timeout: 5000
-    }).catch(async () => {
-      await axios.put(`${baseUrl}/orders/${order.id}`, { status: 'cancelled' }, {
-        headers: { 'ms-api-key': apiKey, 'Content-Type': 'application/json' },
-        timeout: 5000
-      }).catch(() => {});
-    });
+    // MasterShop no expone cancelación por envío: solo cancelación total (idStatus 9).
+    if (!totalCancel) {
+      console.warn('[Mastershop] Cancelación parcial no soportada por la API; se omite. orden', ref);
+      return false;
+    }
+    return await cancelMastershopDispatchOrder({ apiKey: ms.apiKey, orderId: ref });
   } catch (err) {
     console.warn('[Mastershop] Error notificando cancelación:', err.message);
+    return false;
   }
 };
 
@@ -2649,6 +2680,14 @@ export const cancelOrderForUser = async (orderHash, userId, guestHash) => {
 
   await cancelMastershopOrderOrShipments(order, cancelledShipmentIds, totalCancel);
 
+  // Devolución del pago en Bold (API de Pagos en Línea): anula o reembolsa.
+  // Solo en la cancelación total (la API de Bold no maneja reembolsos parciales).
+  if (totalCancel) {
+    await reverseBoldOnlinePaymentForOrder(order.id, { reason: 'Cancelación de pedido' }).catch((e) =>
+      console.warn('[Bold Reversal] No se pudo devolver el pago:', e.message)
+    );
+  }
+
   const notifTitle = totalCancel ? `Pedido #${orderId} cancelado` : `Pedido #${orderId} cancelado parcialmente`;
   const notifMsg = totalCancel ? `Tu pedido ha sido cancelado en su totalidad y el stock ha sido liberado.` : `Se han cancelado ${cancelledCount} envíos de tu pedido.`;
   await createNotification(order.user_id, order.guest_hash, order.id, notifTitle, notifMsg, 'order_cancelled', { total_cancel: totalCancel, cancelled_shipments: cancelledCount, active_shipments: activeCount }, `/compras/${order.order_hash}`);
@@ -2679,30 +2718,19 @@ export const checkIfMastershopGuideGenerated = async (order) => {
     }
 
     // PASO 2: Si aún no está generada localmente, verificamos en Mastershop como respaldo
-    const { rows: integrationRows } = await pool.query(
-      `SELECT api_key FROM tienda_integraciones WHERE user_id = $1 AND provider = 'mastershop' LIMIT 1`,
-      [order.tienda_id || 1]
-    );
-    if (!integrationRows[0] || !integrationRows[0].api_key) {
+    const ms = await getMastershopIntegrationForStore(order?.tienda_id);
+    if (!ms?.apiKey) {
       return false;
     }
 
-    const apiKey = integrationRows[0].api_key;
-    const baseUrl = process.env.MASTERSHOP_API_URL || 'https://prod.api.mastershop.com/api';
-    
-    const response = await axios.get(`${baseUrl}/orders/${order.id}`, {
-      headers: { 'ms-api-key': apiKey },
-      timeout: 5000
-    }).catch(() => null);
-
-    if (response && response.data) {
-      const orderData = response.data;
-      const shipments = orderData.shipments || orderData.envios || [];
-      for (const sh of shipments) {
-        if (sh.guide || sh.tracking || sh.waybill || sh.guide_number || sh.guideNumber || sh.tracking_id || sh.trackingId || sh.status === 'shipped' || sh.status === 'guia_generada') {
-          return true;
-        }
-      }
+    const ref = resolveMastershopOrderRef(order);
+    const orderData = await getMastershopOrder(ms.apiKey, ref).catch(() => null);
+    if (orderData) {
+      // La guía/tracking aparece en orderLogistics.carrierTracking.
+      if (extractMastershopTracking(orderData)) return true;
+      const idStatus = toNumber(orderData.idStatus ?? orderData.id_status, { min: 1, fallback: 0 });
+      // id_status 3 = "Por Alistar" (guía generada).
+      if (idStatus >= 3 && idStatus <= 8) return true;
     }
   } catch (err) {
     console.warn('[Mastershop] Error consultando guías:', err.message);
@@ -2712,48 +2740,24 @@ export const checkIfMastershopGuideGenerated = async (order) => {
 
 export const updateMastershopOrderAddress = async (order, direccion, telefono) => {
   try {
-    const { rows: integrationRows } = await pool.query(
-      `SELECT api_key FROM tienda_integraciones WHERE user_id = $1 AND provider = 'mastershop' LIMIT 1`,
-      [order.tienda_id || 1]
-    );
-    if (!integrationRows[0] || !integrationRows[0].api_key) {
+    const ms = await getMastershopIntegrationForStore(order?.tienda_id);
+    if (!ms?.apiKey) {
       return false;
     }
 
-    const apiKey = integrationRows[0].api_key;
-    const baseUrl = process.env.MASTERSHOP_API_URL || 'https://prod.api.mastershop.com/api';
-    
-    await axios.put(`${baseUrl}/orders/${order.id}`, {
-      address: direccion,
-      phone: telefono,
-      shipping_address: direccion,
-      telefono: telefono
-    }, {
-      headers: { 
-        'ms-api-key': apiKey,
-        'Content-Type': 'application/json'
-      },
-      timeout: 5000
-    }).catch(async () => {
-      await axios.patch(`${baseUrl}/orders/${order.id}`, {
-        address: direccion,
-        phone: telefono,
-        shipping_address: direccion,
-        telefono: telefono
-      }, {
-        headers: { 
-          'ms-api-key': apiKey,
-          'Content-Type': 'application/json'
-        },
-        timeout: 5000
-      }).catch(err => {
-        console.warn('[Mastershop] No se pudo sincronizar la actualización de dirección con Mastershop:', err.message);
-      });
-    });
-
+    const ref = resolveMastershopOrderRef(order);
+    const current = await getMastershopOrder(ms.apiKey, ref).catch(() => null);
+    if (!current) return false;
+    // MasterShop exige el objeto shippingAddress completo y normalizado.
+    const base = current.shippingAddress || current.shipping_address || {};
+    const shippingAddress = toMastershopShippingAddress(
+      { ...base, ...(direccion ? { address1: direccion } : {}), ...(telefono ? { phone: telefono } : {}) },
+      current.customer || {}
+    );
+    await updateMastershopOrder(ms.apiKey, ref, { shippingAddress });
     return true;
   } catch (err) {
-    console.warn('[Mastershop] Error al actualizar dirección en Mastershop:', err.message);
+    console.warn('[Mastershop] Error al actualizar dirección en Mastershop:', err.response?.data || err.message);
     return false;
   }
 };
@@ -2837,7 +2841,7 @@ export const processSavedCardPaymentForCart = async (userId, payload) => {
   const isSuccessful = status === 'approved' || status === 'pending' || status === 'in_process' || status === 'authorized' || (paymentResponse && !['rejected', 'cancelled', 'refunded', 'charged_back'].includes(status));
 
   if (paymentResponse && isSuccessful && resolvedItems.length > 0) {
-    await recordPurchaseForUser(userId, resolvedItems, {
+    const { orderId: createdOrderId } = await recordPurchaseForUser(userId, resolvedItems, {
       preferenceId: `1click_${card.id}_${Date.now()}`,
       paymentResponse,
       customerInfo: customer_info,
@@ -2847,6 +2851,11 @@ export const processSavedCardPaymentForCart = async (userId, payload) => {
     });
     if (foundKey) {
       await redisClient.del(foundKey);
+    }
+    if (status === 'approved') {
+      await fulfillPaidOrder(createdOrderId).catch((e) =>
+        console.error('[dispatch] Error despachando pedido 1-Click aprobado:', e.message)
+      );
     }
   }
 

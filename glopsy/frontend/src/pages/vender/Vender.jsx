@@ -47,6 +47,33 @@ export default function Vender() {
   const [contactPhone, setContactPhone] = useState('');
   const [showTerms, setShowTerms] = useState(false);
   const [mandateAccepted, setMandateAccepted] = useState(false);
+  const [sellerReq, setSellerReq] = useState(null);
+  const [sellerLoading, setSellerLoading] = useState(true);
+  const [sellerNote, setSellerNote] = useState('');
+  const [requestBusy, setRequestBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    api.get('/tienda/seller-request')
+      .then(({ data }) => { if (alive && data?.ok) setSellerReq(data.seller); })
+      .catch(() => {})
+      .finally(() => { if (alive) setSellerLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  const submitSellerRequest = async () => {
+    if (requestBusy) return;
+    setRequestBusy(true);
+    setError('');
+    try {
+      const { data } = await api.post('/tienda/seller-request', { note: sellerNote });
+      if (data?.ok) setSellerReq((prev) => ({ ...(prev || {}), ...data.seller, sell_status: data.seller?.sell_status || 'pending' }));
+    } catch (e) {
+      setError(e.response?.data?.message || 'No fue posible enviar la solicitud.');
+    } finally {
+      setRequestBusy(false);
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -110,24 +137,56 @@ export default function Vender() {
   const slugFormatoOk = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(slugNorm) && slugNorm.length >= 2;
 
   if (!tiendaLoading && !user?.can_sell && !tienda) {
+    const sellStatus = sellerReq?.sell_status || 'none';
     return (
       <div className="min-h-[70vh] flex items-center justify-center px-4">
-        <div className="max-w-md w-full text-center space-y-3 bg-white border border-fuchsia-100 rounded-3xl shadow-xl p-8">
+        <div className="max-w-md w-full text-center space-y-4 bg-white border border-fuchsia-100 rounded-3xl shadow-xl p-8">
           <div className="w-14 h-14 mx-auto rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center">
             <Store size={26} />
           </div>
-          <h1 className="text-lg font-extrabold text-slate-800">Solo vendedores autorizados</h1>
-          <p className="text-sm text-slate-500">
-            La apertura de tiendas la aprueba el administrador de la plataforma. Si quieres
-            vender, contacta al administrador para habilitar tu cuenta.
-          </p>
-          <button
-            type="button"
-            onClick={() => navigate('/')}
-            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white font-bold px-5 py-2.5 hover:opacity-90 transition-opacity"
-          >
-            Volver al inicio
-          </button>
+          {sellStatus === 'pending' ? (
+            <>
+              <h1 className="text-lg font-extrabold text-slate-800">Tu solicitud está en revisión</h1>
+              <p className="text-sm text-slate-500">
+                Un administrador revisará tu solicitud para vender. Te avisaremos cuando esté aprobada.
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-lg font-extrabold text-slate-800">¿Quieres vender en Glopsy?</h1>
+              <p className="text-sm text-slate-500">
+                {sellStatus === 'rejected'
+                  ? 'Tu solicitud anterior no fue aprobada. Puedes volver a solicitarla.'
+                  : 'Envía tu solicitud y el administrador de la plataforma la revisará.'}
+              </p>
+              <textarea
+                value={sellerNote}
+                onChange={(e) => setSellerNote(e.target.value)}
+                placeholder="Cuéntanos qué quieres vender (opcional)"
+                rows={3}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-left focus:outline-none focus:ring-2 focus:ring-fuchsia-300"
+              />
+              {error && <p className="text-xs text-rose-600">{error}</p>}
+              <button
+                type="button"
+                onClick={submitSellerRequest}
+                disabled={requestBusy || sellerLoading}
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white font-bold px-5 py-2.5 hover:opacity-90 transition-opacity disabled:opacity-60"
+              >
+                {requestBusy ? <Loader2 size={18} className="animate-spin" /> : <ShieldCheck size={18} />}
+                Solicitar ser vendedor
+              </button>
+            </>
+          )}
+          <div>
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="text-sm text-slate-500 hover:text-slate-700 underline"
+            >
+              Volver al inicio
+            </button>
+          </div>
         </div>
       </div>
     );

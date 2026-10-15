@@ -1,9 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { Package, ArrowLeft, MapPin, Clock, CheckCircle, Truck, Phone, XCircle, Sparkles, ChevronDown, Star, RotateCcw, X, Info } from 'lucide-react';
+import { Package, ArrowLeft, MapPin, Clock, CheckCircle, Truck, Phone, XCircle, Sparkles, ChevronDown, Star, RotateCcw, X, Info, ExternalLink } from 'lucide-react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useMoney } from '../../utils/money';
+
+const fmtWhen = (d) => {
+  if (!d) return '';
+  const date = new Date(d);
+  if (Number.isNaN(date.getTime())) return String(d);
+  const day = date.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' });
+  const time = date.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', hour12: true });
+  const cap = day.charAt(0).toUpperCase() + day.slice(1);
+  return `${cap} · ${time}`;
+};
+
+const normEvents = (events) => (Array.isArray(events) ? events : [])
+  .map((e) => ({
+    label: e.status || e.status_translation || e.statusParent || e.name || e.content || 'Evento',
+    detail: e.content && e.content !== e.status ? e.content : (e.description || e.location || null),
+    when: e.date || e.datetime || e.createdAt || e.created_at || null,
+  }))
+  .sort((a, b) => new Date(b.when || 0) - new Date(a.when || 0));
 
 export default function CompraDetail() {
   const { format: formatPrice } = useMoney();
@@ -27,6 +45,8 @@ export default function CompraDetail() {
   const [returnNotes, setReturnNotes] = useState('');
   const [selectedReturns, setSelectedReturns] = useState([]);
   const [submittingReturn, setSubmittingReturn] = useState(false);
+  const [enviaTracking, setEnviaTracking] = useState({});
+  const [trackingModal, setTrackingModal] = useState(null);
 
   useEffect(() => {
     const fetchOrder = async () => {
@@ -40,6 +60,21 @@ export default function CompraDetail() {
           setOrder(found);
           setNewDireccion(found.direccion || '');
           setNewTelefono(found.telefono || '');
+          const codes = (found.shipments || []).map((s) => s.tracking_code).filter(Boolean);
+          if (codes.length > 0) {
+            try {
+              const tRes = await api.get(`/product/compras/hash/${hash}/tracking`, {
+                headers: guestHash ? { 'x-guest-hash': guestHash } : {}
+              });
+              if (tRes.data?.ok) {
+                const map = {};
+                for (const sh of tRes.data.shipments || []) {
+                  if (sh.tracking_code && sh.tracking) map[sh.tracking_code] = sh.tracking;
+                }
+                setEnviaTracking(map);
+              }
+            } catch {}
+          }
           if (user) {
             try {
               const revRes = await api.get(`/product/compras/hash/${hash}/reviews`, {
@@ -584,26 +619,28 @@ export default function CompraDetail() {
 
                 {(() => {
                   const tracking = getShipmentTracking(shipment);
-                  const trackingUrl = getShipmentTrackingUrl(shipment);
-                  if (!tracking && !trackingUrl) return null;
+                  const live = tracking ? enviaTracking[tracking] : null;
+                  const carrierUrl = live?.track_url_site || live?.track_url || getShipmentTrackingUrl(shipment);
+                  if (!tracking && !live) return null;
                   return (
-                    <div className="flex items-center gap-2 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] sm:text-xs">
                       {tracking && (
                         <span className="font-mono bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 px-2 py-0.5 rounded">
                           Guía: {tracking}
                         </span>
                       )}
-                      {trackingUrl && (
-                        <a
-                          href={trackingUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-fuchsia-600 dark:text-fuchsia-400 font-semibold hover:underline"
-                        >
-                          Rastrear envío →
-                        </a>
+                      {live?.status && (
+                        <span className="font-bold px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: live.status_color || '#7e22ce' }}>
+                          {live.status}
+                        </span>
                       )}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setTrackingModal({ shipment, live, carrierUrl }); }}
+                        className="inline-flex items-center gap-1.5 text-fuchsia-600 dark:text-fuchsia-400 font-semibold hover:underline"
+                      >
+                        <Truck size={13} /> Rastrear envío
+                      </button>
                     </div>
                   );
                 })()}
@@ -933,6 +970,92 @@ export default function CompraDetail() {
             </div>
           </div>
         </div>
+        );
+      })()}
+
+      {/* Modal de rastreo: traza de la ruta del paquete */}
+      {trackingModal && (() => {
+        const live = trackingModal.live;
+        const events = normEvents(live?.events);
+        const carrierUrl = trackingModal.carrierUrl;
+        return (
+          <div
+            className="fixed inset-0 z-[1000] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => setTrackingModal(null)}
+          >
+            <div
+              className="w-full max-w-md max-h-[85vh] overflow-y-auto rounded-3xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="sticky top-0 z-10 bg-white dark:bg-zinc-900 px-5 py-4 border-b border-slate-100 dark:border-zinc-800 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-fuchsia-50 dark:bg-fuchsia-950/40 text-fuchsia-600 flex items-center justify-center">
+                  <Truck size={20} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-extrabold text-slate-900 dark:text-white leading-tight">Rastreo del envío</h3>
+                  <p className="text-xs text-slate-500 truncate">
+                    {trackingModal.shipment?.carrier || ''}{live?.service ? ` · ${live.service}` : ''}{trackingModal.shipment?.tracking_code ? ` · ${trackingModal.shipment.tracking_code}` : ''}
+                  </p>
+                </div>
+                <button onClick={() => setTrackingModal(null)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="px-5 py-4 space-y-4">
+                {!live ? (
+                  <p className="text-sm text-slate-500 text-center py-6">Aún no hay datos de rastreo para este envío.</p>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-bold px-3 py-1 rounded-full text-white" style={{ backgroundColor: live.status_color || '#7e22ce' }}>
+                        {live.status || 'En proceso'}
+                      </span>
+                      {live.estimated_delivery && (
+                        <span className="text-xs text-slate-500">
+                          Llega aprox. <b className="text-slate-700 dark:text-slate-300">{fmtWhen(live.estimated_delivery)}</b>
+                        </span>
+                      )}
+                    </div>
+
+                    {live.destination?.city && (
+                      <p className="text-xs text-slate-500 flex items-center gap-1">
+                        <MapPin size={13} /> {live.destination.city}, {live.destination.state} ({live.destination.country})
+                      </p>
+                    )}
+
+                    {events.length > 0 ? (
+                      <ol className="relative pl-6">
+                        <span className="absolute left-[7px] top-2 bottom-2 w-0.5 bg-slate-200 dark:bg-zinc-700" aria-hidden="true" />
+                        {events.map((ev, i) => (
+                          <li key={i} className="relative pb-5 last:pb-0">
+                            <span className={`absolute -left-6 top-0.5 w-4 h-4 rounded-full border-2 ${i === 0 ? 'bg-fuchsia-600 border-fuchsia-600' : 'bg-white dark:bg-zinc-900 border-slate-300 dark:border-zinc-600'}`} />
+                            <p className={`text-sm font-semibold ${i === 0 ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}>{ev.label}</p>
+                            {ev.detail && <p className="text-xs text-slate-400">{ev.detail}</p>}
+                            {ev.when && (
+                              <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
+                                <Clock size={11} /> {fmtWhen(ev.when)}
+                              </p>
+                            )}
+                          </li>
+                        ))}
+                      </ol>
+                    ) : (
+                      <p className="text-xs text-slate-400">
+                        Sin eventos todavía.{live.status ? ` Estado actual: ${live.status}.` : ''}
+                      </p>
+                    )}
+
+                    {carrierUrl && (
+                      <a href={carrierUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-semibold text-fuchsia-600 hover:underline">
+                        Ver en el transportador <ExternalLink size={14} />
+                      </a>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
         );
       })()}
     </div>

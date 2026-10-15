@@ -16,6 +16,8 @@ import { createPendingOrderForCart } from './product.service.js';
 import { loadBoldCredentials } from './paymentConfig.service.js';
 import { resolveCheckoutCurrency, convertAmount } from './checkoutCurrency.service.js';
 import { markOrderPaid } from './boldCheckout.service.js';
+import { cancelInternationalDispatchForOrder } from './internationalShipping.service.js';
+import { settleBoldReversal } from './boldReversal.service.js';
 import {
   createPaymentIntent,
   createQrPayment,
@@ -219,6 +221,7 @@ const applyBoldStatus = async (order, boldStatus, extra = {}) => {
   }
   if (st === 'REJECTED') {
     await updateOrderStatus(order.id, 'rejected', { bold_qr_status: st, ...extra.payloadExtra });
+    await cancelInternationalDispatchForOrder(order.id).catch(() => {});
     return 'REJECTED';
   }
   return 'PENDING';
@@ -291,11 +294,15 @@ export const processBoldQrWebhook = async (payload = {}, { rawBody = null, signa
   }
   if (type === 'SALE_REJECTED') {
     await updateOrderStatus(order.id, 'rejected', { bold_qr_status: 'REJECTED', bold_qr_event: type });
+    await cancelInternationalDispatchForOrder(order.id).catch(() => {});
     return { ok: true, orderId: order.id, status: 'rejected' };
   }
   if (type.startsWith('VOID')) {
-    await updateOrderStatus(order.id, 'refunded', { bold_qr_status: 'REFUNDED', bold_qr_event: type });
-    return { ok: true, orderId: order.id, status: 'refunded' };
+    // VOID_APPROVED -> anulación confirmada por Bold: asienta el reembolso.
+    // VOID_REJECTED -> Bold rechazó la anulación (la orden no cambia).
+    const voidStatus = type.includes('REJECT') ? 'REJECTED' : 'APPROVED';
+    await settleBoldReversal(order.id, { status: voidStatus, transactionId, source: 'void' });
+    return { ok: true, orderId: order.id, status: voidStatus === 'APPROVED' ? 'refunded' : order.status };
   }
 
   return { ok: true, ignored: true, orderId: order.id, type };

@@ -40,11 +40,15 @@ import {
 // ==========================================
 // GOOGLE OAUTH
 // ==========================================
-export const googleLogin = (req, res) => {
+export const googleLogin = async (req, res) => {
+  const { clientId, redirectUri } = await getOAuthConfig('google');
+  if (!clientId || !redirectUri) {
+    return res.redirect(`${process.env.FRONTEND_URL}/login?error=provider_not_configured`);
+  }
   const rootUrl = 'https://accounts.google.com/o/oauth2/v2/auth';
   const options = new URLSearchParams({
-    redirect_uri: process.env.GOOGLE_REDIRECT_URI,
-    client_id: process.env.GOOGLE_CLIENT_ID,
+    redirect_uri: redirectUri,
+    client_id: clientId,
     access_type: 'offline',
     response_type: 'code',
     prompt: 'consent',
@@ -69,13 +73,14 @@ export const googleCallback = async (req, res) => {
   }
 
   try {
+    const { clientId, clientSecret, redirectUri } = await getOAuthConfig('google');
     const tokenResponse = await axios.post(
       'https://oauth2.googleapis.com/token',
       new URLSearchParams({
         code: authCode,
-        client_id: process.env.GOOGLE_CLIENT_ID,
-        client_secret: process.env.GOOGLE_CLIENT_SECRET,
-        redirect_uri: process.env.GOOGLE_REDIRECT_URI,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
         grant_type: 'authorization_code',
       }).toString(),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
@@ -112,11 +117,15 @@ export const googleCallback = async (req, res) => {
 // ==========================================
 // DISCORD OAUTH
 // ==========================================
-export const discordLogin = (req, res) => {
+export const discordLogin = async (req, res) => {
+  const { clientId, redirectUri } = await getOAuthConfig('discord');
+  if (!clientId || !redirectUri) {
+    return res.redirect(`${process.env.FRONTEND_URL}/login?error=provider_not_configured`);
+  }
   const rootUrl = 'https://discord.com/api/oauth2/authorize';
   const options = new URLSearchParams({
-    client_id: process.env.DISCORD_CLIENT_ID,
-    redirect_uri: process.env.DISCORD_REDIRECT_URI,
+    client_id: clientId,
+    redirect_uri: redirectUri,
     response_type: 'code',
     scope: 'identify email',
   });
@@ -136,14 +145,15 @@ export const discordCallback = async (req, res) => {
   }
 
   try {
+    const { clientId, clientSecret, redirectUri } = await getOAuthConfig('discord');
     const tokenResponse = await axios.post(
       'https://discord.com/api/oauth2/token',
       new URLSearchParams({
-        client_id: process.env.DISCORD_CLIENT_ID,
-        client_secret: process.env.DISCORD_CLIENT_SECRET,
+        client_id: clientId,
+        client_secret: clientSecret,
         grant_type: 'authorization_code',
         code: authCode,
-        redirect_uri: process.env.DISCORD_REDIRECT_URI,
+        redirect_uri: redirectUri,
       }).toString(),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );

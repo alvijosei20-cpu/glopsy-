@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingBag, ArrowLeft, Package, MapPin, Sparkles, CheckCircle, Clock, ChevronRight, Truck, RotateCcw } from 'lucide-react';
+import { ShoppingBag, ArrowLeft, Package, MapPin, Sparkles, CheckCircle, Clock, ChevronRight, Truck, RotateCcw, XCircle } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../../services/api';
 import { SkeletonList } from '../../components/SkeletonLoader';
 import { useMoney } from '../../utils/money';
 
 export default function Compras() {
-  const { format: formatPrice } = useMoney();
+  const { format: formatPrice, formatAuto } = useMoney();
   const navigate = useNavigate();
   const [products, setProducts] = useState([]);
   const [returns, setReturns] = useState([]);
@@ -67,6 +67,11 @@ export default function Compras() {
     return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60';
   };
 
+  const isCancelledOrder = (status) =>
+    /cancel|rechaz|rejected|refund|reembols|devuel/i.test(String(status || ''));
+  const paidOrders = products.filter((o) => !isCancelledOrder(o.status));
+  const cancelledOrders = products.filter((o) => isCancelledOrder(o.status));
+
   if (loading) {
     return (
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -90,27 +95,37 @@ export default function Compras() {
         </div>
       </div>
 
-      {/* Filtro Compras / Devoluciones */}
-      <div className="flex gap-2 mb-6 bg-slate-100 dark:bg-zinc-800 rounded-xl p-1.5 w-fit">
+      {/* Filtro Compras / Cancelados / Devoluciones */}
+      <div className="flex flex-wrap gap-2 mb-6 bg-slate-100 dark:bg-zinc-800 rounded-xl p-1.5 w-full sm:w-fit max-w-full">
         <button
           onClick={() => setActiveTab('compras')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap ${
             activeTab === 'compras'
               ? 'bg-white dark:bg-zinc-900 text-fuchsia-600 dark:text-fuchsia-400 shadow-sm'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
-          <ShoppingBag size={16} /> Compras ({products.length})
+          <ShoppingBag size={16} /> Compras
+        </button>
+        <button
+          onClick={() => setActiveTab('cancelados')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap ${
+            activeTab === 'cancelados'
+              ? 'bg-white dark:bg-zinc-900 text-fuchsia-600 dark:text-fuchsia-400 shadow-sm'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
+        >
+          <XCircle size={16} /> Cancelados
         </button>
         <button
           onClick={() => setActiveTab('devoluciones')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap ${
             activeTab === 'devoluciones'
               ? 'bg-white dark:bg-zinc-900 text-fuchsia-600 dark:text-fuchsia-400 shadow-sm'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
-          <RotateCcw size={16} /> Devoluciones ({returns.length})
+          <RotateCcw size={16} /> Devoluciones
         </button>
       </div>
 
@@ -213,14 +228,18 @@ export default function Compras() {
             })}
           </div>
         )
-      ) : products.length === 0 ? (
+      ) : (activeTab === 'cancelados' ? cancelledOrders : paidOrders).length === 0 ? (
         <div className="text-center py-16 bg-white dark:bg-zinc-900 rounded-3xl border border-fuchsia-100/60 dark:border-zinc-800 shadow-sm p-8">
           <div className="w-16 h-16 bg-fuchsia-50 dark:bg-fuchsia-950/50 text-fuchsia-500 dark:text-fuchsia-400 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
-            <ShoppingBag size={32} />
+            {activeTab === 'cancelados' ? <XCircle size={32} /> : <ShoppingBag size={32} />}
           </div>
-          <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-2">No tienes compras realizadas</h2>
+          <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-2">
+            {activeTab === 'cancelados' ? 'No tienes pedidos cancelados' : 'No tienes compras realizadas'}
+          </h2>
           <p className="text-slate-600 dark:text-slate-400 max-w-md mx-auto mb-6 text-sm">
-            Cuando realices pedidos y se procesen los pagos, aparecerán aquí con todo su detalle.
+            {activeTab === 'cancelados'
+              ? 'Aquí verás los pedidos cancelados, rechazados o reembolsados, separados de tus compras pagadas.'
+              : 'Cuando realices pedidos y se procesen los pagos, aparecerán aquí con todo su detalle.'}
           </p>
           <Link
             to="/listpr"
@@ -232,7 +251,7 @@ export default function Compras() {
         </div>
       ) : (
         <div className="space-y-4">
-          {products.map((order, index) => {
+          {(activeTab === 'cancelados' ? cancelledOrders : paidOrders).map((order, index) => {
             const dateStr = order.created_at ? new Date(order.created_at).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Reciente';
 
             const getStatusBadge = (st) => {
@@ -246,7 +265,13 @@ export default function Compras() {
               if (s.includes('in_process') || s.includes('proceso')) {
                 return { label: 'En proceso', bg: 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800' };
               }
-              if (s.includes('cancelled') || s.includes('cancelada')) {
+              if (s.includes('refund') || s.includes('reembols')) {
+                return { label: 'Reembolsada', bg: 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800' };
+              }
+              if (s.includes('rejected') || s.includes('rechaz')) {
+                return { label: 'Rechazada', bg: 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800' };
+              }
+              if (s.includes('cancelled') || s.includes('cancelada') || s.includes('cancel')) {
                 return { label: 'Cancelada', bg: 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800' };
               }
               return { label: st || 'Aprobada', bg: 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' };
@@ -298,12 +323,12 @@ export default function Compras() {
                       <span>Cant: {item.quantity}</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`${statusInfo.bg} text-xs font-semibold px-3 py-1 rounded-full border flex items-center gap-1`}>
+                  <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                    <span className={`${statusInfo.bg} text-[11px] sm:text-xs font-semibold px-2.5 py-1 rounded-full border flex items-center gap-1 whitespace-nowrap`}>
                       <CheckCircle size={12} /> {statusInfo.label}
                     </span>
-                    <span className="font-extrabold text-slate-900 dark:text-white text-base">
-                      {formatPrice(order.amount)}
+                    <span className="font-extrabold text-slate-900 dark:text-white text-sm sm:text-base whitespace-nowrap">
+                      {formatAuto(order.amount)}
                     </span>
                   </div>
                 </div>

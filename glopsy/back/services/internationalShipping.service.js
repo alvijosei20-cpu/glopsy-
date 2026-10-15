@@ -18,12 +18,16 @@ import {
 import {
   getMastershopIntegrationForStore,
   createMastershopDispatchOrder,
+  cancelMastershopDispatchOrder,
+  extractMastershopOrderId,
+  resolveMastershopOrderRef,
 } from './mastershopOrder.service.js';
 import {
   getDropanasIntegrationForStore,
   createDropanasDispatchOrder,
 } from './dropanasOrder.service.js';
 import { resolvePackagingForProduct } from './tariff.service.js';
+import { dispatchDomesticOrder } from './domesticShipping.service.js';
 
 const ratePrice = (r) =>
   Number(
@@ -48,6 +52,16 @@ const rateShippingOnly = (r) => {
   const landed = rateLandedCost(r);
   if (landed === null || !Number.isFinite(total)) return total;
   return Math.max(0, total - landed);
+};
+
+// Costo de envío generado por MasterShop al crear el pedido de despacho
+// (tarifa de la transportadora + tarifa de primera milla a la bodega).
+const mastershopGeneratedShipping = (data) => {
+  const lg = data?.orderLogistics || data?.order_logistics || {};
+  const rate = Number(lg.shipping_rate ?? lg.shippingRate);
+  if (!Number.isFinite(rate)) return null;
+  const firstMile = Number(lg.first_mile_fee ?? lg.firstMileFee);
+  return Math.round((rate + (Number.isFinite(firstMile) ? firstMile : 0)) * 100) / 100;
 };
 
 const pickCheapest = (rates) => {
@@ -432,6 +446,11 @@ export const dispatchInternationalOrder = async (orderId) => {
     const sp = order.shipping_payload || {};
     if (!sp?.international || !sp?.option) return { ok: false, reason: 'not_international' };
 
+    // Idempotencia: si el pedido ya se despachó a MasterShop/DropPanas, no duplicar.
+    if (order.payload?.mastershop || order.payload?.dropanas) {
+      return { ok: true, already: true, mastershop: order.payload?.mastershop || null };
+    }
+
     const { rows: storeRows } = await pool.query(
       `SELECT international_dispatch_provider, COALESCE(moneda, 'USD') AS moneda FROM tiendas WHERE usrid = $1 LIMIT 1`,
       [order.tienda_id]
@@ -512,6 +531,51 @@ export const dispatchInternationalOrder = async (orderId) => {
           console.error('[dispatch] MasterShop:', orderId, e.message);
         }
       }
+    }
+
+    // Guarda el id de MasterShop/DropPanas para consultas, cancelaciones y
+    // actualizaciones posteriores (y para no duplicar el despacho).
+    if (result.mastershop) {
+      const providerKey = store.international_dispatch_provider === 'dropanas' ? 'dropanas' : 'mastershop';
+      const dispatchId = extractMastershopOrderId(result.mastershop);
+
+      // Verificación de precio de envío: el envío cotizado (ENVIA) que cobramos
+      // debe ser igual o superior al que MasterShop genera al crear el pedido.
+      // Si MasterShop sale más caro, quedamos sub-cotizados (perdemos dinero).
+      const quotedShipping = Math.round(Number(option.shippingTotal ?? option.total) || 0);
+      const mastershopShipping = mastershopGeneratedShipping(result.mastershop);
+      let shippingCheck = null;
+      if (mastershopShipping != null) {
+        const ok = quotedShipping >= mastershopShipping;
+        shippingCheck = {
+          quoted: quotedShipping,
+          mastershop: mastershopShipping,
+          ok,
+          diff: Math.round((quotedShipping - mastershopShipping) * 100) / 100,
+        };
+        if (!ok) {
+          console.warn(
+            `[dispatch] Envío SUB-COTIZADO orden ${orderId}: cotizado=${quotedShipping} < MasterShop=${mastershopShipping} (faltante ${shippingCheck.diff})`
+          );
+        }
+      }
+
+      await pool.query(
+        `UPDATE orders
+         SET payload = COALESCE(payload, '{}'::jsonb) || $2::jsonb, updated_at = NOW()
+         WHERE id = $1`,
+        [
+          orderId,
+          JSON.stringify({
+            [providerKey]: {
+              ...(dispatchId ? { id: dispatchId } : {}),
+              raw: result.mastershop,
+              dispatched_at: new Date().toISOString(),
+            },
+            shipping_check: shippingCheck,
+          }),
+        ]
+      );
     }
 
     // 2) Guía ENVIA (directo origen -> comprador, u oficina -> comprador).
@@ -617,4 +681,73 @@ export const dispatchInternationalOrder = async (orderId) => {
   }
 };
 
-export default { getInternationalShippingOptions, dispatchInternationalOrder };
+// Estados de orden que representan un pago confirmado.
+const PAID_ORDER_STATUSES = new Set(['Completado', 'approved', 'paid', 'authorized']);
+const isPaidOrderStatus = (status) => PAID_ORDER_STATUSES.has(String(status || ''));
+
+// Despacha el pedido a MasterShop/DropPanas SOLO cuando el pago está confirmado.
+// Se llama desde las confirmaciones de pago (Bold botón/QR, Mercado Pago, 1-Click).
+export const fulfillPaidOrder = async (orderId) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT status, shipping_payload FROM orders WHERE id = $1 LIMIT 1`,
+      [orderId]
+    );
+    if (!rows[0]) return { ok: false, reason: 'order_not_found' };
+    if (!isPaidOrderStatus(rows[0].status)) {
+      return { ok: false, reason: 'not_paid', status: rows[0].status };
+    }
+    // Pedido internacional -> MasterShop/DropPanas; local -> guía ENVIA.
+    const sp = rows[0].shipping_payload || {};
+    if (sp?.international) return await dispatchInternationalOrder(orderId);
+    return await dispatchDomesticOrder(orderId);
+  } catch (error) {
+    console.error('[dispatch] fulfillPaidOrder:', orderId, error.message);
+    return { ok: false, reason: 'error', message: error.message };
+  }
+};
+
+// Cancela el pedido de despacho en MasterShop cuando el pago se rechaza o se
+// reembolsa (si no se había despachado, no hace nada).
+export const cancelInternationalDispatchForOrder = async (orderId) => {
+  try {
+    if (!orderId) return { ok: false, reason: 'no_order' };
+    const { rows } = await pool.query(`SELECT * FROM orders WHERE id = $1 LIMIT 1`, [orderId]);
+    const order = rows[0];
+    if (!order) return { ok: false, reason: 'order_not_found' };
+
+    const sp = order.shipping_payload || {};
+    if (!sp?.international) return { ok: false, reason: 'not_international' };
+
+    const { rows: storeRows } = await pool.query(
+      `SELECT international_dispatch_provider FROM tiendas WHERE usrid = $1 LIMIT 1`,
+      [order.tienda_id]
+    );
+    if (storeRows[0]?.international_dispatch_provider !== 'mastershop') {
+      return { ok: false, reason: 'no_dispatch_provider' };
+    }
+
+    const ms = await getMastershopIntegrationForStore(order.tienda_id);
+    if (!ms?.apiKey) return { ok: false, reason: 'no_integration' };
+
+    const cancelled = await cancelMastershopDispatchOrder({
+      apiKey: ms.apiKey,
+      orderId: resolveMastershopOrderRef(order),
+    });
+
+    if (cancelled) {
+      await pool.query(
+        `UPDATE orders
+         SET payload = COALESCE(payload, '{}'::jsonb) || $2::jsonb, updated_at = NOW()
+         WHERE id = $1`,
+        [orderId, JSON.stringify({ mastershop_cancelled_at: new Date().toISOString() })]
+      );
+    }
+    return { ok: cancelled };
+  } catch (error) {
+    console.error('[dispatch] cancelInternationalDispatchForOrder:', orderId, error.message);
+    return { ok: false, reason: 'error', message: error.message };
+  }
+};
+
+export default { getInternationalShippingOptions, dispatchInternationalOrder, fulfillPaidOrder, cancelInternationalDispatchForOrder };

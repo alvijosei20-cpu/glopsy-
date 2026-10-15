@@ -19,6 +19,7 @@ export const buildDianPlantillaFromStore = async (tiendaId, { regimen, responsab
   const { rows: dianRows } = await pool.query(
     `SELECT prefix, test_set_id, numero_resolucion, resolucion_fecha_desde, resolucion_fecha_hasta,
             direccion_fiscal, regimen AS regimen_guardado, responsabilidad AS responsabilidad_guardada,
+            consecutivo_desde, consecutivo_hasta, consecutivo_actual,
             mandato_activo, mandato_tercero_nombre, mandato_tercero_tipo_documento,
             mandato_tercero_documento
      FROM tienda_dian WHERE tienda_id = $1 LIMIT 1`,
@@ -92,6 +93,12 @@ export const buildDianPlantillaFromStore = async (tiendaId, { regimen, responsab
   const doc = String(tienda.titular_documento || '').replace(/\D/g, '');
   const dv = computeNitDv(doc);
 
+  // Numeración: usa el consecutivo actual de la resolución y avanza uno por
+  // factura generada (plantilla manual). Rango configurable en el panel.
+  const consDesdeRango = Number(dian.consecutivo_desde) || 1;
+  const consHastaRango = Number(dian.consecutivo_hasta) || 5000;
+  const consecutivo = Math.min(Math.max(Number(dian.consecutivo_actual) || consDesdeRango, consDesdeRango), consHastaRango);
+
   // Operación bajo mandato: la factura se emite en nombre y por cuenta del
   // tercero (mandante). Solo aplica si está activo y hay datos del tercero.
   const mandatoActivo = dian.mandato_activo === true || dian.mandato_activo === 'true';
@@ -107,7 +114,7 @@ export const buildDianPlantillaFromStore = async (tiendaId, { regimen, responsab
     };
   }
 
-  return generateDianPlantillaFile({
+  const built = generateDianPlantillaFile({
     VersionPlantilla: '1.0',
     TipoDocumento: '01',
     InformacionResolucion: {
@@ -115,8 +122,8 @@ export const buildDianPlantillaFromStore = async (tiendaId, { regimen, responsab
       FechaDesde: dian.resolucion_fecha_desde ? String(dian.resolucion_fecha_desde).slice(0, 10) : undefined,
       FechaHasta: dian.resolucion_fecha_hasta ? String(dian.resolucion_fecha_hasta).slice(0, 10) : undefined,
       Prefijo: prefix,
-      ConsecutivoDesde: 1,
-      ConsecutivoHasta: 5000,
+      ConsecutivoDesde: consecutivo,
+      ConsecutivoHasta: consHastaRango,
     },
     Emisor: {
       TipoIdentificacion: '31',
@@ -142,4 +149,16 @@ export const buildDianPlantillaFromStore = async (tiendaId, { regimen, responsab
     },
     LineasDeFactura: lineas,
   });
+
+  // Avanza el consecutivo de la resolución cuando la plantilla se genera OK.
+  if (built?.ok) {
+    await pool.query(
+      `UPDATE tienda_dian
+       SET consecutivo_actual = LEAST(COALESCE(consecutivo_hasta, 5000), COALESCE(consecutivo_actual, 1) + 1),
+           updated_at = NOW()
+       WHERE tienda_id = $1`,
+      [tiendaId]
+    ).catch(() => {});
+  }
+  return built;
 };

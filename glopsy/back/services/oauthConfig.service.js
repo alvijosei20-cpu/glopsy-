@@ -14,6 +14,22 @@ const ENV_FALLBACK = {
     enabled: true,
     source: 'env',
   }),
+  google: () => ({
+    clientId: process.env.GOOGLE_CLIENT_ID || null,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET || null,
+    redirectUri: process.env.GOOGLE_REDIRECT_URI || null,
+    scopes: null,
+    enabled: true,
+    source: 'env',
+  }),
+  discord: () => ({
+    clientId: process.env.DISCORD_CLIENT_ID || null,
+    clientSecret: process.env.DISCORD_CLIENT_SECRET || null,
+    redirectUri: process.env.DISCORD_REDIRECT_URI || null,
+    scopes: null,
+    enabled: true,
+    source: 'env',
+  }),
 };
 
 // Config completa (con el secreto en claro) para usar en el flujo OAuth.

@@ -52,6 +52,46 @@ const getBaseEnviaUrl = (isProd) => {
   return isProd ? (process.env.ENVIA_SHIPPING_API_PROD || 'https://api.envia.com') : (process.env.ENVIA_SHIPPING_API_TEST || 'https://api-test.envia.com');
 };
 
+// Base de la Queries API (facturación / webhooks / saldo).
+const getQueriesBaseUrl = (isProd) => {
+  return isProd ? (process.env.ENVIA_QUERIES_API_PROD || 'https://queries.envia.com') : (process.env.ENVIA_QUERIES_API_TEST || 'https://queries.test.envia.com');
+};
+
+// Interpreta montos tipo "$3.706.050,00" (COP) o "$1,234.56".
+const parseMoney = (v) => {
+  if (v == null) return null;
+  if (typeof v === 'number') return v;
+  let s = String(v).replace(/[^\d.,-]/g, '');
+  if (!s) return null;
+  const lastComma = s.lastIndexOf(',');
+  const lastDot = s.lastIndexOf('.');
+  if (lastComma > lastDot) {
+    s = s.replace(/\./g, '').replace(',', '.');
+  } else {
+    s = s.replace(/,/g, '');
+  }
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+};
+
+// Saldo de la cuenta ENVIA (viene en el detalle de factura del mes).
+// GET {queries}/invoice/{MM}/{YYYY} -> data[].balance
+export const getEnviaBalance = async ({ accessToken, mode = 'prueba' } = {}) => {
+  if (!accessToken) throw new Error('Falta el token de ENVIA.');
+  const isProd = String(mode).toLowerCase() === 'produccion';
+  const now = new Date();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yyyy = String(now.getFullYear());
+  const url = `${getQueriesBaseUrl(isProd).replace(/\/$/, '')}/invoice/${mm}/${yyyy}`;
+  const { data } = await axios.get(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    timeout: Number(process.env.ENVIA_REQUEST_TIMEOUT || 12000),
+  });
+  const arr = Array.isArray(data?.data) ? data.data : [];
+  const last = arr[arr.length - 1] || null;
+  return { balance: last ? parseMoney(last.balance) : null, raw: last?.balance ?? null, items: arr.length };
+};
+
 export const getShippingOptionsFromEnvia = async (items = [], destinationCiudadId, tiendaId, opts = {}) => {
   // Build a cache key based on items summary + destination + tiendaId + mode
   const itemsSummary = items.map(i => ({ id: i.id, qty: i.quantity || 1, w: i.weight || 0, l: i.length || 0, h: i.height || 0, wi: i.width || 0 }));
@@ -250,6 +290,8 @@ export const getShippingOptionsFromEnvia = async (items = [], destinationCiudadI
         return {
           carrier: opt.carrierDescription || opt.carrier || opt.carrier_name || opt.name || opt.provider || 'Servientrega',
           service: opt.serviceDescription || opt.service || opt.service_name || opt.type || opt.serviceName || 'Standard',
+          carrier_code: opt.carrier || null,
+          service_code: opt.service || null,
           price: priceVal,
           delivery_estimate: opt.deliveryEstimate || opt.delivery_estimate || opt.days || opt.deliverytime || opt.transitTime || '3-5 días hábiles'
         };
@@ -416,6 +458,26 @@ export const getStoreEnviaCredentials = async (tiendaId) => {
   } catch {
     return null;
   }
+};
+
+// Rastreo de paquetes: POST /ship/generaltrack/ { trackingNumbers: [...] }.
+// Devuelve un array con estado, historial de eventos y ETA por guía.
+export const getEnviaTracking = async ({ accessToken, mode = 'prueba', trackingNumbers = [] } = {}) => {
+  if (!accessToken) throw new Error('Falta el token de ENVIA.');
+  const nums = (Array.isArray(trackingNumbers) ? trackingNumbers : [trackingNumbers]).filter(Boolean);
+  if (nums.length === 0) return [];
+  const isProd = String(mode).toLowerCase() === 'produccion';
+  const apiUrl = `${getBaseEnviaUrl(isProd).replace(/\/$/, '')}/ship/generaltrack/`;
+  const res = await axios.post(
+    apiUrl,
+    { trackingNumbers: nums.map(String) },
+    {
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      timeout: Number(process.env.ENVIA_REQUEST_TIMEOUT || 12000),
+    }
+  );
+  const data = res.data?.data || res.data?.response || res.data || [];
+  return Array.isArray(data) ? data : [data];
 };
 
 // Cotización de envíos internacionales (envia.com /ship/rate).

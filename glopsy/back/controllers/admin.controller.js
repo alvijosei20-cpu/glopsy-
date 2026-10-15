@@ -1,7 +1,41 @@
 import { pool } from '../db.js';
 import { cleanString, cleanEmail, toInt, isAllowedEnum } from '../utils/validation.js';
 import { approveUsdActivation } from '../services/tienda.service.js';
+import {
+  getCheckoutIntegrationsForUser,
+  saveCheckoutIntegrationForUser,
+  deleteCheckoutIntegrationForUser,
+} from '../services/tienda.service.js';
 import { redisClient } from '../services/redis.service.js';
+import { getOAuthStatus, saveOAuthConfig } from '../services/oauthConfig.service.js';
+import { getStoreEnviaCredentials, getEnviaTracking } from '../services/envia.service.js';
+import { createNotification as createUserNotification } from '../services/notifications.service.js';
+import { sendPushToUser } from '../services/push.service.js';
+
+const AUTH_PROVIDERS = ['google', 'discord', 'tiktok'];
+
+// Notifica al usuario que ya puede vender (centro de notificaciones + push).
+const notifySellerEnabled = async (userId) => {
+  if (!userId) return;
+  const title = '¡Ya puedes vender en Glopsy!';
+  const message = 'Tu cuenta fue habilitada como vendedor. Entra a crear tu tienda.';
+  try {
+    await createUserNotification({
+      type: 'link',
+      title,
+      message,
+      url: '/vender',
+      target: 'user',
+      userId,
+      active: true,
+    });
+  } catch (e) {
+    console.error('[admin] No se pudo crear la notificación de vendedor:', e.message);
+  }
+  try {
+    await sendPushToUser(userId, { title, body: message, url: '/vender' });
+  } catch {}
+};
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
@@ -33,6 +67,232 @@ export const listUsersForAdmin = async (req, res) => {
   }
 };
 
+// GET /api/admin/seller-requests?status=pending -> solicitudes de venta.
+export const listSellerRequests = async (req, res) => {
+  try {
+    const status = isAllowedEnum(req.query.status, ['pending', 'approved', 'rejected', 'none'])
+      ? req.query.status
+      : 'pending';
+    const { rows } = await pool.query(
+      `SELECT u.id, u.email, u.name, u.avatar_url, COALESCE(u.sell_status, 'none') AS sell_status,
+              u.sell_requested_at, u.sell_reviewed_at, u.sell_note, u.can_sell, u.created_at
+       FROM users u
+       WHERE COALESCE(u.sell_status, 'none') = $1
+       ORDER BY u.sell_requested_at ASC NULLS LAST, u.created_at DESC
+       LIMIT 200`,
+      [status]
+    );
+    return res.json({ ok: true, requests: rows });
+  } catch (error) {
+    console.error('Error listando solicitudes de vendedor:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible listar las solicitudes.' });
+  }
+};
+
+// POST /api/admin/seller-requests/review { userId, approve, note }
+export const reviewSellerRequest = async (req, res) => {
+  try {
+    const userId = toInt(req.body?.userId, { min: 1 });
+    if (!userId) return res.status(400).json({ ok: false, message: 'userId requerido.' });
+    const approve = req.body?.approve === true;
+    const note = cleanString(req.body?.note, { maxLength: 500 }) || null;
+    const { rows } = await pool.query(
+      `UPDATE users
+       SET can_sell = $2, sell_status = $3, sell_reviewed_at = NOW(),
+           sell_note = COALESCE($4, sell_note), updated_at = NOW()
+       WHERE id = $1
+       RETURNING id, email, can_sell, sell_status`,
+      [userId, approve, approve ? 'approved' : 'rejected', note]
+    );
+    if (!rows[0]) return res.status(404).json({ ok: false, message: 'Usuario no encontrado.' });
+    if (!approve) {
+      await pool.query(`UPDATE tiendas SET activa = false WHERE usrid = $1`, [userId]);
+    } else {
+      await notifySellerEnabled(rows[0].id);
+    }
+    return res.json({ ok: true, user: rows[0] });
+  } catch (error) {
+    console.error('Error revisando solicitud de vendedor:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible procesar la solicitud.' });
+  }
+};
+
+// --- Integraciones de pago/checkout (gestión centralizada por admin) ---
+
+// GET /api/admin/stores -> tiendas para el selector.
+export const listStoresForAdmin = async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT usrid, nombres, slug, COALESCE(activa, false) AS activa FROM tiendas ORDER BY usrid ASC`
+    );
+    return res.json({ ok: true, stores: rows });
+  } catch (error) {
+    console.error('Error listando tiendas para admin:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible listar las tiendas.' });
+  }
+};
+
+// GET /api/admin/stores/:tiendaId/checkout-integrations
+export const getStoreCheckoutIntegrations = async (req, res) => {
+  try {
+    const tiendaId = toInt(req.params.tiendaId, { min: 1 });
+    if (!tiendaId) return res.status(400).json({ ok: false, message: 'tiendaId inválido.' });
+    const integrations = await getCheckoutIntegrationsForUser(tiendaId);
+    return res.json({ ok: true, integrations });
+  } catch (error) {
+    console.error('Error consultando integraciones de la tienda:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible consultar las integraciones.' });
+  }
+};
+
+// POST /api/admin/stores/:tiendaId/checkout-integrations { provider, mode, public_key, access_token, webhook_secret, is_default }
+export const saveStoreCheckoutIntegration = async (req, res) => {
+  try {
+    const tiendaId = toInt(req.params.tiendaId, { min: 1 });
+    if (!tiendaId) return res.status(400).json({ ok: false, message: 'tiendaId inválido.' });
+    const provider = cleanString(req.body?.provider, { maxLength: 50 });
+    if (!isAllowedEnum(provider, ['mercadopago', 'envia', 'bold'])) {
+      return res.status(400).json({ ok: false, message: 'Proveedor no válido.' });
+    }
+    const mode = isAllowedEnum(req.body?.mode, ['prueba', 'produccion']) ? req.body.mode : 'prueba';
+    const strip = (v) => (v ? String(v).trim().replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') : '');
+    const publicKey = strip(cleanString(req.body?.public_key, { maxLength: 2048 }));
+    const accessToken = strip(cleanString(req.body?.access_token, { maxLength: 2048 }));
+    const webhookSecret = strip(cleanString(req.body?.webhook_secret, { maxLength: 2048 }));
+
+    if (provider === 'mercadopago' && !publicKey) {
+      return res.status(400).json({ ok: false, message: 'La Public Key es obligatoria para Mercado Pago.' });
+    }
+    if (provider === 'bold' && !publicKey) {
+      return res.status(400).json({ ok: false, message: 'La Public Key es obligatoria para Bold.' });
+    }
+
+    const saved = await saveCheckoutIntegrationForUser(tiendaId, provider, mode, {
+      publicKey: publicKey || undefined,
+      accessToken: accessToken || undefined,
+      webhookSecret: webhookSecret || undefined,
+      isDefault: req.body?.is_default === true,
+    });
+    const provName = provider === 'mercadopago' ? 'Mercado Pago' : provider === 'bold' ? 'Bold' : 'ENVIA';
+    return res.json({ ok: true, integration: saved, message: `${provName} guardado.` });
+  } catch (error) {
+    console.error('Error guardando integración (admin):', error.message);
+    return res.status(500).json({ ok: false, message: error.message || 'No fue posible guardar la integración.' });
+  }
+};
+
+// DELETE /api/admin/stores/:tiendaId/checkout-integrations/:provider?mode=
+export const deleteStoreCheckoutIntegration = async (req, res) => {
+  try {
+    const tiendaId = toInt(req.params.tiendaId, { min: 1 });
+    const provider = cleanString(req.params.provider, { maxLength: 50 });
+    const mode = isAllowedEnum(req.query.mode, ['prueba', 'produccion']) ? req.query.mode : 'prueba';
+    if (!tiendaId || !isAllowedEnum(provider, ['mercadopago', 'envia', 'bold'])) {
+      return res.status(400).json({ ok: false, message: 'Parámetros inválidos.' });
+    }
+    const deleted = await deleteCheckoutIntegrationForUser(tiendaId, provider, mode);
+    if (!deleted) return res.status(404).json({ ok: false, message: 'Integración no encontrada.' });
+    return res.json({ ok: true, message: 'Integración eliminada.' });
+  } catch (error) {
+    console.error('Error eliminando integración (admin):', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible eliminar la integración.' });
+  }
+};
+
+// --- Kill switch (pánico) ---
+export const getPanicStatus = async (req, res) => {
+  try {
+    const on = await redisClient.get('system:panic');
+    return res.json({ ok: true, panic: on === '1' });
+  } catch (error) {
+    console.error('Error consultando pánico:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible consultar el estado.' });
+  }
+};
+
+export const setPanicStatus = async (req, res) => {
+  try {
+    const on = req.body?.on === true || req.body?.on === 'true';
+    await redisClient.set('system:panic', on ? '1' : '0');
+    return res.json({ ok: true, panic: on, message: on ? 'API en mantenimiento (pánico ON).' : 'API activa (pánico OFF).' });
+  } catch (error) {
+    console.error('Error cambiando pánico:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible cambiar el estado.' });
+  }
+};
+
+// --- Auth (Google / Discord / TikTok OAuth) ---
+export const getAuthConfig = async (req, res) => {
+  try {
+    const provider = String(req.params.provider || '').toLowerCase();
+    if (!AUTH_PROVIDERS.includes(provider)) return res.status(400).json({ ok: false, message: 'Proveedor no válido.' });
+    return res.json({ ok: true, auth: await getOAuthStatus(provider) });
+  } catch (error) {
+    console.error('Error consultando auth:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible consultar la configuración.' });
+  }
+};
+
+export const saveAuthConfig = async (req, res) => {
+  try {
+    const provider = String(req.params.provider || '').toLowerCase();
+    if (!AUTH_PROVIDERS.includes(provider)) return res.status(400).json({ ok: false, message: 'Proveedor no válido.' });
+    const { client_id, client_secret, redirect_uri, scopes, enabled } = req.body || {};
+    const auth = await saveOAuthConfig(provider, {
+      clientId: client_id,
+      clientSecret: client_secret,
+      redirectUri: redirect_uri,
+      scopes,
+      enabled,
+    });
+    return res.json({ ok: true, auth, message: 'Configuración de auth guardada.' });
+  } catch (error) {
+    console.error('Error guardando auth:', error.message);
+    return res.status(500).json({ ok: false, message: error.message || 'No fue posible guardar.' });
+  }
+};
+
+// --- Rastreo de guías (ENVIA) ---
+const resolveStoreId = async (storeId) => {
+  const sid = toInt(storeId, { min: 1 });
+  if (sid) return sid;
+  const { rows } = await pool.query(
+    `SELECT usrid FROM tiendas WHERE is_main = true AND COALESCE(activa, true) = true LIMIT 1`
+  );
+  if (rows[0]) return rows[0].usrid;
+  const { rows: fb } = await pool.query(
+    `SELECT usrid FROM tiendas WHERE COALESCE(activa, true) = true ORDER BY usrid ASC LIMIT 1`
+  );
+  return fb[0]?.usrid || null;
+};
+
+// POST /api/admin/tracking { tracking|trackingNumbers, storeId? }
+export const trackEnvia = async (req, res) => {
+  try {
+    const raw = req.body?.trackingNumbers ?? req.body?.tracking;
+    const nums = (Array.isArray(raw) ? raw : String(raw || '').split(/[\s,]+/))
+      .map((s) => String(s).trim())
+      .filter(Boolean);
+    if (nums.length === 0) {
+      return res.status(400).json({ ok: false, message: 'Ingresa al menos una guía.' });
+    }
+    const storeId = await resolveStoreId(req.body?.storeId);
+    const creds = await getStoreEnviaCredentials(storeId);
+    if (!creds?.accessToken) {
+      return res.status(400).json({ ok: false, message: 'La tienda no tiene ENVIA configurado.' });
+    }
+    const tracking = await getEnviaTracking({
+      accessToken: creds.accessToken,
+      mode: creds.mode,
+      trackingNumbers: nums,
+    });
+    return res.json({ ok: true, tracking, storeId });
+  } catch (error) {
+    console.error('Error rastreando guías:', error.response?.data || error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible rastrear la(s) guía(s).' });
+  }
+};
+
 // POST /api/admin/sellers/set { email, can_sell }
 export const setUserCanSell = async (req, res) => {
   try {
@@ -56,6 +316,8 @@ export const setUserCanSell = async (req, res) => {
         [rows[0].id]
       );
       storeActive = tRows[0] ? Boolean(tRows[0].activa) : null;
+    } else {
+      await notifySellerEnabled(rows[0].id);
     }
     return res.json({ ok: true, user: rows[0], storeActive });
   } catch (error) {

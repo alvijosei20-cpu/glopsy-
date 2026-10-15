@@ -1,7 +1,7 @@
 import { obtenerProductoPorId } from '../services/mastershopService.js';
 import { uploadProductImage, isR2Configured } from '../services/r2.service.js';
 import { visitorCountryFromReq } from '../services/checkoutCurrency.service.js';
-import { saveProductForUser, getProductsForUser, getProductsForUserManagement, setProductStatusForUser, deleteProductForUser, addProductImagesForUser, updateProductNameForUser, searchQueryProductsCached, getCategories, getGlobalCommission, autoCategorizeUncategorizedProducts, suggestCategoryForProduct, getUserFavorites, toggleProductFavorite, getProductByPublicId, getMainStoreId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, cancelOrderForUser, updateOrderAddressForUser, getProductReviews, getUserReviewStatus, getOrderReviewsStatus, addProductReview, updateProductReview, deleteProductReview } from '../services/product.service.js';
+import { saveProductForUser, getProductsForUser, getProductsForUserManagement, setProductStatusForUser, deleteProductForUser, addProductImagesForUser, updateProductNameForUser, searchQueryProductsCached, getCategories, getGlobalCommission, autoCategorizeUncategorizedProducts, suggestCategoryForProduct, getUserFavorites, toggleProductFavorite, getProductByPublicId, getMainStoreId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, getOrderTrackingForUser, cancelOrderForUser, updateOrderAddressForUser, getProductReviews, getUserReviewStatus, getOrderReviewsStatus, addProductReview, updateProductReview, deleteProductReview } from '../services/product.service.js';
 import { validatePaymentBiometricNonce } from '../services/auth.service.js';
 import { getInternationalShippingOptions } from '../services/internationalShipping.service.js';
 import { estimateImportDuties } from '../services/tariff.service.js';
@@ -555,6 +555,26 @@ export const getOrderByHashController = async (req, res) => {
   } catch (error) {
     console.error('Error al obtener detalle de orden por hash:', error.message);
     res.status(500).json({ ok: false, message: 'Error al obtener el detalle del pedido.' });
+  }
+};
+
+export const getOrderTrackingController = async (req, res) => {
+  try {
+    const hash = cleanString(req.params.hash, { maxLength: 100 });
+    if (!hash) return res.status(400).json({ ok: false, message: 'Hash de orden requerido.' });
+    const userId = req.auth?.userId || null;
+    const guestHash = cleanString(req.query.guestHash || req.headers['x-guest-hash'], { maxLength: 64 }) || null;
+    if (!userId && !guestHash) {
+      return res.status(401).json({ ok: false, message: 'Autenticación requerida.' });
+    }
+    const result = await getOrderTrackingForUser(hash, userId, guestHash);
+    if (!result.ok && result.reason === 'order_not_found') {
+      return res.status(404).json({ ok: false, message: 'Pedido no encontrado.' });
+    }
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    console.error('Error al rastrear el pedido:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible obtener el rastreo.' });
   }
 };
 

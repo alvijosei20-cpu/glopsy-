@@ -12,6 +12,7 @@
 import { pool } from '../db.js';
 import * as bold from './bold.service.js';
 import { createPendingOrderForCart } from './product.service.js';
+import { fulfillPaidOrder, cancelInternationalDispatchForOrder } from './internationalShipping.service.js';
 import { recordSaleForOrder, recordRefundForOrder } from './ledger.service.js';
 import { loadBoldCredentials } from './paymentConfig.service.js';
 import { resolveCheckoutCurrency, convertAmount } from './checkoutCurrency.service.js';
@@ -53,6 +54,13 @@ export const markOrderPaid = async (orderId, { refBold = null, payloadExtra = {}
     await recordSaleForOrder(orderId, { provider: 'bold', moneda, referenciaExterna: refBold });
   } catch (error) {
     console.error('[Bold] Error contabilizando venta en el ledger:', error.message);
+  }
+  // Una vez confirmado el pago, despacha a MasterShop/DropPanas (envíos
+  // internacionales). Es idempotente: no duplica si ya se despachó.
+  try {
+    await fulfillPaidOrder(orderId);
+  } catch (error) {
+    console.error('[Bold] Error despachando pedido al confirmar pago:', error.message);
   }
 };
 
@@ -203,11 +211,13 @@ export const processBoldConfirmation = async (payload = {}) => {
 
   if (state === 'rejected') {
     await updateOrderStatus(order.id, 'rejected', payloadExtra);
+    await cancelInternationalDispatchForOrder(order.id).catch(() => {});
     return { ok: true, orderId: order.id, status: 'rejected' };
   }
 
   if (state === 'refunded') {
     await updateOrderStatus(order.id, 'refunded', payloadExtra);
+    await cancelInternationalDispatchForOrder(order.id).catch(() => {});
     try {
       await recordRefundForOrder(order.id, { moneda: order.currency || 'COP', referenciaExterna: refBold });
     } catch (error) {
@@ -250,10 +260,12 @@ export const getBoldOrderStatus = async (reference) => {
       }
       if (st === 'REJECTED' || st === 'FAILED') {
         await updateOrderStatus(order.id, 'rejected', { bold_status: st, bold_voucher: voucher.data });
+        await cancelInternationalDispatchForOrder(order.id).catch(() => {});
         return { ok: true, orderId: order.id, status: 'REJECTED', orderStatus: 'rejected' };
       }
       if (st === 'VOIDED') {
         await updateOrderStatus(order.id, 'refunded', { bold_status: st, bold_voucher: voucher.data });
+        await cancelInternationalDispatchForOrder(order.id).catch(() => {});
         return { ok: true, orderId: order.id, status: 'REFUNDED', orderStatus: 'refunded' };
       }
     }

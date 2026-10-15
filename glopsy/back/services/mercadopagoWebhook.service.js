@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { pool } from '../db.js';
 import { MercadoPagoConfig, Payment } from 'mercadopago';
 import { decryptSecret } from '../utils/crypto.js';
+import { fulfillPaidOrder, cancelInternationalDispatchForOrder } from './internationalShipping.service.js';
 
 // ------------------------------------------------------------------ Credenciales por tienda
 // Con más de una tienda cada una cobra con SU cuenta de Mercado Pago. El webhook no
@@ -115,13 +116,24 @@ const updateOrderFromPayment = async (paymentId, tiendaId) => {
   const status = mpStatus === 'approved' ? 'Completado' : (mpStatus || 'pending');
 
   const { rows } = await pool.query(
-    `UPDATE orders SET status = $1, payload = $2::jsonb, updated_at = NOW()
+    `UPDATE orders SET status = $1, payload = COALESCE(payload, '{}'::jsonb) || $2::jsonb, updated_at = NOW()
      WHERE mercadopago_payment_id = $3
      RETURNING id, order_hash`,
     [status, JSON.stringify(paymentData), String(paymentId)]
   );
 
-  return { ok: true, orderId: rows[0]?.id || null, orderHash: rows[0]?.order_hash || null, status };
+  const orderId = rows[0]?.id || null;
+
+  // Envíos internacionales: despacha al confirmar el pago; cancela si se reembolsa.
+  if (orderId && status === 'Completado') {
+    await fulfillPaidOrder(orderId).catch((e) =>
+      console.error('[dispatch] Error despachando pedido MP (webhook):', e.message)
+    );
+  } else if (orderId && ['refunded', 'cancelled', 'charged_back'].includes(String(mpStatus))) {
+    await cancelInternationalDispatchForOrder(orderId).catch(() => {});
+  }
+
+  return { ok: true, orderId, orderHash: rows[0]?.order_hash || null, status };
 };
 
 export const processMercadopagoWebhook = async (payload, rawBody, headers = {}) => {

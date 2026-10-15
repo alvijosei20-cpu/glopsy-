@@ -21,7 +21,7 @@ import {
 
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
-import { markNotificationRead, markAllNotificationsRead, clearAllNotifications } from '../services/notificationsService';
+import { markNotificationRead, markAllNotificationsRead, clearAllNotifications, clearReadNotifications } from '../services/notificationsService';
 import { subscribeToPush } from '../services/pushService';
 import { openDeepLink } from '../utils/deeplink';
 
@@ -671,7 +671,7 @@ export default function Navbar() {
                 style={{ borderColor: isDark ? '#27272a' : '#e2e8f0' }}
               >
                 <h4 className="font-bold text-sm" style={{ color: isDark ? '#ffffff' : '#0f172a' }}>Notificaciones</h4>
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2.5 flex-wrap justify-end">
                   <button 
                     type="button"
                     onClick={() => {
@@ -681,6 +681,23 @@ export default function Navbar() {
                     className="text-[11px] text-fuchsia-600 dark:text-fuchsia-400 font-semibold hover:underline cursor-pointer"
                   >
                     Marcar leídas
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      const readIds = notifications.filter(n => n.read).map(n => String(n.id));
+                      try {
+                        const cleared = new Set(JSON.parse(localStorage.getItem('glopsy_notifications_cleared') || '[]'));
+                        readIds.forEach(id => cleared.add(id));
+                        localStorage.setItem('glopsy_notifications_cleared', JSON.stringify([...cleared]));
+                      } catch {}
+                      setNotifications(prev => prev.filter(n => !n.read));
+                      window.dispatchEvent(new Event('glopsy_notifications_cleared'));
+                      clearReadNotifications().catch(() => {});
+                    }}
+                    className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold hover:underline cursor-pointer"
+                  >
+                    Borrar leídas
                   </button>
                   <button 
                     type="button"

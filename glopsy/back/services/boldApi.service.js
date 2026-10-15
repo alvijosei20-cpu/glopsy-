@@ -7,6 +7,8 @@
 //   2. Se hace un "intento de pago" con payment_method QR -> POST /v1/payment
 //      que responde next_actions.qr_payload (base64 o texto) y expires_at.
 //   3. Se consulta el estado -> GET /v1/payment/{reference_id}
+//   4. Se anula o reembolsa -> POST /v1/payment/void | POST /v1/payment/refund
+//      (solo tarjeta y pago APPROVED; ver boldReversal.service.js)
 //
 // Doc: https://developers.bold.co/pagos-en-linea/api-de-pagos-en-linea
 //
@@ -97,6 +99,57 @@ export const getPaymentStatus = async (referenceId) => {
   try {
     const { data } = await axios.get(
       `${apiBase()}/v1/payment/${encodeURIComponent(referenceId)}`,
+      { headers: headers(), timeout: 15000 }
+    );
+    return { ok: true, data: unwrap(data) };
+  } catch (err) {
+    return { ok: false, reason: 'bold_api_error', error: err.response?.data || err.message };
+  }
+};
+
+// Anula (void) un pago del mismo día. Solo tarjeta de crédito/débito. Irreversible.
+// POST /v1/payment/void  { transaction_id }  -> 201 sin cuerpo.
+export const voidPayment = async ({ transactionId }) => {
+  if (!isBoldApiConfigured()) return { ok: false, reason: 'bold_api_no_configurado' };
+  if (!transactionId) return { ok: false, reason: 'sin_transaction_id' };
+  try {
+    const res = await axios.post(
+      `${apiBase()}/v1/payment/void`,
+      { transaction_id: String(transactionId) },
+      { headers: headers(), timeout: 20000 }
+    );
+    return { ok: true, status: res.status };
+  } catch (err) {
+    return { ok: false, reason: 'bold_api_error', status: err.response?.status || null, error: err.response?.data || err.message };
+  }
+};
+
+// Solicita el reembolso de un pago (queda en revisión de Bold). Solo tarjeta.
+// POST /v1/payment/refund  { reference_id, transaction_id, reason }  -> 201 sin cuerpo.
+export const requestRefund = async ({ referenceId = null, transactionId = null, reason = 'Cancelación de pedido' } = {}) => {
+  if (!isBoldApiConfigured()) return { ok: false, reason: 'bold_api_no_configurado' };
+  if (!referenceId && !transactionId) return { ok: false, reason: 'sin_referencia' };
+  const body = {
+    ...(referenceId ? { reference_id: String(referenceId) } : {}),
+    ...(transactionId ? { transaction_id: String(transactionId) } : {}),
+    reason,
+  };
+  try {
+    const res = await axios.post(`${apiBase()}/v1/payment/refund`, body, { headers: headers(), timeout: 20000 });
+    return { ok: true, status: res.status };
+  } catch (err) {
+    return { ok: false, reason: 'bold_api_error', status: err.response?.status || null, error: err.response?.data || err.message };
+  }
+};
+
+// Estado de un reembolso: PROCESSING | APPROVED | REJECTED.
+// GET /v1/payment/refund/{transaction_id}
+export const getRefundStatus = async (transactionId) => {
+  if (!isBoldApiConfigured()) return { ok: false, reason: 'bold_api_no_configurado' };
+  if (!transactionId) return { ok: false, reason: 'sin_transaction_id' };
+  try {
+    const { data } = await axios.get(
+      `${apiBase()}/v1/payment/refund/${encodeURIComponent(transactionId)}`,
       { headers: headers(), timeout: 15000 }
     );
     return { ok: true, data: unwrap(data) };

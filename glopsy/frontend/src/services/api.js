@@ -48,8 +48,12 @@ api.interceptors.response.use(
       localStorage.removeItem('user');
       window.dispatchEvent(new Event('glopsy:session-expired'));
 
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login?expired=true';
+      // Base-aware: respeta el prefijo del deploy (ej. /glopsy/) para que el
+      // redirect no pase por el gateway ni entre en bucle.
+      const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+      const loginPath = `${base}/login`;
+      if (!window.location.pathname.startsWith(loginPath)) {
+        window.location.href = `${loginPath}?expired=true`;
       }
     }
     return Promise.reject(error);

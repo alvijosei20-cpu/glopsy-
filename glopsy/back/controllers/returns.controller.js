@@ -1,6 +1,7 @@
-import axios from 'axios';
 import { pool } from '../db.js';
 import { cleanString, cleanText, toNumber, toInt } from '../utils/validation.js';
+import { decryptSecret } from '../utils/crypto.js';
+import { getMastershopOrder, updateMastershopOrder } from '../services/mastershopOrder.service.js';
 
 // Estados locales del ticket de devolución
 const RETURN_STATUS = {
@@ -14,37 +15,27 @@ const RETURN_STATUS = {
 // Estado que indica que el paquete devuelto llegó a bodega (webhook Mastershop)
 const WAREHOUSE_RECEIVED_STATUS = 'RECEIVED_IN_WAREHOUSE';
 
-// Obtiene la API key de Mastershop desde la tabla tienda_integraciones
+// Obtiene la API key de Mastershop (descifrada) desde la tabla tienda_integraciones
 const getMastershopApiKey = async (tiendaId) => {
   const { rows } = await pool.query(
     `SELECT api_key FROM tienda_integraciones WHERE user_id = $1 AND provider = 'mastershop' LIMIT 1`,
     [tiendaId || 1]
   );
-  return rows[0]?.api_key || null;
+  const raw = rows[0]?.api_key || null;
+  if (!raw) return null;
+  // La key se guarda cifrada (v1:...); decryptSecret devuelve tal cual si no lo está.
+  return decryptSecret(raw);
 };
-
-const getMastershopBaseUrl = () =>
-  process.env.MASTERSHOP_API_URL || 'https://prod.api.mastershop.com/api';
 
 const generateReturnNumber = () => {
   const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
   return `RET-${Date.now().toString().slice(-6)}-${suffix}`;
 };
 
-// Cambia el estado de la orden en Mastershop a "En Reclamación / Garantía" (id_status 11)
+// Cambia el estado de la orden en Mastershop (PUT /orders/{id}, campo idStatus).
+// idStatus 11 = "Reclamaciones / Garantía".
 const setMastershopOrderStatus = async (apiKey, orderId, statusName, idStatus = 11) => {
-  const baseUrl = getMastershopBaseUrl();
-  const payload = { status: statusName, id_status: idStatus };
-
-  await axios.put(`${baseUrl}/orders/${orderId}`, payload, {
-    headers: { 'ms-api-key': apiKey, 'Content-Type': 'application/json' },
-    timeout: 8000,
-  }).catch(async () => {
-    await axios.patch(`${baseUrl}/orders/${orderId}`, payload, {
-      headers: { 'ms-api-key': apiKey, 'Content-Type': 'application/json' },
-      timeout: 8000,
-    });
-  });
+  await updateMastershopOrder(apiKey, orderId, { idStatus });
 };
 
 // Suma días hábiles (lunes a viernes) a una fecha
@@ -137,7 +128,7 @@ export const requestReturn = async (req, res) => {
 
   let order;
   try {
-    // 1) Buscamos la orden en Mastershop para validar estado
+    // 1) Buscamos la orden en Mastershop para validar estado (GET /orders?idOrder=)
     const tiendaId = req.auth?.userId || 1;
     const apiKey = await getMastershopApiKey(tiendaId);
 
@@ -145,15 +136,17 @@ export const requestReturn = async (req, res) => {
       return res.status(503).json({ ok: false, message: 'No hay integración Mastershop configurada.' });
     }
 
-    const msResponse = await axios.get(`${getMastershopBaseUrl()}/orders/${orderId}`, {
-      headers: { 'ms-api-key': apiKey },
-      timeout: 8000,
-    });
+    const msOrder = await getMastershopOrder(apiKey, orderId);
+    if (!msOrder) {
+      return res.status(404).json({ ok: false, message: 'La orden no existe en Mastershop.' });
+    }
 
-    const msOrder = msResponse.data?.data || msResponse.data;
-    const idStatus = toNumber(msOrder?.id_status, { min: 1, fallback: 0 });
-    const fulfillmentStatus = cleanString(msOrder?.fulfillment_status, { maxLength: 50 });
-    const statusName = cleanString(msOrder?.status, { maxLength: 50 });
+    const idStatus = toNumber(msOrder?.idStatus ?? msOrder?.id_status, { min: 1, fallback: 0 });
+    const statusName = cleanString(msOrder?.statusName ?? msOrder?.status, { maxLength: 50 });
+    const fulfillmentStatus = cleanString(
+      msOrder?.carrierTracking?.status ?? msOrder?.carrier_tracking?.status ?? msOrder?.statusName,
+      { maxLength: 50 }
+    );
 
     const isDelivered =
       idStatus === 8 ||

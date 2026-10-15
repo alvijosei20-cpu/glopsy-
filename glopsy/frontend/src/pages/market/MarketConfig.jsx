@@ -38,9 +38,31 @@ const MarketConfig = () => {
     direccion_fiscal: '',
     regimen: '48',
     responsabilidad: 'O-47',
+    consecutivo_desde: '',
+    consecutivo_hasta: '',
+    consecutivo_actual: '',
     plantilla_exportacion: false,
   });
   const [savingDianFiscal, setSavingDianFiscal] = useState(false);
+
+  // GA4 por tienda (independiente para cada tienda).
+  const [gaId, setGaId] = useState('');
+  const [savingGa, setSavingGa] = useState(false);
+  useEffect(() => { setGaId(tienda?.gaId || ''); }, [tienda?.gaId]);
+  const handleSaveGa = async (e) => {
+    e.preventDefault();
+    setSavingGa(true);
+    try {
+      await api.patch('/tienda', { ga_id: gaId.trim() || null });
+      await refreshTienda();
+      setNotice('Google Analytics (GA4) actualizado.');
+    } catch (err) {
+      setNotice(err.response?.data?.message || 'No fue posible guardar GA4.');
+    } finally {
+      setSavingGa(false);
+      setTimeout(() => setNotice(''), 3000);
+    }
+  };
 
   const handleSaveDianFiscal = async (e) => {
     e.preventDefault();
@@ -53,6 +75,9 @@ const MarketConfig = () => {
         direccion_fiscal: dianConfig.direccion_fiscal,
         regimen: dianConfig.regimen,
         responsabilidad: dianConfig.responsabilidad,
+        consecutivo_desde: dianConfig.consecutivo_desde === '' ? null : Number(dianConfig.consecutivo_desde),
+        consecutivo_hasta: dianConfig.consecutivo_hasta === '' ? null : Number(dianConfig.consecutivo_hasta),
+        consecutivo_actual: dianConfig.consecutivo_actual === '' ? null : Number(dianConfig.consecutivo_actual),
       });
       setNotice(res.data?.message || 'Datos fiscales DIAN guardados.');
     } catch (err) {
@@ -105,12 +130,12 @@ const MarketConfig = () => {
   });
 
   const [enviaConfigs, setEnviaConfigs] = useState({
-    prueba: { access_token: '' },
-    produccion: { access_token: '' }
+    prueba: { access_token: '', webhook_secret: '' },
+    produccion: { access_token: '', webhook_secret: '' }
   });
   const [initialEnviaConfigs, setInitialEnviaConfigs] = useState({
-    prueba: { access_token: '' },
-    produccion: { access_token: '' }
+    prueba: { access_token: '', webhook_secret: '' },
+    produccion: { access_token: '', webhook_secret: '' }
   });
   const mercadoPagoConfig = mercadoPagoConfigs[mpMode];
   const initialMercadoPagoConfig = initialMercadoPagoConfigs[mpMode];
@@ -408,8 +433,8 @@ const MarketConfig = () => {
           const enviaPrueba = integrations.find(i => i.provider === 'envia' && (i.mode === 'prueba' || !i.mode));
           const enviaProd = integrations.find(i => i.provider === 'envia' && i.mode === 'produccion');
           const newEnvia = {
-            prueba: { access_token: enviaPrueba?.access_token || '' },
-            produccion: { access_token: enviaProd?.access_token || '' }
+            prueba: { access_token: enviaPrueba?.access_token || '', webhook_secret: enviaPrueba?.webhook_secret || '' },
+            produccion: { access_token: enviaProd?.access_token || '', webhook_secret: enviaProd?.webhook_secret || '' }
           };
           setEnviaConfigs(newEnvia);
           setInitialEnviaConfigs(JSON.parse(JSON.stringify(newEnvia)));
@@ -462,10 +487,13 @@ const MarketConfig = () => {
   };
 
   const hasEnviaChanges = () => {
-    return (
+    const tokenChanged =
       enviaConfig.access_token !== initialEnviaConfig.access_token &&
-      enviaConfig.access_token.trim() !== ''
-    );
+      enviaConfig.access_token.trim() !== '';
+    const secretChanged =
+      enviaConfig.webhook_secret !== initialEnviaConfig.webhook_secret &&
+      enviaConfig.webhook_secret.trim() !== '';
+    return tokenChanged || secretChanged;
   };
 
   const handleDownloadLibroVentas = async () => {
@@ -538,10 +566,13 @@ const MarketConfig = () => {
     try {
       const tokenChanged = enviaConfig.access_token !== initialEnviaConfig.access_token &&
         enviaConfig.access_token.trim() !== '';
+      const secretChanged = enviaConfig.webhook_secret !== initialEnviaConfig.webhook_secret &&
+        enviaConfig.webhook_secret.trim() !== '';
       const res = await api.post('/tienda/checkout-integrations', {
         provider: 'envia',
         mode: enviaMode,
         ...(tokenChanged ? { access_token: enviaConfig.access_token } : {}),
+        ...(secretChanged ? { webhook_secret: enviaConfig.webhook_secret } : {}),
       });
       setNotice(res.data.message || 'Configuración de ENVIA guardada con éxito.');
       setTimeout(() => setNotice(''), 3000);
@@ -704,8 +735,9 @@ const MarketConfig = () => {
         setBoldConfigs({ ...boldConfigs, [currentMode]: cleared });
         setInitialBoldConfigs({ ...initialBoldConfigs, [currentMode]: cleared });
       } else {
-        setEnviaConfigs({ ...enviaConfigs, [currentMode]: { access_token: '' } });
-        setInitialEnviaConfigs({ ...initialEnviaConfigs, [currentMode]: { access_token: '' } });
+        const cleared = { access_token: '', webhook_secret: '' };
+        setEnviaConfigs({ ...enviaConfigs, [currentMode]: cleared });
+        setInitialEnviaConfigs({ ...initialEnviaConfigs, [currentMode]: cleared });
       }
       setNotice(`Configuración de ${provName} (${modeName}) eliminada con éxito.`);
       setTimeout(() => setNotice(''), 3000);
@@ -1236,6 +1268,12 @@ const MarketConfig = () => {
             >
               <CreditCard size={18} /> Payments y checkout
             </button>
+            <button
+              className={`config-nav__item ${activeTab === 'integraciones' ? 'active' : ''}`}
+              onClick={() => setActiveTab('integraciones')}
+            >
+              <Code size={18} /> Integraciones
+            </button>
           </nav>
         </aside>
 
@@ -1700,6 +1738,18 @@ const MarketConfig = () => {
                         <label>Vigencia hasta</label>
                         <input type="date" value={dianConfig.resolucion_fecha_hasta || ''} onChange={(e) => setDianConfig({ ...dianConfig, resolucion_fecha_hasta: e.target.value })} />
                       </div>
+                      <div className="config-form-group" style={{ margin: 0 }}>
+                        <label>Consecutivo desde</label>
+                        <input type="number" min="1" value={dianConfig.consecutivo_desde ?? ''} onChange={(e) => setDianConfig({ ...dianConfig, consecutivo_desde: e.target.value })} placeholder="1" />
+                      </div>
+                      <div className="config-form-group" style={{ margin: 0 }}>
+                        <label>Consecutivo hasta</label>
+                        <input type="number" min="1" value={dianConfig.consecutivo_hasta ?? ''} onChange={(e) => setDianConfig({ ...dianConfig, consecutivo_hasta: e.target.value })} placeholder="5000" />
+                      </div>
+                      <div className="config-form-group" style={{ margin: 0 }}>
+                        <label>Consecutivo actual</label>
+                        <input type="number" min="1" value={dianConfig.consecutivo_actual ?? ''} onChange={(e) => setDianConfig({ ...dianConfig, consecutivo_actual: e.target.value })} placeholder="1" />
+                      </div>
                       <div className="config-form-group" style={{ margin: 0, gridColumn: '1 / -1' }}>
                         <label>Dirección fiscal</label>
                         <input value={dianConfig.direccion_fiscal} onChange={(e) => setDianConfig({ ...dianConfig, direccion_fiscal: e.target.value })} placeholder="Dirección del RUT" />
@@ -2006,14 +2056,12 @@ const MarketConfig = () => {
             <div>
               <div className="config-section-header">
                 <div>
-                  <h3>Payments y Checkout</h3>
-                  <p>{isMainStore
-                    ? 'Pasarelas globales de la plataforma (Mercado Pago, Bold y ENVIA).'
-                    : 'Configura la cuenta bancaria donde recibes la liquidación de tus ventas.'}</p>
+                  <h3>Pagos y liquidación</h3>
+                  <p>Las pasarelas (Mercado Pago, Bold y ENVIA) se gestionan desde el panel de administración. Aquí configuras tu cuenta de pagos para recibir la liquidación de tus ventas.</p>
                 </div>
               </div>
 
-              {isMainStore ? (
+              {false ? (
                 <>
               {/* Mercado Pago Section */}
               <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginBottom: '2rem' }}>
@@ -2233,6 +2281,21 @@ const MarketConfig = () => {
                         style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
                       />
                     </div>
+                    <div className="config-form-group" style={{ margin: 0 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#334155', fontWeight: 600 }}>
+                        <KeyRound size={16} color="#7e22ce" /> Webhook Secret ({enviaMode === 'prueba' ? 'Prueba' : 'Producción'})
+                      </label>
+                      <input
+                        type="password"
+                        placeholder="Secreto de firma del webhook ENVIA"
+                        value={enviaConfig.webhook_secret}
+                        onChange={(e) => setEnviaConfig({ ...enviaConfig, webhook_secret: e.target.value })}
+                        style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
+                      />
+                      <small style={{ color: '#64748b', fontSize: '0.78rem' }}>
+                        Opcional. Valida la firma <b>X-Webhook-Signature</b> de los webhooks de tracking (tipos firmados).
+                      </small>
+                    </div>
                   </div>
 
                   <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
@@ -2384,6 +2447,7 @@ const MarketConfig = () => {
                           {bancos.map((b) => <option key={b.codigo} value={b.codigo}>{b.nombre}</option>)}
                         </select>
                       </div>
+                      {payoutAccount.banco_codigo !== 'BREB' && (
                       <div className="config-form-group" style={{ margin: 0 }}>
                         <label style={{ color: '#334155', fontWeight: 600 }}>Tipo de cuenta</label>
                         <select value={payoutAccount.tipo_cuenta} onChange={(e) => setPayoutAccount({ ...payoutAccount, tipo_cuenta: e.target.value })}>
@@ -2392,19 +2456,29 @@ const MarketConfig = () => {
                           <option value="corriente">Corriente</option>
                         </select>
                       </div>
+                      )}
                       <div className="config-form-group" style={{ margin: 0 }}>
                         <label style={{ color: '#334155', fontWeight: 600 }}>
-                          {payoutAccount.banco_codigo === 'BINANCE_PAY' ? 'Binance Pay ID o correo' : 'Número de cuenta'}
+                          {payoutAccount.banco_codigo === 'BINANCE_PAY' ? 'Binance Pay ID o correo'
+                            : payoutAccount.banco_codigo === 'BREB' ? 'Llave Bre-B'
+                            : 'Número de cuenta'}
                         </label>
                         <input
-                          inputMode={payoutAccount.banco_codigo === 'BINANCE_PAY' ? 'text' : 'numeric'}
+                          inputMode={payoutAccount.banco_codigo === 'BINANCE_PAY' || payoutAccount.banco_codigo === 'BREB' ? 'text' : 'numeric'}
                           value={payoutAccount.numero_cuenta}
                           onChange={(e) => setPayoutAccount({
                             ...payoutAccount,
-                            numero_cuenta: payoutAccount.banco_codigo === 'BINANCE_PAY' ? e.target.value.trim() : e.target.value.replace(/\D/g, ''),
+                            numero_cuenta: (payoutAccount.banco_codigo === 'BINANCE_PAY' || payoutAccount.banco_codigo === 'BREB') ? e.target.value.trim() : e.target.value.replace(/\D/g, ''),
                           })}
-                          placeholder={payoutAccount.banco_codigo === 'BINANCE_PAY' ? 'Ej. 123456789 o correo' : 'Solo dígitos'}
+                          placeholder={payoutAccount.banco_codigo === 'BINANCE_PAY' ? 'Ej. 123456789 o correo'
+                            : payoutAccount.banco_codigo === 'BREB' ? 'Celular, correo, cédula o alias'
+                            : 'Solo dígitos'}
                         />
+                        {payoutAccount.banco_codigo === 'BREB' && (
+                          <small style={{ color: '#64748b', fontSize: '0.78rem' }}>
+                            Llave Bre‑B registrada a tu nombre (celular 10 dígitos, correo, cédula o alias).
+                          </small>
+                        )}
                       </div>
                       <div className="config-form-group" style={{ margin: 0 }}>
                         <label style={{ color: '#334155', fontWeight: 600 }}>Titular</label>
@@ -2473,6 +2547,46 @@ const MarketConfig = () => {
                       </button>
                     </div>
                   </form>
+                </div>
+              )}
+
+              {activeTab === 'integraciones' && (
+                <div>
+                  <div className="config-section-header">
+                    <div>
+                      <h3>Integraciones</h3>
+                      <p>Herramientas de tu tienda (independientes por tienda).</p>
+                    </div>
+                  </div>
+                  <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
+                      <div style={{ background: '#f59e0b', color: 'white', fontWeight: 900, padding: '0.5rem 0.9rem', borderRadius: '0.5rem', fontSize: '1rem' }}>GA4</div>
+                      <div>
+                        <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>Google Analytics 4</h4>
+                        <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Mide el tráfico de tu tienda con tu propia propiedad.</p>
+                      </div>
+                    </div>
+                    <form onSubmit={handleSaveGa}>
+                      <div className="config-form-group" style={{ margin: 0 }}>
+                        <label style={{ color: '#334155', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <Code size={16} color="#7e22ce" /> ID de medición (Measurement ID)
+                        </label>
+                        <input
+                          value={gaId}
+                          onChange={(e) => setGaId(e.target.value)}
+                          placeholder="G-XXXXXXXXXX"
+                        />
+                        <small style={{ color: '#64748b', fontSize: '0.78rem' }}>
+                          Lo encuentras en Google Analytics → Administrar → Flujos de datos. Solo de tu tienda.
+                        </small>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
+                        <button type="submit" className="config-btn-primary" disabled={savingGa}>
+                          {savingGa ? 'Guardando…' : 'Guardar GA4'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
                 </div>
               )}
 

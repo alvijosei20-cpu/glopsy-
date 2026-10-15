@@ -15,6 +15,10 @@ import {
   requestUsdActivation as requestUsdActivationForUser,
   getUsdActivationStatus,
   saveStorefrontAppearanceForUser,
+  getSellerRequestForUser,
+  requestSellerForUser,
+  getStoreOrdersForUser,
+  trackStoreOrder,
 } from '../services/tienda.service.js';
 import { getBaVenNif12Report } from '../services/fiscalReport.service.js';
 import { clearTariffCache } from '../services/tariff.service.js';
@@ -92,7 +96,9 @@ export const createTiendaController = ({
   saveDianConfig = saveDianConfigForUser,
   getCheckoutIntegrations = getCheckoutIntegrationsForUser,
   saveCheckoutIntegration = saveCheckoutIntegrationForUser,
-  deleteCheckoutIntegration = deleteCheckoutIntegrationForUser
+  deleteCheckoutIntegration = deleteCheckoutIntegrationForUser,
+  getSellerRequest = getSellerRequestForUser,
+  requestSeller = requestSellerForUser,
 } = {}) => ({
   getMine: async (req, res) => {
     try {
@@ -101,6 +107,61 @@ export const createTiendaController = ({
     } catch (error) {
       console.error('Error al consultar tienda:', error.message);
       return res.status(500).json({ ok: false, message: 'No fue posible consultar la tienda.' });
+    }
+  },
+
+  // Estado de la solicitud de venta (can_sell / sell_status).
+  getSellerRequest: async (req, res) => {
+    try {
+      const seller = await getSellerRequest(req.auth.userId);
+      return res.json({ ok: true, seller });
+    } catch (error) {
+      console.error('Error al consultar solicitud de vendedor:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible consultar la solicitud.' });
+    }
+  },
+
+  // El usuario solicita ser vendedor (queda pendiente de aprobación del admin).
+  requestSeller: async (req, res) => {
+    try {
+      const note = cleanString(req.body?.note, { maxLength: 500 });
+      const seller = await requestSeller(req.auth.userId, note || null);
+      return res.json({
+        ok: true,
+        message: 'Solicitud enviada. Un administrador la revisará.',
+        seller,
+      });
+    } catch (error) {
+      console.error('Error al solicitar ser vendedor:', error.message);
+      return res.status(400).json({ ok: false, message: error.message || 'No fue posible enviar la solicitud.' });
+    }
+  },
+
+  // Pedidos del vendedor + rastreo por guía.
+  getOrders: async (req, res) => {
+    try {
+      const orders = await getStoreOrdersForUser(req.auth.userId, {
+        limit: req.query.limit,
+        offset: req.query.offset,
+      });
+      return res.json({ ok: true, orders });
+    } catch (error) {
+      console.error('Error al listar pedidos del vendedor:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible listar los pedidos.' });
+    }
+  },
+
+  getOrderTracking: async (req, res) => {
+    try {
+      const ref = cleanString(req.params.ref, { maxLength: 100 });
+      const result = await trackStoreOrder(req.auth.userId, ref);
+      if (!result.ok && result.reason === 'order_not_found') {
+        return res.status(404).json({ ok: false, message: 'Pedido no encontrado.' });
+      }
+      return res.json({ ok: true, ...result });
+    } catch (error) {
+      console.error('Error al rastrear pedido del vendedor:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible rastrear el pedido.' });
     }
   },
 
@@ -506,10 +567,14 @@ export const createTiendaController = ({
     const direccion_fiscal = cleanString(req.body?.direccion_fiscal, { maxLength: 200 });
     const regimen = cleanString(req.body?.regimen, { maxLength: 5 });
     const responsabilidad = cleanString(req.body?.responsabilidad, { maxLength: 10 });
+    const consecutivo_desde = req.body?.consecutivo_desde != null ? Number(req.body.consecutivo_desde) : null;
+    const consecutivo_hasta = req.body?.consecutivo_hasta != null ? Number(req.body.consecutivo_hasta) : null;
+    const consecutivo_actual = req.body?.consecutivo_actual != null ? Number(req.body.consecutivo_actual) : null;
     try {
       const fiscal = await saveDianFiscalForUser(req.auth.userId, {
         numero_resolucion, resolucion_fecha_desde, resolucion_fecha_hasta,
         direccion_fiscal, regimen, responsabilidad,
+        consecutivo_desde, consecutivo_hasta, consecutivo_actual,
       });
       return res.json({ ok: true, fiscal, message: 'Datos fiscales DIAN guardados.' });
     } catch (error) {
@@ -970,5 +1035,9 @@ export const {
   getAnalytics,
   getTariffConfig,
   saveTariffCountry,
-  saveTariffRule
+  saveTariffRule,
+  getSellerRequest,
+  requestSeller,
+  getOrders,
+  getOrderTracking,
 } = tiendaController;

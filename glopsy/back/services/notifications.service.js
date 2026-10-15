@@ -118,6 +118,21 @@ export async function clearAllForClient(clientKey) {
   return ids.length;
 }
 
+// Borra (oculta) solo las notificaciones que el cliente ya marcó como leídas.
+export async function clearReadForClient(clientKey) {
+  const ids = await redisClient.zRange(INDEX_KEY, 0, -1, { REV: true });
+  if (!ids.length) return 0;
+  const pipe = redisClient.multi();
+  for (const id of ids) pipe.sIsMember(seenKey(id), clientKey);
+  const flags = await pipe.exec();
+  const readIds = ids.filter((_, i) => flags[i]);
+  if (!readIds.length) return 0;
+  const pipe2 = redisClient.multi();
+  for (const id of readIds) pipe2.sAdd(clearedKey(id), clientKey);
+  await pipe2.exec();
+  return readIds.length;
+}
+
 export async function getSeenCounts(notifs) {
   if (!notifs.length) return new Map();
   const pipe = redisClient.multi();

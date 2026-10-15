@@ -136,10 +136,10 @@ const updateOrderFromWebhook = async (mastershopOrderId, data) => {
   if (logistics?.tracking) { sets.push(`tracking_code = $${params.length + 1}`); params.push(logistics.tracking); }
   if (logistics?.carrier) { sets.push(`carrier = $${params.length + 1}`); params.push(logistics.carrier); }
   if (logistics?.shippingUrl) { sets.push(`shipping_url = $${params.length + 1}`); params.push(logistics.shippingUrl); }
-  sets.push(`payload = jsonb_set(COALESCE(payload, '{}'::jsonb), '{id_order}', $${params.length + 1}::jsonb)`);
-  params.push(JSON.stringify(String(mastershopOrderId)));
-  sets.push(`payload = jsonb_set(COALESCE(payload, '{}'::jsonb), '{webhook}', $${params.length + 1}::jsonb)`);
-  params.push(JSON.stringify(data));
+  // Una sola asignación a payload: Postgres no permite asignar la misma
+  // columna dos veces en un mismo UPDATE (antes fallaba con 500).
+  sets.push(`payload = COALESCE(payload, '{}'::jsonb) || $${params.length + 1}::jsonb`);
+  params.push(JSON.stringify({ id_order: String(mastershopOrderId), webhook: data }));
 
   const matchIdx = params.length;
   params.push(Number(mastershopOrderId) || 0, String(mastershopOrderId), String(mastershopOrderId), String(mastershopOrderId));
@@ -147,6 +147,19 @@ const updateOrderFromWebhook = async (mastershopOrderId, data) => {
 
   const res = await pool.query(`UPDATE orders SET ${sets.join(', ')} WHERE ${where}`, params);
   return res.rowCount || 0;
+};
+
+// id_order que envía MasterShop es nuestra order_number (o el id interno); los
+// envíos se referencian por orders.id, así que resolvemos el id interno.
+const resolveInternalOrderId = async (mastershopOrderId) => {
+  const { rows } = await pool.query(
+    `SELECT id FROM orders
+     WHERE id = $1 OR order_hash = $2 OR order_number = $2 OR payload->>'id_order' = $2
+     ORDER BY (order_number = $2) DESC NULLS LAST
+     LIMIT 1`,
+    [Number(mastershopOrderId) || 0, String(mastershopOrderId)]
+  );
+  return rows[0]?.id || null;
 };
 
 export const processMastershopWebhookEvent = async (payload) => {
@@ -178,7 +191,9 @@ export const processMastershopWebhookEvent = async (payload) => {
         : Array.isArray(data?.envios) && data.envios.length > 0
           ? data.envios
           : [];
-      const updatedShipments = await updateOrderShipmentsFromWebhook(orderId, {
+      // Los envíos se buscan por orders.id (id interno), no por order_number.
+      const internalOrderId = await resolveInternalOrderId(orderId);
+      const updatedShipments = await updateOrderShipmentsFromWebhook(internalOrderId || orderId, {
         logistics: buildLogisticsShipment(data?.order_logistics, toNumber(data?.id_status, { min: 1, fallback: 0 }), cleanString(data?.carrier_status_info?.carrier_status, { maxLength: 100 })),
         idStatus: toNumber(data?.id_status, { min: 1, fallback: 0 }),
         carrierStatus: cleanString(data?.carrier_status_info?.carrier_status, { maxLength: 100 }),

@@ -9,6 +9,7 @@ import {
   markRead,
   markAllRead,
   clearAllForClient,
+  clearReadForClient,
   getSeenCounts,
   updateNotification,
   deleteNotifications,
@@ -57,6 +58,16 @@ router.post(
     const { key } = clientKeyFor(req);
     await clearAllForClient(key);
     res.json({ ok: true });
+  })
+);
+
+router.post(
+  '/clear-read',
+  optionalAuth,
+  asyncHandler(async (req, res) => {
+    const { key } = clientKeyFor(req);
+    const cleared = await clearReadForClient(key);
+    res.json({ ok: true, cleared });
   })
 );
 

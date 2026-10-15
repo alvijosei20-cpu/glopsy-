@@ -25,3 +25,9 @@ export async function clearAllNotifications() {
     headers: { 'X-Device-Id': getDeviceId() },
   });
 }
+
+export async function clearReadNotifications() {
+  await api.post('/notifications/clear-read', null, {
+    headers: { 'X-Device-Id': getDeviceId() },
+  });
+}

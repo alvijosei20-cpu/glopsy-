@@ -53,6 +53,46 @@ export const formatMoney = (value, { currency = DEFAULT_CURRENCY, locale = DEFAU
   }
 };
 
+// Número compacto: 1.2 k, 3.4 M, 5 B… (para cifras con muchos dígitos).
+const UNITS = [
+  { v: 1e12, s: 'T' },
+  { v: 1e9, s: 'B' },
+  { v: 1e6, s: 'M' },
+  { v: 1e3, s: 'k' },
+];
+
+export const formatCompactNumber = (value, { locale = DEFAULT_LOCALE } = {}) => {
+  const num = Number(value || 0);
+  if (!Number.isFinite(num)) return '0';
+  const abs = Math.abs(num);
+  if (abs < 1000) return formatNumber(num, locale, 0);
+  const u = UNITS.find((x) => abs >= x.v);
+  const scaled = num / u.v;
+  const digits = Math.abs(scaled) < 100 ? 1 : 0;
+  return `${formatNumber(scaled, locale, digits)} ${u.s}`;
+};
+
+// Moneda compacta: "$126,5 k", "1,2 M USDT", etc.
+export const formatCompactMoney = (value, { currency = DEFAULT_CURRENCY, locale = DEFAULT_LOCALE } = {}) => {
+  const num = Number(value || 0);
+  const cur = normalizeCurrency(currency);
+  const compact = formatCompactNumber(num, { locale });
+  if (cur === 'USDT') return `${compact} USDT`;
+  let symbol = '$';
+  try {
+    const parts = new Intl.NumberFormat(locale, { style: 'currency', currency: cur, maximumFractionDigits: 0 }).formatToParts(num);
+    symbol = parts.find((p) => p.type === 'currency')?.value || '$';
+  } catch {}
+  return `${symbol}${compact}`;
+};
+
+// Auto: formato normal si la cifra cabe; compacto si es grande (>= 1.000.000).
+export const formatMoneyAuto = (value, opts = {}) => {
+  const num = Number(value || 0);
+  if (Math.abs(num) >= 1e6) return formatCompactMoney(num, opts);
+  return formatMoney(num, opts);
+};
+
 // Divisa/locale de la tienda actual (vitrina o principal). Fallback Colombia.
 // En tiendas habilitadas en USD, a un visitante del mismo país se le muestra
 // el precio en su moneda local (store.pricing lo define el backend).
@@ -75,6 +115,11 @@ export const useMoney = () => {
       const cur = currencyOverride ? normalizeCurrency(currencyOverride) : currency;
       const appliedRate = cur === currency ? rate : 1;
       return formatMoney(Number(value || 0) * appliedRate, { currency: cur, locale });
+    },
+    formatAuto: (value, currencyOverride) => {
+      const cur = currencyOverride ? normalizeCurrency(currencyOverride) : currency;
+      const appliedRate = cur === currency ? rate : 1;
+      return formatMoneyAuto(Number(value || 0) * appliedRate, { currency: cur, locale });
     },
   };
 };

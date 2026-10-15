@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { redisClient } from './redis.service.js';
 import { encryptSecret, decryptSecret, maskSecret, isEncryptedSecret } from '../utils/crypto.js';
 import { registerStoreCustomDomain, removeStoreCustomDomain } from './cloudflare.service.js';
+import { getOrderShipmentsTracking } from './tracking.service.js';
 
 const CACHE_TTL_SECONDS = 60;
 const cacheKey = (userId) => `tienda:${userId}`;
@@ -565,6 +566,7 @@ export const getDianConfigForUser = async (userId) => {
     `SELECT sw_id, sw_pin, technical_key, prefix, test_set_id,
             numero_resolucion, resolucion_fecha_desde, resolucion_fecha_hasta,
             direccion_fiscal, regimen, responsabilidad,
+            consecutivo_desde, consecutivo_hasta, consecutivo_actual,
             mandato_activo, mandato_tercero_nombre, mandato_tercero_tipo_documento,
             mandato_tercero_documento
      FROM tienda_dian
@@ -576,6 +578,7 @@ export const getDianConfigForUser = async (userId) => {
     sw_id: '', sw_pin: '', technical_key: '', prefix: '', test_set_id: '',
     numero_resolucion: '', resolucion_fecha_desde: null, resolucion_fecha_hasta: null,
     direccion_fiscal: '', regimen: '', responsabilidad: '',
+    consecutivo_desde: 1, consecutivo_hasta: 5000, consecutivo_actual: 1,
     mandato_activo: false, mandato_tercero_nombre: '', mandato_tercero_tipo_documento: '', mandato_tercero_documento: '',
   };
 };
@@ -585,13 +588,18 @@ export const saveDianFiscalForUser = async (userId, data) => {
   const {
     numero_resolucion, resolucion_fecha_desde, resolucion_fecha_hasta,
     direccion_fiscal, regimen, responsabilidad,
+    consecutivo_desde, consecutivo_hasta, consecutivo_actual,
   } = data;
+  const cDesde = Number.isFinite(Number(consecutivo_desde)) ? Math.max(1, Number(consecutivo_desde)) : null;
+  const cHasta = Number.isFinite(Number(consecutivo_hasta)) ? Math.max(1, Number(consecutivo_hasta)) : null;
+  const cActual = Number.isFinite(Number(consecutivo_actual)) ? Math.max(1, Number(consecutivo_actual)) : null;
   const { rows } = await pool.query(
     `INSERT INTO tienda_dian (
        tienda_id, sw_id, sw_pin, technical_key, prefix, test_set_id,
        numero_resolucion, resolucion_fecha_desde, resolucion_fecha_hasta,
-       direccion_fiscal, regimen, responsabilidad, updated_at
-     ) VALUES ($1, '', '', '', 'FE', '', $2, $3, $4, $5, $6, $7, NOW())
+       direccion_fiscal, regimen, responsabilidad,
+       consecutivo_desde, consecutivo_hasta, consecutivo_actual, updated_at
+     ) VALUES ($1, '', '', '', 'FE', '', $2, $3, $4, $5, $6, $7, COALESCE($8,1), COALESCE($9,5000), COALESCE($10,1), NOW())
      ON CONFLICT (tienda_id) DO UPDATE SET
        numero_resolucion = EXCLUDED.numero_resolucion,
        resolucion_fecha_desde = EXCLUDED.resolucion_fecha_desde,
@@ -599,11 +607,16 @@ export const saveDianFiscalForUser = async (userId, data) => {
        direccion_fiscal = EXCLUDED.direccion_fiscal,
        regimen = EXCLUDED.regimen,
        responsabilidad = EXCLUDED.responsabilidad,
+       consecutivo_desde = COALESCE($8, tienda_dian.consecutivo_desde),
+       consecutivo_hasta = COALESCE($9, tienda_dian.consecutivo_hasta),
+       consecutivo_actual = COALESCE($10, tienda_dian.consecutivo_actual),
        updated_at = NOW()
      RETURNING numero_resolucion, resolucion_fecha_desde, resolucion_fecha_hasta,
-               direccion_fiscal, regimen, responsabilidad`,
+               direccion_fiscal, regimen, responsabilidad,
+               consecutivo_desde, consecutivo_hasta, consecutivo_actual`,
     [userId, numero_resolucion || null, resolucion_fecha_desde || null, resolucion_fecha_hasta || null,
-      direccion_fiscal || null, regimen || null, responsabilidad || null]
+      direccion_fiscal || null, regimen || null, responsabilidad || null,
+      cDesde, cHasta, cActual]
   );
   await redisClient.del(cacheKey(userId)).catch(() => {});
   return rows[0];
@@ -686,6 +699,36 @@ export const saveStorefrontAppearanceForUser = async (userId, data) => {
   );
   await redisClient.del(cacheKey(userId)).catch(() => {});
   return rows[0] || null;
+};
+
+// --- Solicitud de venta (alta de vendedor con aprobación del admin) ---
+export const getSellerRequestForUser = async (userId) => {
+  const { rows } = await pool.query(
+    `SELECT u.can_sell, COALESCE(u.sell_status, 'none') AS sell_status,
+            u.sell_requested_at, u.sell_reviewed_at, u.sell_note,
+            (t.usrid IS NOT NULL) AS has_store
+     FROM users u
+     LEFT JOIN tiendas t ON t.usrid = u.id
+     WHERE u.id = $1 LIMIT 1`,
+    [userId]
+  );
+  return rows[0] || null;
+};
+
+export const requestSellerForUser = async (userId, note = null) => {
+  const current = await getSellerRequestForUser(userId);
+  if (!current) throw new Error('Usuario no encontrado.');
+  if (current.can_sell || current.sell_status === 'approved') {
+    return { ...current, already: true };
+  }
+  const { rows } = await pool.query(
+    `UPDATE users
+     SET sell_status = 'pending', sell_requested_at = NOW(), sell_note = COALESCE($2, sell_note)
+     WHERE id = $1
+     RETURNING can_sell, sell_status, sell_requested_at, sell_reviewed_at, sell_note`,
+    [userId, note]
+  );
+  return rows[0];
 };
 
 export const getCheckoutIntegrationsForUser = async (userId) => {
@@ -969,4 +1012,54 @@ export const getTiktokPixelForUser = async (userId) => {
     has_access_token: Boolean(token),
     access_token_masked: token ? maskSecret(token) : '',
   };
+};
+
+// --- Pedidos del vendedor (para su panel) + rastreo por guía ---
+export const getStoreOrdersForUser = async (userId, { limit = 30, offset = 0 } = {}) => {
+  const lim = Math.min(100, Math.max(1, Number(limit) || 30));
+  const off = Math.max(0, Number(offset) || 0);
+  const { rows } = await pool.query(
+    `SELECT o.id, o.order_number, o.order_hash, o.status, o.fulfillment_status, o.amount, o.currency,
+            o.created_at, o.customer_name, o.direccion,
+            COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', s.id, 'shipment_number', s.shipment_number, 'carrier', s.carrier,
+                  'service', s.service, 'tracking_code', s.tracking_code,
+                  'shipping_url', s.shipping_url, 'fulfillment_status', s.fulfillment_status,
+                  'shipping_cost', s.shipping_cost
+                ) ORDER BY s.shipment_number
+              ) FILTER (WHERE s.id IS NOT NULL), '[]'
+            ) AS shipments
+     FROM orders o
+     LEFT JOIN order_shipments s ON s.order_id = o.id
+     WHERE o.tienda_id = $1
+     GROUP BY o.id
+     ORDER BY o.created_at DESC
+     LIMIT $2 OFFSET $3`,
+    [userId, lim, off]
+  );
+  return rows;
+};
+
+export const trackStoreOrder = async (userId, reference) => {
+  const ref = String(reference || '').trim();
+  if (!ref) return { ok: false, reason: 'sin_referencia' };
+  const { rows } = await pool.query(
+    `SELECT * FROM orders
+     WHERE tienda_id = $1 AND (order_hash = $2 OR order_number = $2 OR id::text = $2)
+     LIMIT 1`,
+    [userId, ref]
+  );
+  const order = rows[0];
+  if (!order) return { ok: false, reason: 'order_not_found' };
+
+  const { rows: shipments } = await pool.query(
+    `SELECT * FROM order_shipments WHERE order_id = $1 ORDER BY shipment_number`,
+    [order.id]
+  );
+  if (shipments.length === 0) return { ok: true, shipments: [] };
+
+  const res = await getOrderShipmentsTracking({ tiendaId: userId, order, shipments });
+  return { ok: true, orderRef: order.order_number || order.order_hash, ...res };
 };

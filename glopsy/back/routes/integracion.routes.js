@@ -5,8 +5,6 @@ import {
   queryProduct,
   getTiktokPixel,
   sendTiktokTestEvent,
-  getTiktokAuth,
-  saveTiktokAuth,
 } from '../controllers/integracion.controller.js';
 import { requireAuth, requireSeller } from '../middlewares/auth.js';
 import { tiendaLimiter } from '../middlewares/limiters.js';
@@ -18,10 +16,6 @@ router.use(requireAuth, requireSeller, tiendaLimiter);
 router.get('/', getIntegraciones);
 router.post('/', saveIntegracion);
 router.get('/query', queryProduct);
-
-// OAuth global de TikTok (Login Kit). Solo la tienda principal.
-router.get('/tiktok', getTiktokAuth);
-router.post('/tiktok', saveTiktokAuth);
 
 // Integración TikTok Pixel de la tienda del vendedor (estado enmascarado).
 router.get('/tiktok-pixel', getTiktokPixel);
