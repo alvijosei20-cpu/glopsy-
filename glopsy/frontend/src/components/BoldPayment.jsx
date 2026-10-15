@@ -1,38 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { ShieldCheck, ArrowLeft, CreditCard } from 'lucide-react';
 import api from '../services/api';
-import { BOLD_METHOD_FEES, boldGatewayFeeForMethod } from '../utils/pricing';
 
 const BOLD_REF_KEY = 'glopsy_bold_ref';
-const BOLD_SCRIPT_ID = 'bold-checkout-sdk';
-
-const loadBoldScript = (sdkUrl) => new Promise((resolve, reject) => {
-  if (window.Bold?.checkout) return resolve();
-  let script = document.getElementById(BOLD_SCRIPT_ID);
-  const onLoad = () => resolve();
-  const onError = () => reject(new Error('No se pudo cargar Bold.'));
-  if (!script) {
-    script = document.createElement('script');
-    script.id = BOLD_SCRIPT_ID;
-    script.src = sdkUrl || 'https://checkout.bold.co/checkout.js';
-    script.async = true;
-    script.onload = onLoad;
-    script.onerror = onError;
-    document.body.appendChild(script);
-    return;
-  }
-  script.addEventListener('load', onLoad);
-  script.addEventListener('error', onError);
-});
+const BOLD_LIB_SRC = 'https://checkout.bold.co/library/boldPaymentButton.js';
 
 const DOC_TYPES = {
   CEDULA: 'CC',
   NIT: 'NIT',
-  PASAPORTE: 'PP',
+  PASAPORTE: 'PA',
   CEDULA_EXTRANJERIA: 'CE',
 };
 
-// El perfil guarda el tipo de documento como CC/CE/NIT/PAS; Bold usa sus propias claves.
 const DOC_TYPE_FROM_PROFILE = {
   CC: 'CEDULA',
   CE: 'CEDULA_EXTRANJERIA',
@@ -45,6 +24,28 @@ const DOC_TYPE_FROM_PROFILE = {
 };
 
 const normalizeDocType = (value) => DOC_TYPE_FROM_PROFILE[String(value || '').toUpperCase()] || 'CEDULA';
+
+// Carga la librería actual de Bold (boldPaymentButton.js) que expone window.BoldCheckout.
+const loadBoldLib = () => new Promise((resolve, reject) => {
+  if (window.BoldCheckout) return resolve();
+  const existing = document.querySelector(`script[src*="boldPaymentButton.js"]`);
+  const onOk = () => (window.BoldCheckout ? resolve() : reject(new Error('No se pudo cargar Bold.')));
+  if (existing) {
+    window.addEventListener('boldCheckoutLoaded', onOk, { once: true });
+    window.addEventListener('boldCheckoutLoadFailed', () => reject(new Error('No se pudo cargar Bold.')), { once: true });
+    let tries = 0;
+    const t = setInterval(() => {
+      if (window.BoldCheckout) { clearInterval(t); resolve(); }
+      else if (++tries > 50) { clearInterval(t); reject(new Error('No se pudo cargar Bold.')); }
+    }, 100);
+    return;
+  }
+  const js = document.createElement('script');
+  js.src = BOLD_LIB_SRC;
+  js.onload = onOk;
+  js.onerror = () => reject(new Error('No se pudo cargar Bold.'));
+  document.head.appendChild(js);
+});
 
 export default function BoldPayment({
   total,
@@ -70,19 +71,31 @@ export default function BoldPayment({
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(false);
   const [opened, setOpened] = useState(false);
-  const [method, setMethod] = useState(String(currency).toUpperCase() === 'USD' ? 'internacional' : 'otras_tarjetas');
+  const [reference, setReference] = useState(null);
   const [error, setError] = useState('');
 
-  const fee = boldGatewayFeeForMethod(total, method, { currency });
-  const newTotal = (Number(total) || 0) + fee.total;
+  // Chequeo puntual (al recargar): si no está aprobado, no bloquea el formulario.
+  const checkOnce = async (ref) => {
+    setChecking(true);
+    try {
+      const res = await api.get(`/payments/bold/status/${encodeURIComponent(ref)}`);
+      if (res.data?.status === 'APPROVED') {
+        sessionStorage.removeItem(BOLD_REF_KEY);
+        setChecking(false);
+        onSuccess?.();
+        return;
+      }
+    } catch { /* ignorar */ }
+    sessionStorage.removeItem(BOLD_REF_KEY);
+    setChecking(false);
+  };
 
   useEffect(() => {
     const ref = sessionStorage.getItem(BOLD_REF_KEY);
-    if (ref) pollStatus(ref);
+    if (ref) checkOnce(ref);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Si el usuario se carga después de montar, completa los campos vacíos.
   useEffect(() => {
     if (!user) return;
     setBilling(prev => ({
@@ -95,10 +108,10 @@ export default function BoldPayment({
     }));
   }, [user]);
 
-  const pollStatus = async (reference, attempts = 0) => {
+  const pollStatus = async (ref, attempts = 0) => {
     setChecking(true);
     try {
-      const res = await api.get(`/payments/bold/status/${encodeURIComponent(reference)}`);
+      const res = await api.get(`/payments/bold/status/${encodeURIComponent(ref)}`);
       const status = res.data?.status;
       if (status === 'APPROVED') {
         sessionStorage.removeItem(BOLD_REF_KEY);
@@ -106,8 +119,8 @@ export default function BoldPayment({
         onSuccess?.();
         return;
       }
-      if ((status === 'PENDING' || status === 'UNKNOWN') && attempts < 12) {
-        setTimeout(() => pollStatus(reference, attempts + 1), 4000);
+      if ((status === 'PENDING' || status === 'UNKNOWN') && attempts < 15) {
+        setTimeout(() => pollStatus(ref, attempts + 1), 4000);
         return;
       }
       setChecking(false);
@@ -151,13 +164,13 @@ export default function BoldPayment({
         guestHash,
         currency,
         response_url: `${window.location.origin}/checkout`,
-        payment_method: method,
-        gateway_fee: { base: fee.base, iva: fee.iva, total: fee.total },
         billing: {
           name: billing.name,
           email: billing.email,
           phone: billing.phone,
           address: billing.address,
+          city: customerInfo?.city,
+          state: customerInfo?.state,
           documentType: DOC_TYPES[billing.document_type] || 'CC',
           documentNumber: billing.document_number,
         },
@@ -171,19 +184,29 @@ export default function BoldPayment({
         return;
       }
 
-      const reference = start.data.orderNumber;
-      const checkout = start.data.checkout;
-      sessionStorage.setItem(BOLD_REF_KEY, reference);
+      const ref = start.data.orderNumber;
+      setReference(ref);
+      sessionStorage.setItem(BOLD_REF_KEY, ref);
 
-      await loadBoldScript(start.data.sdkUrl);
-      const handler = window.Bold.checkout.configure({ key: checkout.key, test: checkout.test });
-      const data = { ...checkout };
-      delete data.key;
-      delete data.test;
-      handler.open(data);
+      await loadBoldLib();
+      const cfg = start.data.checkout || {};
+      const checkout = new window.BoldCheckout({
+        orderId: String(cfg.orderId),
+        currency: cfg.currency || 'COP',
+        amount: String(cfg.amount),
+        apiKey: cfg.apiKey,
+        integritySignature: cfg.integritySignature,
+        description: cfg.description,
+        renderMode: cfg.renderMode || 'embedded',
+        ...(cfg.redirectionUrl ? { redirectionUrl: cfg.redirectionUrl } : {}),
+        ...(cfg.originUrl ? { originUrl: cfg.originUrl } : {}),
+        ...(cfg.customerData ? { customerData: cfg.customerData } : {}),
+        ...(cfg.billingAddress ? { billingAddress: cfg.billingAddress } : {}),
+      });
+      checkout.open();
 
       setOpened(true);
-      pollStatus(reference);
+      pollStatus(ref);
     } catch (err) {
       setError(err.response?.data?.message || err.message || 'Error al procesar el pago.');
     } finally {
@@ -191,81 +214,52 @@ export default function BoldPayment({
     }
   };
 
+  const input = 'w-full p-3 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none focus:border-fuchsia-500';
+
   if (checking && !opened) {
     return (
       <div className="py-16 text-center space-y-3">
-        <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
+        <div className="w-10 h-10 border-4 border-fuchsia-600 border-t-transparent rounded-full animate-spin mx-auto" />
         <p className="text-sm text-slate-500">Verificando el estado de tu pago…</p>
       </div>
     );
   }
-
-  const input = 'w-full p-3 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none focus:border-blue-500';
 
   return (
     <form onSubmit={handlePay} className="space-y-5">
       <div className="flex items-center justify-between pb-4 border-b border-slate-200">
         <div>
           <h2 className="text-xl font-bold text-slate-900">Pago con Glopsy</h2>
-          <p className="text-xs text-slate-500">
-            Subtotal: {formatPrice ? formatPrice(total) : total}. Elige el método de pago, la tarifa se agrega al total.
-          </p>
+          <p className="text-xs text-slate-500">Total: {formatPrice ? formatPrice(total) : total}. Pago seguro con Bold.</p>
         </div>
         <button type="button" onClick={onBack} className="text-xs font-bold text-fuchsia-600 hover:underline cursor-pointer flex items-center gap-1">
           <ArrowLeft size={14} /> Volver
         </button>
       </div>
 
-      {!opened && (
-        <div className="space-y-2 bg-slate-50 border border-slate-200 rounded-xl p-4">
-          <label className="block text-xs font-bold text-slate-700">Método de pago</label>
-          <div className="grid grid-cols-1 gap-2">
-            {Object.entries(BOLD_METHOD_FEES).map(([key, m]) => (
-              <label key={key} className={`flex items-center justify-between gap-2 p-2.5 rounded-lg border cursor-pointer text-sm ${method === key ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white'}`}>
-                <span className="flex items-center gap-2 font-semibold text-slate-800">
-                  <input type="radio" name="bold-method" checked={method === key} onChange={() => setMethod(key)} />
-                  {m.label}
-                </span>
-              </label>
-            ))}
-          </div>
-          <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-sm">
-            <span className="font-bold text-slate-700">Tarifa de pago</span>
-            <strong className="text-slate-900">{formatPrice ? formatPrice(fee.total) : fee.total}</strong>
-          </div>
-          <div className="flex items-center justify-between text-sm font-extrabold text-slate-900">
-            <span>Total a pagar</span>
-            <span className="text-base">{formatPrice ? formatPrice(newTotal) : newTotal}</span>
-          </div>
-        </div>
-      )}
-
       {opened ? (
-        <div className="space-y-4 text-sm text-slate-600 bg-blue-50 border border-blue-100 rounded-xl p-4">
-          <p className="flex items-center gap-2 font-bold text-blue-800">
-            <CreditCard size={16} /> Completa el pago en la ventana de Glopsy.
+        <div className="space-y-4 text-sm text-slate-600 bg-fuchsia-50 border border-fuchsia-100 rounded-xl p-4">
+          <p className="flex items-center gap-2 font-bold text-fuchsia-800">
+            <CreditCard size={16} /> Completa el pago en la ventana de Bold.
           </p>
           <p>Si cerraste la ventana, puedes verificar el estado de tu pago.</p>
           <div className="flex gap-3">
             <button
               type="button"
-              onClick={() => {
-                const ref = sessionStorage.getItem(BOLD_REF_KEY);
-                if (ref) pollStatus(ref);
-              }}
-              className="bg-white border border-blue-200 text-blue-700 font-bold px-4 py-2 rounded-xl text-sm cursor-pointer"
+              onClick={() => reference && pollStatus(reference)}
+              className="bg-white border border-fuchsia-200 text-fuchsia-700 font-bold px-4 py-2 rounded-xl text-sm cursor-pointer"
             >
               Verificar estado
             </button>
             <button
               type="button"
-              onClick={() => { setOpened(false); setError(''); }}
+              onClick={() => { setOpened(false); setError(''); sessionStorage.removeItem(BOLD_REF_KEY); }}
               className="bg-white border border-slate-200 text-slate-600 font-bold px-4 py-2 rounded-xl text-sm cursor-pointer"
             >
               Reintentar
             </button>
           </div>
-          {checking && <p className="text-xs text-blue-700">Verificando…</p>}
+          {checking && <p className="text-xs text-fuchsia-700">Verificando…</p>}
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3">
@@ -305,9 +299,9 @@ export default function BoldPayment({
 
       {!opened && (
         <button type="submit" disabled={loading}
-          className="w-full text-white font-bold py-4 rounded-2xl shadow-lg text-base flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700">
+          className="w-full text-white font-bold py-4 rounded-2xl shadow-lg text-base flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 shadow-fuchsia-600/30">
           <ShieldCheck size={20} />
-          {loading ? 'Iniciando pago…' : `Pagar ${formatPrice ? formatPrice(newTotal) : newTotal}`}
+          {loading ? 'Abriendo pago…' : `Pagar ${formatPrice ? formatPrice(total) : total}`}
         </button>
       )}
     </form>

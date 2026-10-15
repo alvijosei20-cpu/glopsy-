@@ -123,15 +123,26 @@ export const startBoldCheckout = async (userId, {
     await pool.query(`UPDATE orders SET es_exportacion = TRUE WHERE id = $1`, [order.orderId]);
   }
 
-  const checkout = bold.buildBoldOnpageData({
-    invoice: order.orderNumber,
+  const checkout = bold.buildBoldButtonData({
+    orderId: order.orderNumber,
     amount: chargeAmount,
     currency,
     description: `Pedido ${order.orderNumber}`,
-    confirmationUrl: baseUrl ? `${baseUrl}/api/payments/bold/webhook` : undefined,
     responseUrl: responseUrl || undefined,
-    billing,
-    extras: { extra1: order.orderHash },
+    originUrl: responseUrl || undefined,
+    customerData: {
+      email: billing.email || undefined,
+      fullName: billing.name || undefined,
+      phone: billing.phone || undefined,
+      dialCode: '+57',
+      documentNumber: billing.documentNumber || undefined,
+      documentType: billing.documentType || undefined,
+    },
+    billingAddress: billing.address ? {
+      address: billing.address,
+      city: billing.city || 'Bogotá',
+      country: 'CO',
+    } : null,
   });
 
   return {
@@ -143,11 +154,7 @@ export const startBoldCheckout = async (userId, {
     gatewayFee: fee,
     currency,
     sdkUrl: bold.getBoldSdkUrl(),
-    checkout: {
-      ...checkout,
-      key: bold.getBoldPublicKey(),
-      test: checkout.test,
-    },
+    checkout,
   };
 };
 
@@ -218,10 +225,40 @@ export const processBoldConfirmation = async (payload = {}) => {
   return { ok: true, ignored: true, orderId: order.id, state: payload.x_transaction_state || payload.transaction_state };
 };
 
-// Estado de la orden para el polling del frontend (el webhook es la fuente de verdad).
+// Estado de la orden para el polling del frontend. Además del webhook, hace
+// consulta ACTIVA a Bold (Botón de pagos) por si el webhook no está registrado.
 export const getBoldOrderStatus = async (reference) => {
+  await ensureCreds();
   const order = await findOrder(reference);
   if (!order) return { ok: false, reason: 'orden_no_encontrada' };
+
+  if (order.status === 'Completado') {
+    return { ok: true, orderId: order.id, status: 'APPROVED', orderStatus: 'Completado' };
+  }
+
+  // Consulta activa a Bold por el order-id enviado (referencia de la venta).
+  if (bold.isBoldCheckoutConfigured()) {
+    const voucher = await bold.getPaymentVoucher(order.order_number).catch(() => ({ ok: false }));
+    if (voucher.ok) {
+      const st = String(voucher.data?.payment_status || '').toUpperCase();
+      if (st === 'APPROVED') {
+        await markOrderPaid(order.id, {
+          refBold: voucher.data?.transaction_id || null,
+          payloadExtra: { bold_voucher: voucher.data },
+        });
+        return { ok: true, orderId: order.id, status: 'APPROVED', orderStatus: 'Completado' };
+      }
+      if (st === 'REJECTED' || st === 'FAILED') {
+        await updateOrderStatus(order.id, 'rejected', { bold_status: st, bold_voucher: voucher.data });
+        return { ok: true, orderId: order.id, status: 'REJECTED', orderStatus: 'rejected' };
+      }
+      if (st === 'VOIDED') {
+        await updateOrderStatus(order.id, 'refunded', { bold_status: st, bold_voucher: voucher.data });
+        return { ok: true, orderId: order.id, status: 'REFUNDED', orderStatus: 'refunded' };
+      }
+    }
+  }
+
   const map = {
     Completado: 'APPROVED',
     rejected: 'REJECTED',

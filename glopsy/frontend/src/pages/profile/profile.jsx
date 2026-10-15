@@ -35,12 +35,15 @@ export default function Profile() {
     street: '',
     city: '',
     state: '',
+    departamento_id: '',
     zip_code: '',
     country: 'Colombia',
     phone: '',
     notes: '',
   });
   const [showAddressForm, setShowAddressForm] = useState(false);
+  const [departamentos, setDepartamentos] = useState([]);
+  const [ciudades, setCiudades] = useState([]);
 
   const toastTimer = useRef(null);
   const showToast = useCallback((text, type = 'success') => {
@@ -52,6 +55,20 @@ export default function Profile() {
   useEffect(() => {
     fetchProfileData();
     return () => clearTimeout(toastTimer.current);
+  }, []);
+
+  // Geografía de la plataforma para los selects de Departamento y Ciudad.
+  useEffect(() => {
+    let alive = true;
+    Promise.all([
+      api.get('/geo/departamentos').catch(() => ({ data: { departamentos: [] } })),
+      api.get('/geo/ciudades').catch(() => ({ data: { ciudades: [] } })),
+    ]).then(([deps, cius]) => {
+      if (!alive) return;
+      setDepartamentos(deps.data?.departamentos || []);
+      setCiudades(cius.data?.ciudades || []);
+    });
+    return () => { alive = false; };
   }, []);
 
   const fetchProfileData = async () => {
@@ -132,6 +149,7 @@ export default function Profile() {
           street: '',
           city: '',
           state: '',
+          departamento_id: '',
           zip_code: '',
           country: 'Colombia',
           phone: '',
@@ -468,21 +486,34 @@ export default function Profile() {
                   className="px-4 py-2 rounded-xl border border-slate-200 text-sm"
                   required
                 />
-                <input
-                  type="text"
-                  placeholder="Ciudad"
+                <select
+                  value={newAddress.departamento_id}
+                  onChange={e => {
+                    const dep = departamentos.find(d => String(d.id) === e.target.value);
+                    setNewAddress({ ...newAddress, departamento_id: e.target.value, state: dep?.nombre || '', city: '' });
+                  }}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-sm bg-white"
+                  required
+                >
+                  <option value="">Departamento / Estado</option>
+                  {departamentos.map(d => (
+                    <option key={d.id} value={d.id}>{d.nombre}</option>
+                  ))}
+                </select>
+                <select
                   value={newAddress.city}
                   onChange={e => setNewAddress({ ...newAddress, city: e.target.value })}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-sm"
+                  disabled={!newAddress.departamento_id}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-sm bg-white disabled:opacity-50"
                   required
-                />
-                <input
-                  type="text"
-                  placeholder="Departamento / Estado"
-                  value={newAddress.state}
-                  onChange={e => setNewAddress({ ...newAddress, state: e.target.value })}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-sm"
-                />
+                >
+                  <option value="">Ciudad</option>
+                  {ciudades
+                    .filter(c => !newAddress.departamento_id || String(c.departamento_id) === String(newAddress.departamento_id))
+                    .map(c => (
+                      <option key={c.id} value={c.nombre}>{c.nombre}</option>
+                    ))}
+                </select>
                 <input
                   type="text"
                   placeholder="Código postal"

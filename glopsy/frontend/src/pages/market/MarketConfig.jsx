@@ -1276,8 +1276,8 @@ const MarketConfig = () => {
               </div>
 
               {/* Toggle Switch Envío Gratis en Toda la Tienda */}
-              <div style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: '1rem', border: '1px solid #e2e8f0', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div>
+              <div style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: '1rem', border: '1px solid #e2e8f0', marginBottom: '1.5rem', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+                <div style={{ flex: '1 1 240px', minWidth: 0 }}>
                   <h4 style={{ margin: '0 0 0.25rem 0', color: '#1e293b', fontSize: '1rem' }}>Envío Gratis en Toda la Tienda</h4>
                   <p style={{ margin: 0, fontSize: '0.875rem', color: '#64748b' }}>Activa para aplicar envío gratis global. Al estar activo, los demás perfiles quedan congelados.</p>
                 </div>
@@ -1301,7 +1301,7 @@ const MarketConfig = () => {
                   </span>
                 </label>
                 {!envioGratisTienda && (
-                  <div className="config-form-group" style={{ margin: 0, width: '200px' }}>
+                  <div className="config-form-group" style={{ margin: 0, flex: '0 1 200px', minWidth: '160px' }}>
                     <label>Precio por unidad (se suma al costo del producto)</label>
                     <input
                       type="number"
@@ -2266,7 +2266,7 @@ const MarketConfig = () => {
 
               {/* Bold Section */}
               <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginBottom: '2rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
                   <div style={{ background: '#0369a1', color: 'white', fontWeight: 900, padding: '0.5rem 0.9rem', borderRadius: '0.5rem', fontSize: '1.1rem', letterSpacing: '1px' }}>
                     B
                   </div>
@@ -2338,9 +2338,12 @@ const MarketConfig = () => {
                     </div>
                     <div className="config-form-group" style={{ margin: 0 }}>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#334155', fontWeight: 600 }}>
-                        <Hash size={16} color="#0369a1" /> ID de comercio/customer (opcional)
+                        <Hash size={16} color="#0369a1" /> Secret del webhook ({boldMode === 'prueba' ? 'Prueba' : 'Producción'})
                       </label>
-                      <input type="password" value={boldConfig.webhook_secret} onChange={(e) => setBoldConfigs({ ...boldConfigs, [boldMode]: { ...boldConfig, webhook_secret: e.target.value } })} placeholder="ID de cliente del comercio Bold" />
+                      <input type="password" value={boldConfig.webhook_secret} onChange={(e) => setBoldConfigs({ ...boldConfigs, [boldMode]: { ...boldConfig, webhook_secret: e.target.value } })} placeholder="Llave secreta para validar la firma x-bold-signature" />
+                      <small style={{ color: '#64748b', fontSize: '0.8rem' }}>
+                        Valida el webhook de Bold en <code>/api/payments/bold/qr/webhook</code>. En pruebas la firma usa llave vacía.
+                      </small>
                     </div>
                   </div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem', color: '#334155', fontWeight: 600 }}>
@@ -2355,103 +2358,6 @@ const MarketConfig = () => {
                     <button type="submit" className="config-btn-primary">Guardar Bold</button>
                   </div>
                 </form>
-              </div>
-
-              {/* Aranceles Section */}
-              <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginBottom: '2rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
-                  <div style={{ background: '#b45309', color: 'white', fontWeight: 900, padding: '0.5rem 0.9rem', borderRadius: '0.5rem', fontSize: '1.1rem', letterSpacing: '1px' }}>
-                    A
-                  </div>
-                  <div>
-                    <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>Aranceles de importación</h4>
-                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>
-                      Tasas estimadas por país y categoría. Se muestran al cliente en el checkout internacional (paga al recibir).
-                    </p>
-                  </div>
-                </div>
-
-                {tariffCountries.length === 0 ? (
-                  <p style={{ color: '#64748b', fontSize: '0.9rem' }}>No hay países configurados.</p>
-                ) : (
-                  <>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-                      {tariffCountries.map((c) => (
-                        <div key={c.pais_iso} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '0.75rem', padding: '1rem' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                            <strong style={{ color: '#0f172a' }}>{c.nombre} ({c.pais_iso})</strong>
-                            <button
-                              type="button"
-                              className="config-btn-primary"
-                              style={{ fontSize: '0.8rem', padding: '0.3rem 0.7rem' }}
-                              disabled={tariffSaving}
-                              onClick={() => handleSaveTariffCountry(c)}
-                            >
-                              Guardar
-                            </button>
-                          </div>
-                          <div className="config-form-group" style={{ margin: 0, marginBottom: '0.5rem' }}>
-                            <label style={{ fontSize: '0.8rem', color: '#334155', fontWeight: 600 }}>IVA (%)</label>
-                            <input
-                              type="number" min="0" max="100" step="0.1"
-                              value={c.iva_pct}
-                              onChange={(e) => updateTariffCountryField(c.pais_iso, 'iva_pct', e.target.value)}
-                            />
-                          </div>
-                          <div className="config-form-group" style={{ margin: 0 }}>
-                            <label style={{ fontSize: '0.8rem', color: '#334155', fontWeight: 600 }}>De minimis (USD, opcional)</label>
-                            <input
-                              type="number" min="0" step="1"
-                              placeholder="Sin de minimis"
-                              value={c.de_minimis_usd ?? ''}
-                              onChange={(e) => updateTariffCountryField(c.pais_iso, 'de_minimis_usd', e.target.value)}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div style={{ overflowX: 'auto' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                        <thead>
-                          <tr style={{ background: '#f1f5f9', textAlign: 'left' }}>
-                            <th style={{ padding: '0.5rem' }}>País</th>
-                            <th style={{ padding: '0.5rem' }}>Categoría</th>
-                            <th style={{ padding: '0.5rem' }}>Arancel (%)</th>
-                            <th style={{ padding: '0.5rem' }}></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {tariffRules.map((r) => (
-                            <tr key={r.id} style={{ borderTop: '1px solid #e2e8f0' }}>
-                              <td style={{ padding: '0.5rem' }}>{r.pais_iso}</td>
-                              <td style={{ padding: '0.5rem' }}>{r.scope === 'default' ? <em>General (respaldo)</em> : (r.categoria_nombre || `Categoría ${r.scope_id}`)}</td>
-                              <td style={{ padding: '0.5rem' }}>
-                                <input
-                                  type="number" min="0" max="100" step="0.1"
-                                  value={r.arancel_pct}
-                                  onChange={(e) => updateTariffRuleField(r.id, e.target.value)}
-                                  style={{ width: '90px', padding: '0.3rem', borderRadius: '0.4rem', border: '1px solid #cbd5e1' }}
-                                />
-                              </td>
-                              <td style={{ padding: '0.5rem' }}>
-                                <button
-                                  type="button"
-                                  className="config-btn-primary"
-                                  style={{ fontSize: '0.8rem', padding: '0.3rem 0.7rem' }}
-                                  disabled={tariffSaving}
-                                  onClick={() => handleSaveTariffRule(r)}
-                                >
-                                  Guardar
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
-                )}
               </div>
                 </>
               ) : (

@@ -12,12 +12,14 @@ import {
   getPayoutAccount,
   savePayoutAccount,
   getLedger,
+  getSalesControl,
   getPaymentMethods,
   requestUsdActivation,
   getUsdActivation,
   saveStorefrontAppearance,
   getFiscalReport,
   getLibroVentasPdf,
+  getLibroContableCsv,
   getStorePayouts,
   getPayoutBalances,
   payPayout,
@@ -74,6 +76,8 @@ router.post('/dian/plantilla/ventas', getDianPlantillaFromStore);
 router.put('/dian/fiscal', saveDianFiscal);
 // Saldo contable del vendedor (disponible / diferido) y movimientos
 router.get('/ledger', getLedger);
+// Control de lo vendido: desglose por venta (costo base, venta, comisión, pasarela, IVA)
+router.get('/ventas-control', getSalesControl);
 // Cuenta bancaria donde el proveedor recibe sus pagos
 router.get('/payout-account', getPayoutAccount);
 router.put('/payout-account', savePayoutAccount);
@@ -86,6 +90,7 @@ router.put('/storefront', saveStorefrontAppearance);
 router.get('/reportes/ba-ven-nif-12', getFiscalReport);
 // Libro de Ventas (SENIAT) en PDF
 router.get('/reportes/libro-ventas.pdf', getLibroVentasPdf);
+router.get('/reportes/libro-contable.csv', getLibroContableCsv);
 router.get('/checkout-integrations', getCheckoutIntegrations);
 router.post('/checkout-integrations', saveCheckoutIntegration);
 router.delete('/checkout-integrations/:provider', deleteCheckoutIntegration);

@@ -213,3 +213,5 @@ html.dark .integration-button--edit {
   background: #1e1b2e !important;
   color: #f472b6 !important;
 }
+
+.action-button--appearance { color:#fff; background:#c026d3; border-color:#a21caf; }

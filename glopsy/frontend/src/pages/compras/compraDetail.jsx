@@ -87,8 +87,8 @@ export default function CompraDetail() {
         headers: guestHash ? { 'x-guest-hash': guestHash } : {}
       });
       if (res.data.ok) {
-        setOrder(prev => ({ ...prev, status: 'cancelled' }));
-        setToastMessage('Pedido cancelado exitosamente');
+        setOrder(prev => ({ ...prev, status: res.data.order?.status || 'cancelled' }));
+        setToastMessage(res.data.order?.status === 'partially_cancelled' ? 'Envíos cancelados parcialmente' : 'Pedido cancelado exitosamente');
         setTimeout(() => setToastMessage(''), 3000);
         addNotification(`Tu pedido ha sido cancelado exitosamente.`);
       }

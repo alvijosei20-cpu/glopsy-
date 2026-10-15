@@ -33,7 +33,7 @@ const balanceUrl = () => runtimeCreds?.balanceUrl || process.env.BOLD_BALANCE_UR
 const publicKey = () => runtimeCreds?.publicKey || process.env.BOLD_PUBLIC_KEY || '';
 const privateKey = () => runtimeCreds?.privateKey || process.env.BOLD_PRIVATE_KEY || '';
 const customerId = () => runtimeCreds?.customerId || process.env.BOLD_CUSTOMER_ID || '';
-const sdkUrl = () => runtimeCreds?.sdkUrl || process.env.BOLD_SDK_URL || 'https://checkout.bold.co/checkout.js';
+const sdkUrl = () => runtimeCreds?.sdkUrl || process.env.BOLD_SDK_URL || 'https://checkout.bold.co/library/boldPaymentButton.js';
 
 export const isBoldCheckoutConfigured = () => Boolean(publicKey() && privateKey());
 export const getBoldPublicKey = () => publicKey();
@@ -181,6 +181,60 @@ export const buildBoldOnpageData = ({
   ...(billing.phone ? { mobilephone_billing: billing.phone } : {}),
   ...(Object.keys(extras).length > 0 ? { extras } : {}),
 });
+
+// Datos para el Botón de pagos Bold (library/boldPaymentButton.js).
+// Atributos data-* que consume la librería; incluye el hash de integridad
+// sha256(orderId + amount + currency + llaveSecreta) y modo embebido.
+export const buildBoldButtonData = ({
+  apiKey = publicKey(),
+  test = isBoldTest(),
+  orderId,
+  amount,
+  currency = 'COP',
+  description,
+  responseUrl,
+  originUrl,
+  customerData = null,
+  billingAddress = null,
+  renderMode = 'embedded',
+}) => {
+  const amountInt = Math.round(Number(amount) || 0);
+  const cur = String(currency).toUpperCase();
+  const integritySignature = crypto
+    .createHash('sha256')
+    .update(`${orderId}${amountInt}${cur}${privateKey()}`)
+    .digest('hex');
+  return {
+    apiKey,
+    test: Boolean(test),
+    orderId: String(orderId),
+    amount: amountInt,
+    currency: cur,
+    integritySignature,
+    description: description || `Pedido ${orderId}`,
+    renderMode,
+    ...(responseUrl ? { redirectionUrl: responseUrl } : {}),
+    ...(originUrl ? { originUrl } : {}),
+    ...(customerData ? { customerData: JSON.stringify(customerData) } : {}),
+    ...(billingAddress ? { billingAddress: JSON.stringify(billingAddress) } : {}),
+  };
+};
+
+// Consulta activa del estado de una venta del Botón de pagos.
+// GET https://payments.api.bold.co/v2/payment-voucher/<order-id> con x-api-key.
+export const getPaymentVoucher = async (reference) => {
+  const key = publicKey();
+  if (!key || !reference) return { ok: false, reason: 'no_configurado' };
+  try {
+    const { data } = await axios.get(
+      `https://payments.api.bold.co/v2/payment-voucher/${encodeURIComponent(reference)}`,
+      { headers: { Authorization: `x-api-key ${key}` }, timeout: 15000 }
+    );
+    return { ok: true, data };
+  } catch (err) {
+    return { ok: false, error: err.response?.data || err.message };
+  }
+};
 
 // Estados de Bold normalizados.
 export const normalizeBoldState = (state, response) => {

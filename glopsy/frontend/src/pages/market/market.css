@@ -119,3 +119,88 @@ html.dark .market__card .integration-card {
 
 html.dark .market__subtitle,
 html.dark .market__hint { color: #94a3b8; }
+
+/* Acordeón de integraciones (todas plegadas por defecto) */
+.accordion {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.accordion__item {
+  border: 1px solid #f1e9fb;
+  border-radius: 0.85rem;
+  background: #fff;
+  overflow: hidden;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.accordion__item.is-open {
+  border-color: #d8b4fe;
+  box-shadow: 0 6px 16px rgba(126, 34, 206, 0.12);
+}
+
+.accordion__head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: #334155;
+}
+
+.accordion__head:hover { background: #faf7fe; }
+
+.accordion__head:focus-visible {
+  outline: 3px solid #f9a8d4;
+  outline-offset: -3px;
+}
+
+.accordion__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.accordion__title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #4a1029;
+}
+
+.accordion__chevron {
+  color: #94a3b8;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.accordion__item.is-open .accordion__chevron { transform: rotate(180deg); }
+
+.accordion__body {
+  padding: 0 1rem 1.1rem;
+  animation: accordionReveal 0.2s ease;
+}
+
+@keyframes accordionReveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .accordion__body { animation: none; }
+  .accordion__chevron { transition: none; }
+}
+
+html.dark .accordion__item { background: #141419; border-color: #26262e; }
+html.dark .accordion__item.is-open { border-color: #4c1d95; }
+html.dark .accordion__head { color: #e2e8f0; }
+html.dark .accordion__head:hover { background: #1b1b22; }
+html.dark .accordion__title { color: #f1f5f9; }
+html.dark .accordion__body { color: #cbd5e1; }

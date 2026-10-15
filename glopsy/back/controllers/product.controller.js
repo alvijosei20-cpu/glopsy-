@@ -1,7 +1,7 @@
 import { obtenerProductoPorId } from '../services/mastershopService.js';
 import { uploadProductImage, isR2Configured } from '../services/r2.service.js';
 import { visitorCountryFromReq } from '../services/checkoutCurrency.service.js';
-import { saveProductForUser, getProductsForUser, getProductsForUserManagement, setProductStatusForUser, deleteProductForUser, addProductImagesForUser, updateProductNameForUser, searchQueryProductsCached, getCategories, getGlobalCommission, autoCategorizeUncategorizedProducts, getUserFavorites, toggleProductFavorite, getProductByPublicId, getMainStoreId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, cancelOrderForUser, updateOrderAddressForUser, getProductReviews, getUserReviewStatus, getOrderReviewsStatus, addProductReview, updateProductReview, deleteProductReview } from '../services/product.service.js';
+import { saveProductForUser, getProductsForUser, getProductsForUserManagement, setProductStatusForUser, deleteProductForUser, addProductImagesForUser, updateProductNameForUser, searchQueryProductsCached, getCategories, getGlobalCommission, autoCategorizeUncategorizedProducts, suggestCategoryForProduct, getUserFavorites, toggleProductFavorite, getProductByPublicId, getMainStoreId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, cancelOrderForUser, updateOrderAddressForUser, getProductReviews, getUserReviewStatus, getOrderReviewsStatus, addProductReview, updateProductReview, deleteProductReview } from '../services/product.service.js';
 import { validatePaymentBiometricNonce } from '../services/auth.service.js';
 import { getInternationalShippingOptions } from '../services/internationalShipping.service.js';
 import { estimateImportDuties } from '../services/tariff.service.js';
@@ -273,6 +273,19 @@ export const autoCategorizeController = async (req, res) => {
   } catch (error) {
     console.error('Error al categorizar productos:', error.message);
     res.status(500).json({ ok: false, message: 'Error al categorizar productos.' });
+  }
+};
+
+// Sugiere la categoría (la fija el algoritmo) a partir del título del producto.
+export const suggestCategoryController = async (req, res) => {
+  try {
+    const name = String(req.body?.name || '').slice(0, 300);
+    const description = String(req.body?.description || '').slice(0, 2000);
+    const suggestion = await suggestCategoryForProduct({ name, description });
+    res.json({ ok: true, ...(suggestion || {}) });
+  } catch (error) {
+    console.error('Error al sugerir categoría:', error.message);
+    res.status(500).json({ ok: false, message: 'No fue posible sugerir la categoría.' });
   }
 };
 

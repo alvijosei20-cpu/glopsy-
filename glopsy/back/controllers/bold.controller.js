@@ -74,7 +74,7 @@ export const boldQrStart = async (req, res) => {
     });
     if (!result.ok) {
       const status = result.reason === 'bold_no_configurado' ? 503 : 400;
-      return res.status(status).json({ ok: false, message: result.reason });
+      return res.status(status).json({ ok: false, message: result.reason, detail: result.error || null });
     }
     return res.json(result);
   } catch (error) {

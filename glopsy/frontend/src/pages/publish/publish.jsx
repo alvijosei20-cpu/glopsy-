@@ -6,11 +6,18 @@ import ManualProductForm from '../../components/ManualProductForm';
 import IvaNoticeCard from '../../components/IvaNoticeCard';
 import PriceBreakdown from '../../components/PriceBreakdown';
 import { resolveIva } from '../../utils/iva';
-import { calculatePublishedPrice } from '../../utils/pricing';
+import { calculatePublishedPrice, cleanMoneyInput, formatMoneyInput } from '../../utils/pricing';
 import api from '../../services/api';
 import '../panel/panel.css';
 
 const MANUAL_PROVIDER = { id: 'manual', name: 'Nuevo Producto' };
+
+// Formato de cantidades (miles con punto, estilo es-CO).
+const formatQty = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '';
+  return n.toLocaleString('es-CO', { maximumFractionDigits: 2 });
+};
 
 export default function Publish() {
   const navigate = useNavigate();
@@ -28,6 +35,7 @@ export default function Publish() {
   const [categories, setCategories] = useState([]);
   const [responsableIva, setResponsableIva] = useState(false);
   const [commissionGlobal, setCommissionGlobal] = useState(15);
+  const [ivaTratamiento, setIvaTratamiento] = useState('');
 
   const isManual = selectedProvider === MANUAL_PROVIDER.id;
 
@@ -227,18 +235,30 @@ export default function Publish() {
       setPublishError('Ingresa un Precio de Venta mayor a 0 para calcular el precio total.');
       return;
     }
+    const precioBase = Number(editableProduct.basePrice);
+    if (Number.isFinite(precioBase) && precioBase > 0 && precioVenta <= precioBase) {
+      setPublishError(`El Precio de Venta (${formatQty(precioVenta)}) debe ser mayor que el Precio Base (${formatQty(precioBase)} ${editableProduct.baseCurrencyPrice || ''}).`);
+      return;
+    }
 
     const ivaSubmit = resolveIva({
       paisCodigo: tienda?.paisCodigo,
       responsableIva,
       name: editableProduct.name,
       description: editableProduct.description,
+      categoria: editableProduct.categoriaNombre,
     });
+    const sugeridoSubmit = !ivaSubmit.esResponsable ? 'no_responsable' : (ivaSubmit.noGravable ? 'exento' : 'gravado');
+    const tratamientoSubmit = ivaTratamiento || sugeridoSubmit;
+    const ivaAplicaSubmit = tratamientoSubmit === 'gravado';
+    // El envío NO se suma al precio: es por ciudad y lo gestiona la plataforma
+    // (envío gratis a las ciudades configuradas; a las demás, precio sin envío).
     const breakdown = calculatePublishedPrice({
       salePrice: precioVenta,
       paisCodigo: tienda?.paisCodigo,
-      ivaAplica: ivaSubmit.aplica,
+      ivaAplica: ivaAplicaSubmit,
       glopsyPorcentaje: commissionGlobal,
+      currency: tienda?.moneda || 'COP',
     });
 
     const payloadToPublish = {
@@ -261,6 +281,8 @@ export default function Publish() {
       fullmId: selectedFullmentId,
       perfilEnvioId: selectedPerfilEnvioId ? Number(selectedPerfilEnvioId) : null,
       provider: selectedProvider,
+      iva_tratamiento: tratamientoSubmit,
+      iva_pct: ivaAplicaSubmit ? ivaSubmit.porcentaje : 0,
     };
 
     setApiStatus('loading');
@@ -309,13 +331,22 @@ export default function Publish() {
     responsableIva,
     name: editableProduct.name,
     description: editableProduct.description,
+    categoria: editableProduct.categoriaNombre,
   });
 
+  const ivaTratamientoSugerido = !ivaInfo.esResponsable ? 'no_responsable' : (ivaInfo.noGravable ? 'exento' : 'gravado');
+  const ivaTratamientoEfectivo = ivaTratamiento || ivaTratamientoSugerido;
+  const ivaAplicaEfectivo = ivaTratamientoEfectivo === 'gravado';
+  const ivaPctEfectivo = ivaAplicaEfectivo ? ivaInfo.porcentaje : 0;
+
+  const perfilSeleccionado = perfilesEnvio.find((p) => String(p.id) === String(selectedPerfilEnvioId));
+
   const priceBreakdown = calculatePublishedPrice({
-    salePrice: editableProduct.suggestedPrice,
+    salePrice: Number(editableProduct.suggestedPrice || 0),
     paisCodigo: tienda?.paisCodigo,
-    ivaAplica: ivaInfo.aplica,
+    ivaAplica: ivaAplicaEfectivo,
     glopsyPorcentaje: commissionGlobal,
+    currency: tienda?.moneda || 'COP',
   });
 
   return (
@@ -565,7 +596,7 @@ export default function Publish() {
               <input
                 type="text"
                 readOnly
-                value={`${editableProduct.basePrice} ${editableProduct.baseCurrencyPrice}`}
+                value={`${formatQty(editableProduct.basePrice)} ${editableProduct.baseCurrencyPrice}`}
                 style={{ width: '100%', padding: '0.75rem 1rem', borderRadius: '8px', background: '#f4f4f5', color: '#52525b', border: '1px solid #d4d4d8', fontSize: '1rem', outline: 'none', boxSizing: 'border-box' }}
               />
             </div>
@@ -576,22 +607,60 @@ export default function Publish() {
               </label>
               <input
                 type="text"
-                value={editableProduct.suggestedPrice}
-                onChange={(e) => setEditableProduct({ ...editableProduct, suggestedPrice: e.target.value })}
+                inputMode="decimal"
+                value={formatMoneyInput(editableProduct.suggestedPrice)}
+                onChange={(e) => setEditableProduct({ ...editableProduct, suggestedPrice: cleanMoneyInput(e.target.value) })}
                 placeholder="Ej. 49.99"
                 style={{ width: '100%', padding: '0.75rem 1rem', borderRadius: '8px', background: '#fdf2f8', color: '#18181b', border: '1px solid #f472b6', fontSize: '1rem', outline: 'none', boxSizing: 'border-box', fontWeight: 700 }}
               />
+              {Number(editableProduct.suggestedPrice) > 0 && (
+                <span style={{ display: 'block', marginTop: '4px', fontSize: '0.78rem', color: '#9d174d', fontWeight: 600 }}>
+                  = {formatQty(Number(editableProduct.suggestedPrice))} {tienda?.moneda || 'COP'}
+                  {Number(editableProduct.basePrice) > 0 && Number(editableProduct.suggestedPrice) <= Number(editableProduct.basePrice) && (
+                    <span style={{ color: '#b91c1c' }}> · debe ser mayor que el Precio Base ({formatQty(editableProduct.basePrice)})</span>
+                  )}
+                </span>
+              )}
             </div>
           </div>
 
-          {ivaInfo.aplica && (
+          {Number(editableProduct.basePrice) > 0 && Number(editableProduct.suggestedPrice) > 0 && Number(editableProduct.suggestedPrice) <= Number(editableProduct.basePrice) && (
+            <div className="panel__error" role="alert" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <AlertCircle size={16} /> El Precio de Venta debe ser mayor que el Precio Base ({formatQty(editableProduct.basePrice)} {editableProduct.baseCurrencyPrice || ''}).
+            </div>
+          )}
+
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '1rem' }}>
+            <label style={{ display: 'block', color: '#334155', fontWeight: 600, fontSize: '0.85rem', marginBottom: '6px' }}>
+              Tratamiento de IVA ({tienda?.paisCodigo === 'VE' ? 'SENIAT' : 'DIAN'})
+            </label>
+            <select
+              value={ivaTratamientoEfectivo}
+              onChange={(e) => setIvaTratamiento(e.target.value)}
+              style={{ width: '100%', padding: '0.6rem 0.8rem', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff' }}
+            >
+              <option value="gravado">Gravado ({ivaInfo.porcentaje}%)</option>
+              <option value="excluido">Excluido (0%)</option>
+              <option value="exento">Exento (0%)</option>
+              <option value="no_responsable">No responsable de IVA</option>
+            </select>
+            <span style={{ display: 'block', marginTop: '4px', fontSize: '0.75rem', color: '#64748b' }}>
+              Detectado automáticamente: <strong>{ivaTratamientoSugerido.replace('_', ' ')}</strong>. Ajústalo si aplica.
+            </span>
+          </div>
+          {ivaAplicaEfectivo && (
             <IvaNoticeCard porcentaje={ivaInfo.porcentaje} paisCodigo={tienda?.paisCodigo} />
+          )}
+          {(ivaTratamientoEfectivo === 'excluido' || ivaTratamientoEfectivo === 'exento') && (
+            <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '10px', padding: '0.9rem 1rem', fontSize: '0.85rem', color: '#065f46', fontWeight: 600 }}>
+              Producto <strong>{ivaTratamientoEfectivo}</strong> de IVA en {tienda?.paisCodigo === 'VE' ? 'Venezuela' : 'Colombia'}. No se agrega IVA al precio publicado.
+            </div>
           )}
 
           {/* Información adicional de Mastershop (Vendedor y Stock Total) */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fdf4ff', padding: '0.75rem 1rem', borderRadius: '8px', border: '1px solid #f5d0fe', fontSize: '0.9rem', color: '#701a75', flexWrap: 'wrap', gap: '8px' }}>
             <span>👤 Vendedor: <strong>{editableProduct.productOwner?.publicName || 'Mastershop Seller'}</strong></span>
-            <span>📦 Stock Total: <strong>{editableProduct.stockTotal} unidades</strong></span>
+            <span>📦 Stock Total: <strong>{formatQty(editableProduct.stockTotal)} unidades</strong></span>
           </div>
 
           {/* Selector de Talla (Select / Dropdown no editable directamente, solo selección) */}
@@ -693,6 +762,13 @@ export default function Publish() {
           </div>
 
           <PriceBreakdown breakdown={priceBreakdown} currency={tienda?.moneda || 'COP'} />
+
+          {perfilSeleccionado && (
+            <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px', padding: '0.75rem 1rem', fontSize: '0.82rem', color: '#075985', fontWeight: 600 }}>
+              Envía a <strong>{perfilSeleccionado.ciudad_nombre || (perfilSeleccionado.alcance === 'global' ? 'toda la tienda' : 'ciudad configurada')}</strong> — {formatQty(perfilSeleccionado.costo || 0)} {tienda?.moneda || 'COP'}
+              {String(perfilSeleccionado.tipo || '').toLowerCase() === 'gratis' ? ' (envío gratis)' : ' (envío de cobro, se paga en el checkout)'}
+            </div>
+          )}
 
           {/* Botón de Publicar Producto */}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginTop: '1rem' }}>

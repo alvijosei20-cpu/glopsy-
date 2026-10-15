@@ -1,4 +1,5 @@
 import { pool } from '../db.js';
+import crypto from 'node:crypto';
 import { redisClient } from './redis.service.js';
 import { encryptSecret, decryptSecret, maskSecret, isEncryptedSecret } from '../utils/crypto.js';
 import { registerStoreCustomDomain, removeStoreCustomDomain } from './cloudflare.service.js';
@@ -36,6 +37,12 @@ const mapTienda = (row) => ({
   storefrontBanner: row.storefront_banner || null,
   contactoEmail: row.contacto_email || null,
   contactoTelefono: row.contacto_telefono || null,
+  // Aceptación legal: Términos y Contrato de Mandato (trazabilidad).
+  termsVersion: row.terms_version || null,
+  termsAcceptedAt: row.terms_accepted_at || null,
+  mandateContractId: row.mandate_contract_id || null,
+  mandateVersion: row.mandate_version || null,
+  mandateAcceptedAt: row.mandate_accepted_at || null,
 });
 
 // ------------------------------------------------------------------ Subdominio (slug)
@@ -98,7 +105,9 @@ const STORE_COLUMNS = `
   t.international_dispatch_provider AS t_international_dispatch_provider,
   t.storefront_template, t.storefront_theme, t.storefront_palette,
   t.storefront_color, t.storefront_banner,
-  t.contacto_email, t.contacto_telefono
+  t.contacto_email, t.contacto_telefono,
+  t.terms_version, t.terms_accepted_at,
+  t.mandate_contract_id, t.mandate_version, t.mandate_accepted_at
 `;
 const STORE_JOIN = `
   LEFT JOIN paises pa ON pa.id = t.pais_id
@@ -246,10 +255,29 @@ export const parseUserAgent = (ua = '') => {
 // Registra la aceptación de Términos y Condiciones (y Contrato de Mandato) al
 // crear una tienda. Deja trazabilidad: usuario, IP, timestamp, navegador,
 // dispositivo, país, idioma, coordenadas y metadata adicional.
+// Identificador único del Contrato de Mandato: "time hash".
+// Formato: GLM-AAAAMMDDHHmmss-<hash10>. El hash SHA-256 combina usuario, marca
+// de tiempo y aleatoriedad; el prefijo temporal lo hace legible y ordenable.
+export const generateMandateContractId = (userId, atMs = Date.now()) => {
+  const d = new Date(atMs);
+  const p = (n) => String(n).padStart(2, '0');
+  const stamp = `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}`;
+  const digest = crypto
+    .createHash('sha256')
+    .update(`${userId}|${atMs}|${Math.random()}`)
+    .digest('hex')
+    .slice(0, 10)
+    .toUpperCase();
+  return `GLM-${stamp}-${digest}`;
+};
+
 export const recordTiendaTermsAcceptance = async ({
   userId,
   tiendaUsrid,
   termsVersion,
+  contractId = null,
+  contractType = 'mandato',
+  contractVersion = null,
   ip,
   forwardedFor,
   userAgent,
@@ -268,6 +296,9 @@ export const recordTiendaTermsAcceptance = async ({
     throw err;
   }
   const version = String(termsVersion || '').trim().slice(0, 30) || 'v1';
+  const cid = contractId ? String(contractId).trim().slice(0, 80) : null;
+  const ctype = contractType ? String(contractType).trim().slice(0, 30) : null;
+  const cversion = contractVersion ? String(contractVersion).trim().slice(0, 30) : null;
   const ua = userAgent ? String(userAgent).slice(0, 2000) : null;
   const parsed = parseUserAgent(ua || '');
   const latNum = Number(latitude);
@@ -278,15 +309,18 @@ export const recordTiendaTermsAcceptance = async ({
 
   const { rows } = await pool.query(
     `INSERT INTO tienda_aceptaciones (
-       tienda_usrid, user_id, terms_version, accepted, ip, forwarded_for,
-       user_agent, browser, browser_version, os, device, language, timezone,
+       tienda_usrid, user_id, terms_version, accepted, contract_id, contract_type, contract_version,
+       ip, forwarded_for, user_agent, browser, browser_version, os, device, language, timezone,
        country, latitude, longitude, referrer, metadata
-     ) VALUES ($1,$2,$3,true,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+     ) VALUES ($1,$2,$3,true,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
      RETURNING id, accepted_at`,
     [
       usrid,
       uid,
       version,
+      cid,
+      ctype,
+      cversion,
       ip ? String(ip).slice(0, 64) : null,
       forwardedFor ? String(forwardedFor).slice(0, 500) : null,
       ua,
@@ -306,12 +340,18 @@ export const recordTiendaTermsAcceptance = async ({
 
   await pool
     .query(
-      `UPDATE tiendas SET terms_version = $2, terms_accepted_at = now() WHERE usrid = $1`,
-      [usrid, version]
+      `UPDATE tiendas
+          SET terms_version = $2,
+              terms_accepted_at = now(),
+              mandate_contract_id = COALESCE($3, mandate_contract_id),
+              mandate_version = COALESCE($4, mandate_version),
+              mandate_accepted_at = CASE WHEN $3 IS NOT NULL THEN now() ELSE mandate_accepted_at END
+        WHERE usrid = $1`,
+      [usrid, version, cid, cversion]
     )
     .catch(() => {});
 
-  return { id: rows[0]?.id, acceptedAt: rows[0]?.accepted_at, version };
+  return { id: rows[0]?.id, acceptedAt: rows[0]?.accepted_at, version, contractId: cid };
 };
 
 // Actualiza nombre/subdominio/GA de la tienda del usuario (valores null/undefined = no tocar;

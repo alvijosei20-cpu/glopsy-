@@ -2,6 +2,7 @@ import {
   getTiendaForUser, 
   ensureTiendaForUser,
   recordTiendaTermsAcceptance,
+  generateMandateContractId,
   updateTiendaForUser,
   updateTiendaStatus, 
   getProductionIntegrationsForUser,
@@ -19,6 +20,7 @@ import { getBaVenNif12Report } from '../services/fiscalReport.service.js';
 import { clearTariffCache } from '../services/tariff.service.js';
 import { buildDianPlantillaFromStore } from '../services/dianStorePlantilla.service.js';
 import { getLibroVentasData, buildLibroVentasPdf } from '../services/libroVentas.service.js';
+import { getLibroContableData, buildLibroContableCsv } from '../services/libroContable.service.js';
 import {
   getCheckoutIntegrationsForUser,
   saveCheckoutIntegrationForUser,
@@ -26,7 +28,7 @@ import {
   getStoreAnalytics
 } from '../services/tienda.service.js';
 import { generateDianPlantillaFile } from '../services/dianPlantilla.service.js';
-import { getStoreLedgerForUser, listPayoutsForStore, approvePayout, confirmPayoutPaid as confirmPayoutPaidFlow } from '../services/ledger.service.js';
+import { getStoreLedgerForUser, listPayoutsForStore, approvePayout, confirmPayoutPaid as confirmPayoutPaidFlow, getSalesControl as getSalesControlForStore } from '../services/ledger.service.js';
 import { getAccountBalances as getBoldAccountBalances } from '../services/bold.service.js';
 import { pool } from '../db.js';
 import { getShippingOptionsFromEnvia } from '../services/envia.service.js';
@@ -146,11 +148,21 @@ export const createTiendaController = ({
       }
       const contactoTelefono = normalizePhone(paisCodigo, contactoTelefonoRaw);
 
-      // Aceptación de Términos (opcional; se quitó el Contrato de Mandato).
+      // Aceptación obligatoria de los Términos y del Contrato de Mandato al crear tienda.
       const terms = req.body?.terms && typeof req.body.terms === 'object' && !Array.isArray(req.body.terms)
         ? req.body.terms
         : null;
-      const termsVersion = terms ? cleanString(terms.version, { maxLength: 30 }) || 'v1' : null;
+      if (!terms || terms.accepted !== true || terms.mandate_accepted !== true) {
+        return res.status(400).json({
+          ok: false,
+          code: 'TERMS_REQUIRED',
+          message: 'Debes aceptar los Términos y Condiciones y el Contrato de Mandato para crear tu tienda.',
+        });
+      }
+      const termsVersion = cleanString(terms.version, { maxLength: 30 }) || 'v1';
+      const mandateVersion = cleanString(terms.mandate_version, { maxLength: 30 }) || termsVersion;
+      // Identificador único del Contrato de Mandato (time hash).
+      const mandateContractId = generateMandateContractId(req.auth.userId);
 
       // Cuenta de pagos del vendedor (se envía en el formulario de registro de /vender).
       // Es opcional en la petición.
@@ -232,37 +244,38 @@ export const createTiendaController = ({
         }
       }
 
-      // Trazabilidad de la aceptación (solo si el cliente la envió). No bloquea.
-      if (terms?.accepted === true) {
-        try {
-          const visitorCountry = String(req.get('x-visitor-country') || req.get('cf-ipcountry') || '').trim();
-          await recordTiendaTermsAcceptance({
-            userId: req.auth.userId,
-            tiendaUsrid: req.auth.userId,
-            termsVersion,
-            ip: req.ip,
-            forwardedFor: req.get('x-forwarded-for'),
-            userAgent: req.get('user-agent'),
-            language: req.get('accept-language') || terms.language,
-            timezone: terms.timezone,
-            country: visitorCountry,
-            latitude: terms.latitude,
-            longitude: terms.longitude,
-            referrer: terms.referrer || req.get('referer'),
-            metadata: {
-              screen: terms.screen || null,
-              platform: terms.platform || null,
-              visitorCountry: visitorCountry || null,
-              acceptLanguage: req.get('accept-language') || null,
-            },
-          });
-        } catch (auditError) {
-          console.error('Error al registrar la aceptación de términos:', auditError.message);
-        }
+      // Trazabilidad de la aceptación + Contrato de Mandato (ID time hash). No bloquea.
+      try {
+        const visitorCountry = String(req.get('x-visitor-country') || req.get('cf-ipcountry') || '').trim();
+        await recordTiendaTermsAcceptance({
+          userId: req.auth.userId,
+          tiendaUsrid: req.auth.userId,
+          termsVersion,
+          contractId: mandateContractId,
+          contractType: 'mandato',
+          contractVersion: mandateVersion,
+          ip: req.ip,
+          forwardedFor: req.get('x-forwarded-for'),
+          userAgent: req.get('user-agent'),
+          language: req.get('accept-language') || terms.language,
+          timezone: terms.timezone,
+          country: visitorCountry,
+          latitude: terms.latitude,
+          longitude: terms.longitude,
+          referrer: terms.referrer || req.get('referer'),
+          metadata: {
+            screen: terms.screen || null,
+            platform: terms.platform || null,
+            visitorCountry: visitorCountry || null,
+            acceptLanguage: req.get('accept-language') || null,
+          },
+        });
+      } catch (auditError) {
+        console.error('Error al registrar la aceptación de términos:', auditError.message);
       }
 
       await invalidateCatalogCache().catch(() => {});
-      return res.json({ ok: true, tienda });
+      return res.json({ ok: true, tienda, mandateContractId });
     } catch (error) {
       if (error.code === 'DUPLICATE_SLUG') {
         return res.status(409).json({ ok: false, message: error.message });
@@ -532,6 +545,24 @@ export const createTiendaController = ({
     }
   },
 
+  // Control de lo vendido: desglose por venta (costo base, venta, comisión, pasarela, IVA).
+  getSalesControl: async (req, res) => {
+    try {
+      const moneda = cleanString(req.query.moneda, { maxLength: 10 }) || 'COP';
+      const from = cleanString(req.query.from, { maxLength: 10 }) || null;
+      const to = cleanString(req.query.to, { maxLength: 10 }) || null;
+      const control = await getSalesControlForStore(req.auth.userId, {
+        moneda: moneda.toUpperCase(),
+        from,
+        to,
+      });
+      return res.json({ ok: true, ...control });
+    } catch (error) {
+      console.error('Error al consultar el control de ventas:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible consultar el control de ventas.' });
+    }
+  },
+
   getCheckoutIntegrations: async (req, res) => {
     try {
       const integrations = await getCheckoutIntegrations(req.auth.userId);
@@ -634,6 +665,24 @@ export const createTiendaController = ({
     } catch (error) {
       console.error('Error al generar el libro de ventas:', error.message);
       return res.status(500).json({ ok: false, message: 'No fue posible generar el libro de ventas.' });
+    }
+  },
+
+  // Libro de ventas y contabilidad (CSV) conforme a DIAN (CO) o SENIAT (VE).
+  getLibroContableCsv: async (req, res) => {
+    const desde = cleanString(req.query.desde, { maxLength: 10 });
+    const hasta = cleanString(req.query.hasta, { maxLength: 10 });
+    const moneda = cleanString(req.query.moneda, { maxLength: 10 });
+    try {
+      const data = await getLibroContableData(req.auth.userId, { desde, hasta, moneda });
+      if (!data) return res.status(404).json({ ok: false, message: 'No tienes una tienda registrada.' });
+      const csv = buildLibroContableCsv(data);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="libro-contable-${data.periodo.hasta}.csv"`);
+      return res.send(csv);
+    } catch (error) {
+      console.error('Error al generar el libro contable:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible generar el libro contable.' });
     }
   },
 
@@ -903,12 +952,14 @@ export const {
   getPayoutAccount,
   savePayoutAccount,
   getLedger,
+  getSalesControl,
   getPaymentMethods,
   requestUsdActivation,
   getUsdActivation,
   saveStorefrontAppearance,
   getFiscalReport,
   getLibroVentasPdf,
+  getLibroContableCsv,
   getStorePayouts,
   getPayoutBalances,
   payPayout,

@@ -136,13 +136,46 @@ export const resolveCommissionRate = async (client, { productoId, categoriaId, t
 };
 
 // ------------------------------------------------------------------
-// Registro de una venta
+// Desglose de la venta: IVA y tarifa de pasarela
+// ------------------------------------------------------------------
+
+// Tasas de IVA por país (referencia; el precio publicado ya incluye el IVA).
+const IVA_RATES = { CO: 19, VE: 16 };
+
+// Tarifa MÁXIMA de Bold (mismo criterio que el precio publicado). Se registra
+// como tarifa de pasarela del ledger (la asume el proveedor).
+const BOLD_FEE_METHODS = [
+  { percent: 2.99, fixed: 900 },
+  { percent: 3.29, fixed: 900 },
+  { percent: 2.89, fixed: 900 },
+  { percent: 4.29, fixed: 900 },
+  { percent: 2.89, fixed: 0 },
+];
+export const maxBoldGatewayFee = (amount, moneda = 'COP') => {
+  const esLocal = String(moneda).toUpperCase() === 'COP';
+  let best = 0;
+  for (const fee of BOLD_FEE_METHODS) {
+    const base = (Number(amount) || 0) * fee.percent / 100 + (esLocal ? fee.fixed : 0);
+    const total = base * 1.19; // + IVA 19% sobre la tarifa
+    if (total > best) best = total;
+  }
+  return round2(best);
+};
+
+const ivaRateFor = ({ paisIso, responsableIva, esExportacion }) => {
+  if (esExportacion) return 0;
+  if (!responsableIva) return 0;
+  return IVA_RATES[String(paisIso || '').toUpperCase()] || 0;
+};
+
+// ------------------------------------------------------------------
+// Registro de una venta (con desglose completo por línea)
 // ------------------------------------------------------------------
 
 export const recordSaleForOrder = async (orderId, {
   provider = 'bold',
   moneda = 'COP',
-  processorFee = 0,
+  processorFee = null,
   withholding = 0,
   referenciaExterna = null,
   metadata = {},
@@ -154,7 +187,8 @@ export const recordSaleForOrder = async (orderId, {
   if (existing.rows[0]) return { created: false, transactionId: existing.rows[0].id };
 
   const { rows: lineas } = await client.query(
-    `SELECT oi.product_id, oi.line_total, p.categoria_id, p.tienda_id,
+    `SELECT oi.id AS order_item_id, oi.product_id, oi.quantity, oi.line_total,
+            COALESCE(p.base_price, 0) AS base_price, p.categoria_id, p.tienda_id, p.iva_pct,
             COALESCE(s.idbusiness, 'tienda:' || p.tienda_id::text) AS provider_ref
      FROM order_items oi
      JOIN produc p ON p.id = oi.product_id
@@ -164,12 +198,33 @@ export const recordSaleForOrder = async (orderId, {
   );
   if (lineas.length === 0) throw new Error(`La orden ${orderId} no tiene líneas para contabilizar.`);
 
+  // Contexto de la tienda: país, responsable de IVA, exportación y moneda.
+  const tiendaId = lineas[0]?.tienda_id || null;
+  const { rows: ctxRows } = await client.query(
+    `SELECT COALESCE(pa.codigo_iso, 'CO') AS pais_iso,
+            COALESCE(t.responsable_iva, false) AS responsable_iva,
+            COALESCE(o.es_exportacion, false) AS es_exportacion,
+            COALESCE(o.currency, $2) AS moneda
+     FROM orders o
+     LEFT JOIN tiendas t ON t.usrid = o.tienda_id
+     LEFT JOIN paises pa ON pa.id = t.pais_id
+     WHERE o.id = $1 LIMIT 1`,
+    [orderId, moneda]
+  );
+  const ctx = ctxRows[0] || {};
+  const currency = ctx.moneda || moneda;
+  const ivaRate = ivaRateFor({
+    paisIso: ctx.pais_iso,
+    responsableIva: ctx.responsable_iva,
+    esExportacion: ctx.es_exportacion,
+  });
+
   const rateCache = new Map();
   const porProveedor = new Map();
-  let tiendaId = null;
+  const detalle = [];
+  let totalGross = 0;
 
   for (const linea of lineas) {
-    tiendaId = tiendaId ?? linea.tienda_id;
     const cacheKey = `${linea.product_id}:${linea.categoria_id}`;
     let rate = rateCache.get(cacheKey);
     if (rate === undefined) {
@@ -182,14 +237,54 @@ export const recordSaleForOrder = async (orderId, {
     }
     const bruto = Number(linea.line_total) || 0;
     const comision = round2(bruto * rate / 100);
-    const acc = porProveedor.get(linea.provider_ref) || { providerRef: linea.provider_ref, gross: 0, commission: 0 };
+    const baseCost = round2((Number(linea.base_price) || 0) * (Number(linea.quantity) || 1));
+    const lineIvaPct = linea.iva_pct != null ? Number(linea.iva_pct) : ivaRate;
+    totalGross = round2(totalGross + bruto);
+
+    detalle.push({
+      orderItemId: linea.order_item_id,
+      productId: linea.product_id,
+      providerRef: linea.provider_ref,
+      quantity: Number(linea.quantity) || 1,
+      baseCost,
+      saleAmount: bruto,
+      glopsyFee: comision,
+      glopsyRate: rate,
+      ivaRate: lineIvaPct,
+      gatewayFee: 0,
+      iva: 0,
+      providerNet: 0,
+    });
+
+    const acc = porProveedor.get(linea.provider_ref) || { providerRef: linea.provider_ref, gross: 0, commission: 0, baseCost: 0, iva: 0 };
     acc.gross = round2(acc.gross + bruto);
     acc.commission = round2(acc.commission + comision);
+    acc.baseCost = round2(acc.baseCost + baseCost);
     porProveedor.set(linea.provider_ref, acc);
   }
 
+  // Tarifa de pasarela: la máxima de Bold (la asume el proveedor).
+  const fee = processorFee == null ? maxBoldGatewayFee(totalGross, currency) : round2(Number(processorFee) || 0);
+
+  // IVA correcto por línea. El precio publicado se compone así:
+  //   total = venta*(1 + iva + comisión) + pasarela
+  // por lo que se revierte el componente para obtener el IVA sobre la venta.
+  const feeWeight = totalGross > 0 ? totalGross : 1;
+  for (const l of detalle) {
+    const feeLine = round2(fee * (l.saleAmount / feeWeight));
+    const gFrac = (l.glopsyRate || 0) / 100;
+    const rFracLine = (l.ivaRate || 0) / 100;
+    const venta = (l.saleAmount - feeLine) / (1 + rFracLine + gFrac);
+    l.gatewayFee = feeLine;
+    l.iva = l.ivaRate > 0 ? round2(venta * rFracLine) : 0;
+    l.providerNet = round2(l.saleAmount - l.glopsyFee - feeLine);
+  }
+
   const providers = [...porProveedor.values()];
-  const postings = buildSalePostings({ providers, processorFee, withholding });
+  for (const p of providers) {
+    p.iva = round2(detalle.filter((l) => l.providerRef === p.providerRef).reduce((a, l) => a + l.iva, 0));
+  }
+  const postings = buildSalePostings({ providers, processorFee: fee, withholding });
 
   const transactionId = await insertTransaction(client, {
     tipo: 'sale',
@@ -197,14 +292,102 @@ export const recordSaleForOrder = async (orderId, {
     providerRef: providers.length === 1 ? providers[0].providerRef : null,
     tiendaId,
     provider,
-    moneda,
+    moneda: currency,
     referenciaExterna,
     descripcion: `Venta orden ${orderId}`,
-    metadata: { providers, processorFee, withholding, ...metadata },
+    metadata: {
+      providers,
+      processorFee: fee,
+      withholding,
+      ivaRate,
+      totals: {
+        baseCost: round2(detalle.reduce((a, l) => a + l.baseCost, 0)),
+        saleAmount: totalGross,
+        glopsyFee: round2(detalle.reduce((a, l) => a + l.glopsyFee, 0)),
+        gatewayFee: fee,
+        iva: round2(detalle.reduce((a, l) => a + l.iva, 0)),
+      },
+      ...metadata,
+    },
   }, postings);
+
+  // Desglose por línea: control completo de lo vendido.
+  for (const l of detalle) {
+    await client.query(
+      `INSERT INTO ledger_sale_lines
+         (transaction_id, order_id, order_item_id, product_id, provider_ref, tienda_id, moneda,
+          quantity, base_cost, sale_amount, glopsy_fee, gateway_fee, iva, iva_rate, provider_net)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+      [transactionId, orderId, l.orderItemId, l.productId, l.providerRef, tiendaId, currency,
+        l.quantity, l.baseCost, l.saleAmount, l.glopsyFee, l.gatewayFee, l.iva, l.ivaRate, l.providerNet]
+    );
+  }
 
   return { created: true, transactionId };
 });
+
+// Control de lo vendido: totales y desglose por venta (línea) de una tienda.
+export const getSalesControl = async (tiendaId, { moneda = 'COP', from = null, to = null, limit = 200 } = {}) => {
+  const params = [tiendaId, String(moneda).toUpperCase()];
+  let where = 'WHERE l.tienda_id = $1 AND l.moneda = $2';
+  if (from) { params.push(from); where += ` AND l.created_at >= $${params.length}::date`; }
+  if (to) { params.push(to); where += ` AND l.created_at < ($${params.length}::date + INTERVAL '1 day')`; }
+
+  const { rows: totals } = await pool.query(
+    `SELECT COALESCE(SUM(l.base_cost),0) AS base_cost,
+            COALESCE(SUM(l.sale_amount),0) AS sale_amount,
+            COALESCE(SUM(l.glopsy_fee),0) AS glopsy_fee,
+            COALESCE(SUM(l.gateway_fee),0) AS gateway_fee,
+            COALESCE(SUM(l.iva),0) AS iva,
+            COALESCE(SUM(l.provider_net),0) AS provider_net,
+            COUNT(*) AS lines
+     FROM ledger_sale_lines l ${where}`,
+    params
+  );
+
+  const { rows } = await pool.query(
+    `SELECT l.id, l.order_id, o.order_number, l.provider_ref, l.moneda, l.quantity,
+            l.base_cost, l.sale_amount, l.glopsy_fee, l.gateway_fee, l.iva, l.iva_rate,
+            l.provider_net, l.created_at, o.customer_name
+     FROM ledger_sale_lines l
+     LEFT JOIN orders o ON o.id = l.order_id
+     ${where}
+     ORDER BY l.created_at DESC, l.id DESC
+     LIMIT ${Math.min(500, Math.max(1, limit))}`,
+    params
+  );
+
+  const t = totals[0] || {};
+  return {
+    moneda: String(moneda).toUpperCase(),
+    totals: {
+      baseCost: round2(t.base_cost),
+      saleAmount: round2(t.sale_amount),
+      glopsyFee: round2(t.glopsy_fee),
+      gatewayFee: round2(t.gateway_fee),
+      iva: round2(t.iva),
+      providerNet: round2(t.provider_net),
+      lines: Number(t.lines) || 0,
+    },
+    sales: rows.map((r) => ({
+      id: r.id,
+      orderId: r.order_id,
+      orderNumber: r.order_number || null,
+      providerRef: r.provider_ref,
+      moneda: r.moneda,
+      quantity: r.quantity,
+      baseCost: round2(r.base_cost),
+      saleAmount: round2(r.sale_amount),
+      glopsyFee: round2(r.glopsy_fee),
+      gatewayFee: round2(r.gateway_fee),
+      iva: round2(r.iva),
+      ivaRate: Number(r.iva_rate) || 0,
+      providerNet: round2(r.provider_net),
+      createdAt: r.created_at,
+      cliente: r.customer_name || null,
+    })),
+  };
+};
 
 // ------------------------------------------------------------------
 // Liberación de saldo (entrega + 2 días hábiles)

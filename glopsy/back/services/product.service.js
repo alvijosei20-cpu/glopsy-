@@ -172,6 +172,13 @@ export const saveProductForUser = async (userId, productData) => {
   const rawCategoriaId = productData.categoria_id !== undefined ? productData.categoria_id : productData.categoriaId;
   const categoriaId = toNumber(parseNumeric(rawCategoriaId), { min: 1 });
 
+  // Tratamiento de IVA por producto (exactitud DIAN/SENIAT).
+  const IVA_TRATAMIENTOS = ['gravado', 'excluido', 'exento', 'no_responsable'];
+  const ivaTratamientoRaw = cleanString(productData.iva_tratamiento ?? productData.ivaTratamiento, { maxLength: 15 }).toLowerCase();
+  const ivaTratamiento = IVA_TRATAMIENTOS.includes(ivaTratamientoRaw) ? ivaTratamientoRaw : null;
+  // Sin tratamiento definido => iva_pct NULL (el ledger usa la tasa del país).
+  const ivaPct = ivaTratamiento ? toNumber(parseNumeric(productData.iva_pct ?? productData.ivaPct), { min: 0, fallback: 0 }) : null;
+
   if (!name) {
     throw new Error('El nombre del producto es obligatorio.');
   }
@@ -361,9 +368,11 @@ export const saveProductForUser = async (userId, productData) => {
         categoria_id = $20,
         hs_code = $22,
         country_of_manufacture = $23,
+        iva_tratamiento = $24,
+        iva_pct = $25,
         updated_at = NOW()
       WHERE id = $21 AND tienda_id = $1
-      RETURNING id, name, external_product_id, selected_variant_id, suggested_price, fullm_id, tipo_empaque_id, perfil_envio_id, integracion_id, hs_code, country_of_manufacture, created_at
+      RETURNING id, name, external_product_id, selected_variant_id, suggested_price, fullm_id, tipo_empaque_id, perfil_envio_id, integracion_id, hs_code, country_of_manufacture, iva_tratamiento, iva_pct, created_at
     `;
     const updateValues = [
       userId,
@@ -389,6 +398,8 @@ export const saveProductForUser = async (userId, productData) => {
       existingId,
       hsCode || null,
       countryOfManufacture || null,
+      ivaTratamiento,
+      ivaPct,
     ];
     const { rows } = await pool.query(updateQuery, updateValues);
     resultRow = rows[0];
@@ -419,9 +430,11 @@ export const saveProductForUser = async (userId, productData) => {
         categoria_id,
         hs_code,
         country_of_manufacture,
+        iva_tratamiento,
+        iva_pct,
         updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, NOW())
-      RETURNING id, public_id, name, external_product_id, selected_variant_id, suggested_price, fullm_id, tipo_empaque_id, perfil_envio_id, integracion_id, hs_code, country_of_manufacture, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, NOW())
+      RETURNING id, public_id, name, external_product_id, selected_variant_id, suggested_price, fullm_id, tipo_empaque_id, perfil_envio_id, integracion_id, hs_code, country_of_manufacture, iva_tratamiento, iva_pct, created_at
     `;
     const insertValues = [
       userId,
@@ -447,6 +460,8 @@ export const saveProductForUser = async (userId, productData) => {
       categoriaId ? Number(categoriaId) : null,
       hsCode || null,
       countryOfManufacture || null,
+      ivaTratamiento,
+      ivaPct,
     ];
     const { rows } = await pool.query(insertQuery, insertValues);
     resultRow = rows[0];
@@ -666,6 +681,57 @@ export const getGlobalCommission = async () => {
      ORDER BY id LIMIT 1`
   );
   return rows[0] ? Number(rows[0].porcentaje) : null;
+};
+
+// Palabras clave por categoría (título/descripción -> categoría).
+const CATEGORY_KEYWORDS = [
+  { name: 'tecnología', terms: ['celular', 'smartphone', 'telefono', 'iphone', 'android', 'laptop', 'portatil', 'computador', 'computadora', 'notebook', 'audifonos', 'audifono', 'tecnologia', 'pantalla', 'televisor', 'smartwatch', 'reloj', 'mouse', 'teclado', 'usb', 'cargador', 'camara', 'parlante', 'bocina', 'tablet', 'consola', 'videojuego', 'gamer', 'electronico', 'televisor', 'auriculares'] },
+  { name: 'moda y calzado', terms: ['camisa', 'camiseta', 'playera', 'blusa', 'franela', 'pantalon', 'jean', 'short', 'zapato', 'tenis', 'zapatilla', 'sandalia', 'moda', 'ropa', 'vestido', 'falda', 'chaqueta', 'abrigo', 'gorra', 'sombrero', 'bolso', 'cartera', 'mochila', 'cinturon', 'medias', 'calzado', 'sudadera', 'buso'] },
+  { name: 'belleza y cuidado personal', terms: ['crema', 'shampoo', 'champu', 'belleza', 'maquillaje', 'perfume', 'labial', 'cabello', 'piel', 'jabon', 'cepillo', 'secador', 'afeitar', 'locion', 'cosmetico', 'esmalte', 'maquillar'] },
+  { name: 'hogar y cocina', terms: ['cocina', 'sarten', 'olla', 'hogar', 'casa', 'lampara', 'escoba', 'vaso', 'plato', 'cubierto', 'toalla', 'organizador', 'cortina', 'espejo', 'utensilio', 'cafetera', 'licuadora'] },
+  { name: 'muebles y decoración', terms: ['mueble', 'silla', 'mesa', 'escritorio', 'sofa', 'estante', 'closet', 'ropero', 'cama', 'colchon', 'sabana', 'almohada', 'decoracion', 'cuadro', 'alfombra', 'cojin', 'comoda'] },
+  { name: 'deportes', terms: ['deporte', 'deportivo', 'balon', 'futbol', 'gimnasio', 'mancuerna', 'bicicleta', 'entrenamiento', 'yoga', 'correr', 'running', 'natacion', 'camping', 'pesca'] },
+];
+
+// Distancia de edición (Levenshtein) con salida temprana.
+const levenshtein = (a, b) => {
+  const m = a.length; const n = b.length;
+  if (Math.abs(m - n) > 2) return 99;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+    }
+    prev = cur;
+  }
+  return prev[n];
+};
+
+// Coincidencia tolerante a errores de tipeo (no a mayúsculas: el texto ya va en minúsculas).
+const termMatches = (text, words, term) => {
+  if (text.includes(term)) return true;
+  if (term.length < 4) return false;
+  const threshold = term.length <= 5 ? 1 : 2;
+  return words.some((w) => Math.abs(w.length - term.length) <= threshold && levenshtein(w, term) <= threshold);
+};
+
+// Sugiere la categoría a partir del título (y descripción). La fija el algoritmo.
+export const suggestCategoryForProduct = async ({ name, description } = {}) => {
+  const cats = await getCategories();
+  if (cats.length === 0) return null;
+  const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const byName = {};
+  cats.forEach((c) => { byName[norm(c.nombre)] = c; });
+  const text = norm(`${name || ''} ${description || ''}`);
+  const words = text.split(/[^a-z0-9]+/).filter(Boolean);
+  let matched = null;
+  for (const k of CATEGORY_KEYWORDS) {
+    if (k.terms.some((t) => termMatches(text, words, norm(t)))) { matched = byName[norm(k.name)]; break; }
+  }
+  const cat = matched || byName['otros'] || cats[0];
+  return cat ? { categoria_id: cat.id, categoria_nombre: cat.nombre } : null;
 };
 
 export const autoCategorizeUncategorizedProducts = async () => {
@@ -2495,91 +2561,94 @@ export const createNotification = async (userId, guestHash, orderId, title, mess
 };
 
 export const cancelOrderForUser = async (orderHash, userId, guestHash) => {
-  const { rows: orderRows } = await pool.query(
-    `SELECT * FROM orders WHERE order_hash = $1 AND (($2::bigint IS NOT NULL AND user_id = $2) OR ($3::text IS NOT NULL AND guest_hash = $3))`,
-    [orderHash, userId || null, guestHash || null]
-  );
-  if (orderRows.length === 0) {
-    throw new Error('Orden no encontrada o no autorizada para cancelar');
-  }
-  const order = orderRows[0];
-  const orderId = order.id;
-
-  const { rows: shipmentRows } = await pool.query(
-    `SELECT * FROM order_shipments WHERE order_id = $1`,
-    [orderId]
-  );
-
+  const client = await pool.connect();
+  let order;
+  let orderId;
+  let cancelledShipmentIds = [];
   let cancelledCount = 0;
   let activeCount = 0;
-  const cancelledShipmentIds = [];
-
-  for (const sh of shipmentRows) {
-    const st = String(sh.fulfillment_status || '').toLowerCase();
-    const isEligible = !st || st.includes('pend') || st.includes('confirm') || st.includes('cread') || st.includes('nuevo');
-    
-    if (isEligible) {
-      await pool.query(`UPDATE order_shipments SET fulfillment_status = 'cancelled', updated_at = NOW() WHERE id = $1`, [sh.id]);
-      cancelledShipmentIds.push(sh.id);
-      cancelledCount++;
-    } else {
-      activeCount++;
-    }
-  }
-
-  if (cancelledCount === 0 && shipmentRows.length > 0) {
-    throw new Error('No es posible cancelar ningún envío de este pedido porque ya se encuentran procesados o con guía generada.');
-  }
-
-  // Liberar stock y actualizar items de los envíos cancelados
-  for (const shipId of cancelledShipmentIds) {
-    const { rows: itemRows } = await pool.query(
-      `SELECT * FROM order_items WHERE shipment_id = $1`,
-      [shipId]
-    );
-    for (const item of itemRows) {
-      if (item.product_id && item.quantity) {
-        await pool.query(
-          `UPDATE produc SET stock_total = stock_total + $1 WHERE id = $2`,
-          [Number(item.quantity), Number(item.product_id)]
-        );
-      }
-      await pool.query(
-        `UPDATE order_items SET line_total = 0, quantity = 0 WHERE id = $1`,
-        [item.id]
-      );
-    }
-  }
-
-  // Recalcular el monto total del pedido basado en los envíos e ítems activos restantes
-  const { rows: activeShipments } = await pool.query(
-    `SELECT * FROM order_shipments WHERE order_id = $1 AND fulfillment_status != 'cancelled'`,
-    [orderId]
-  );
-  
   let newAmount = 0;
-  for (const activeSh of activeShipments) {
-    newAmount += Number(activeSh.shipping_cost || 0);
-    const { rows: actItems } = await pool.query(
-      `SELECT line_total FROM order_items WHERE shipment_id = $1`,
-      [activeSh.id]
+  let totalCancel = false;
+  let newOrderStatus = 'cancelled';
+  try {
+    await client.query('BEGIN');
+    const { rows: orderRows } = await client.query(
+      `SELECT * FROM orders WHERE order_hash = $1 AND (($2::bigint IS NOT NULL AND user_id = $2) OR ($3::text IS NOT NULL AND guest_hash = $3))`,
+      [orderHash, userId || null, guestHash || null]
     );
-    for (const ai of actItems) {
-      newAmount += Number(ai.line_total || 0);
+    if (orderRows.length === 0) {
+      throw new Error('Orden no encontrada o no autorizada para cancelar');
     }
+    order = orderRows[0];
+    orderId = order.id;
+
+    const { rows: shipmentRows } = await client.query(
+      `SELECT * FROM order_shipments WHERE order_id = $1`,
+      [orderId]
+    );
+
+    const alreadyCancelledIds = [];
+    for (const sh of shipmentRows) {
+      const st = String(sh.fulfillment_status || '').toLowerCase();
+      if (st === 'cancelled') { alreadyCancelledIds.push(sh.id); continue; }
+      const isEligible = !st || st.includes('pend') || st.includes('confirm') || st.includes('cread') || st.includes('nuevo');
+      if (isEligible) {
+        await client.query(`UPDATE order_shipments SET fulfillment_status = 'cancelled', updated_at = NOW() WHERE id = $1`, [sh.id]);
+        cancelledShipmentIds.push(sh.id);
+        cancelledCount++;
+      } else {
+        activeCount++;
+      }
+    }
+
+    // Solo bloquea si hay envíos procesados/con guía y ninguno se pudo cancelar.
+    if (cancelledCount === 0 && activeCount > 0) {
+      throw new Error('No es posible cancelar ningún envío de este pedido porque ya se encuentran procesados o con guía generada.');
+    }
+
+    // Liberar stock y cero ítems de los envíos recién cancelados.
+    for (const shipId of cancelledShipmentIds) {
+      const { rows: itemRows } = await client.query(`SELECT * FROM order_items WHERE shipment_id = $1`, [shipId]);
+      for (const item of itemRows) {
+        if (item.product_id && Number(item.quantity) > 0) {
+          await client.query(`UPDATE produc SET stock_total = stock_total + $1 WHERE id = $2`, [Number(item.quantity), Number(item.product_id)]);
+        }
+        await client.query(`UPDATE order_items SET line_total = 0, quantity = 0 WHERE id = $1`, [item.id]);
+      }
+    }
+    // Envíos ya cancelados antes (por ejemplo, por un intento previo a medias): solo cero ítems, sin tocar stock.
+    for (const shipId of alreadyCancelledIds) {
+      await client.query(`UPDATE order_items SET line_total = 0, quantity = 0 WHERE shipment_id = $1 AND quantity > 0`, [shipId]);
+    }
+
+    // Recalcular el monto con los envíos activos restantes.
+    const { rows: activeShipments } = await client.query(
+      `SELECT * FROM order_shipments WHERE order_id = $1 AND fulfillment_status != 'cancelled'`,
+      [orderId]
+    );
+    for (const activeSh of activeShipments) {
+      newAmount += Number(activeSh.shipping_cost || 0);
+      const { rows: actItems } = await client.query(`SELECT line_total FROM order_items WHERE shipment_id = $1`, [activeSh.id]);
+      for (const ai of actItems) newAmount += Number(ai.line_total || 0);
+    }
+
+    totalCancel = activeCount === 0;
+    newOrderStatus = totalCancel ? 'cancelled' : 'partially_cancelled';
+
+    await client.query(
+      `UPDATE orders SET status = $1, amount = $2, updated_at = NOW() WHERE id = $3`,
+      [newOrderStatus, newAmount, orderId]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
   }
-
-  const totalCancel = activeCount === 0;
-  const newOrderStatus = totalCancel ? 'cancelled' : 'partially_cancelled';
-
-  await pool.query(
-    `UPDATE orders SET status = $1, amount = $2, updated_at = NOW() WHERE id = $3`,
-    [newOrderStatus, newAmount, orderId]
-  );
 
   await cancelMastershopOrderOrShipments(order, cancelledShipmentIds, totalCancel);
 
-  // Registrar notificación en la tabla `notifications`
   const notifTitle = totalCancel ? `Pedido #${orderId} cancelado` : `Pedido #${orderId} cancelado parcialmente`;
   const notifMsg = totalCancel ? `Tu pedido ha sido cancelado en su totalidad y el stock ha sido liberado.` : `Se han cancelado ${cancelledCount} envíos de tu pedido.`;
   await createNotification(order.user_id, order.guest_hash, order.id, notifTitle, notifMsg, 'order_cancelled', { total_cancel: totalCancel, cancelled_shipments: cancelledCount, active_shipments: activeCount }, `/compras/${order.order_hash}`);

@@ -10,7 +10,6 @@ import { cartCurrency } from '../../utils/cartMode';
 import { useStorefront } from '../../storefront/StorefrontContext';
 import { useAuth } from '../../context/AuthContext';
 import BoldPayment from '../../components/BoldPayment';
-import BoldQrPayment from '../../components/BoldQrPayment';
 import './cart.css';
 
 export default function Checkout() {
@@ -60,8 +59,6 @@ export default function Checkout() {
   const [preferenceData, setPreferenceData] = useState(null);
   const [paymentProvider, setPaymentProvider] = useState('bold');
   const [showBold, setShowBold] = useState(false);
-  const [boldMethod, setBoldMethod] = useState('tarjeta');
-  const [showBoldQr, setShowBoldQr] = useState(false);
 
   // Si el cliente vuelve del checkout de Bold, retomamos la verificación del pago.
   useEffect(() => {
@@ -476,15 +473,10 @@ export default function Checkout() {
       quantity: Number(item.quantity || 1),
     }));
 
-    // Bold: checkout Onpage (el pago se completa en la pasarela embebida) o
-    // cobro por QR Bre-B (se genera y muestra el QR dentro de Glopsy).
+    // Bold: checkout embebido (tarjeta, PSE, Nequi, QR Bre-B si está habilitado).
     if (paymentProvider === 'bold') {
       trackEvent('begin_checkout', { currency, value: total, items: checkoutItems });
-      if (boldMethod === 'qr') {
-        setShowBoldQr(true);
-      } else {
-        setShowBold(true);
-      }
+      setShowBold(true);
       return;
     }
 
@@ -600,20 +592,6 @@ export default function Checkout() {
               </div>
               <div id="paymentBrick_container" className="min-h-[450px]"></div>
             </div>
-          ) : showBoldQr ? (
-            <BoldQrPayment
-              total={total}
-              items={cartItemsConPrecio}
-              shippingCost={shippingCost}
-              shippingPayload={shippingPayloadForOrder()}
-              customerInfo={customerInfoForOrder()}
-              guestHash={guestHash}
-              currency={currency}
-              user={user}
-              formatPrice={formatPrice}
-              onSuccess={handleBoldSuccess}
-              onBack={() => setShowBoldQr(false)}
-            />
           ) : showBold ? (
             <BoldPayment
               total={total}
@@ -633,21 +611,8 @@ export default function Checkout() {
             <div className="space-y-2">
               <label className="block text-xs font-bold text-slate-700">Método de pago</label>
               {isCOP ? (
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setBoldMethod('tarjeta')}
-                    className={`p-3 rounded-xl border text-sm font-bold transition-all cursor-pointer ${boldMethod === 'tarjeta' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-                  >
-                    Tarjeta / PSE
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setBoldMethod('qr')}
-                    className={`p-3 rounded-xl border text-sm font-bold transition-all cursor-pointer ${boldMethod === 'qr' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-                  >
-                    QR Bre-B
-                  </button>
+                <div className="p-3 rounded-xl border border-blue-600 bg-blue-50 text-blue-700 text-sm font-bold">
+                  Tarjeta / PSE / Billeteras (Bold)
                 </div>
               ) : (
                 <div className="p-3 rounded-xl border border-fuchsia-200 bg-fuchsia-50 text-sm">

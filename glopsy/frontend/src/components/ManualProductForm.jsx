@@ -20,7 +20,7 @@ import api from '../services/api';
 import IvaNoticeCard from './IvaNoticeCard';
 import PriceBreakdown from './PriceBreakdown';
 import { resolveIva } from '../utils/iva';
-import { calculatePublishedPrice } from '../utils/pricing';
+import { calculatePublishedPrice, cleanMoneyInput, formatMoneyInput } from '../utils/pricing';
 import { compressToWebp, MAX_IMAGES } from '../utils/imageCompress';
 
 const inputStyle = {
@@ -64,6 +64,7 @@ const emptyForm = (currency) => ({
   acceptTerms: false,
   hsCode: '',
   countryOfManufacture: '',
+  ivaTratamiento: '',
 });
 
 export default function ManualProductForm({
@@ -95,6 +96,23 @@ export default function ManualProductForm({
   }, [currency]);
 
   const update = (patch) => setForm((prev) => ({ ...prev, ...patch }));
+
+  // La categoría la fija el algoritmo según el título (campo no editable).
+  useEffect(() => {
+    const name = form.name.trim();
+    if (name.length < 3) return undefined;
+    let alive = true;
+    const t = setTimeout(() => {
+      api.post('/product/suggest-category', { name, description: form.description })
+        .then(({ data }) => {
+          if (alive && data?.ok && data.categoria_id) {
+            setForm((prev) => ({ ...prev, categoriaId: String(data.categoria_id) }));
+          }
+        })
+        .catch(() => {});
+    }, 400);
+    return () => { alive = false; clearTimeout(t); };
+  }, [form.name, form.description]);
 
   const setVariant = (idx, patch) => {
     setForm((prev) => {
@@ -157,8 +175,6 @@ export default function ManualProductForm({
     if (!form.description.trim()) errors.description = 'La descripción es obligatoria.';
     else if (form.description.trim().length < 10) errors.description = 'Describe el producto (mínimo 10 caracteres).';
 
-    if (!form.categoriaId) errors.categoriaId = 'Selecciona una categoría.';
-
     const price = Number(form.suggestedPrice);
     if (form.suggestedPrice === '' || Number.isNaN(price) || price <= 0) {
       errors.suggestedPrice = 'Ingresa un precio de venta mayor a 0.';
@@ -166,6 +182,9 @@ export default function ManualProductForm({
     const base = Number(form.basePrice);
     if (form.basePrice === '' || Number.isNaN(base) || base <= 0) {
       errors.basePrice = 'Ingresa un precio base mayor a 0.';
+    }
+    if (!errors.suggestedPrice && !errors.basePrice && price <= base) {
+      errors.basePrice = 'El precio base debe ser menor que el precio de venta.';
     }
     const stock = Number(form.stockTotal);
     if (form.stockTotal === '' || Number.isNaN(stock) || stock < 0 || !Number.isInteger(stock)) {
@@ -208,6 +227,19 @@ export default function ManualProductForm({
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSuccess(false);
+
+    // Categoría automática: la fija el algoritmo según el título del producto.
+    let categoriaIdFinal = form.categoriaId;
+    if (!categoriaIdFinal && form.name.trim().length >= 3) {
+      try {
+        const { data } = await api.post('/product/suggest-category', { name: form.name, description: form.description });
+        if (data?.ok && data.categoria_id) categoriaIdFinal = String(data.categoria_id);
+      } catch { /* noop */ }
+    }
+    if (!categoriaIdFinal) {
+      setFieldErrors({ categoriaId: 'No se pudo asignar la categoría automáticamente. Revisa el título.' });
+      return;
+    }
     if (!validate()) return;
 
     const cleanVariants = form.variants
@@ -218,15 +250,19 @@ export default function ManualProductForm({
         stock: v.stock === '' ? 0 : Number(v.stock),
       }));
 
-    const categoriaNombreSubmit = categories.find((c) => String(c.id) === String(form.categoriaId))?.nombre || '';
-    const categoriaComisionSubmit = categories.find((c) => String(c.id) === String(form.categoriaId))?.comision;
+    const categoriaNombreSubmit = categories.find((c) => String(c.id) === String(categoriaIdFinal))?.nombre || '';
+    const categoriaComisionSubmit = categories.find((c) => String(c.id) === String(categoriaIdFinal))?.comision;
     const glopsyPctSubmit = categoriaComisionSubmit != null ? Number(categoriaComisionSubmit) : (Number(commissionGlobal) || 0);
     const ivaSubmit = resolveIva({ paisCodigo, responsableIva, name: form.name, description: form.description, categoria: categoriaNombreSubmit });
+    const sugeridoSubmit = !ivaSubmit.esResponsable ? 'no_responsable' : (ivaSubmit.noGravable ? 'exento' : 'gravado');
+    const tratamientoSubmit = form.ivaTratamiento || sugeridoSubmit;
+    const ivaAplicaSubmit = tratamientoSubmit === 'gravado';
     const breakdownSubmit = calculatePublishedPrice({
       salePrice: Number(form.suggestedPrice),
       paisCodigo,
-      ivaAplica: ivaSubmit.aplica,
+      ivaAplica: ivaAplicaSubmit,
       glopsyPorcentaje: glopsyPctSubmit,
+      currency,
     });
 
     const payload = {
@@ -245,13 +281,15 @@ export default function ManualProductForm({
       warrantyConditions: form.warrantyConditions,
       supportEmail: form.supportEmail.trim(),
       warrantyPhone: form.warrantyPhone.trim(),
-      categoriaId: form.categoriaId ? Number(form.categoriaId) : null,
+      categoriaId: Number(categoriaIdFinal),
       fullmId: selectedFullmentId,
       perfilEnvioId: selectedPerfilEnvioId ? Number(selectedPerfilEnvioId) : null,
       termsAccepted: form.acceptTerms,
       termsVersion: '2026-09-20',
       hsCode: form.hsCode.trim() || null,
       countryOfManufacture: form.countryOfManufacture.trim().toUpperCase() || null,
+      iva_tratamiento: tratamientoSubmit,
+      iva_pct: ivaAplicaSubmit ? ivaSubmit.porcentaje : 0,
     };
 
     const ok = await onPublish(payload);
@@ -277,13 +315,21 @@ export default function ManualProductForm({
     categoria: categoriaNombre,
   });
 
+  const ivaTratamientoSugerido = !ivaInfo.esResponsable ? 'no_responsable' : (ivaInfo.noGravable ? 'exento' : 'gravado');
+  const ivaTratamientoEfectivo = form.ivaTratamiento || ivaTratamientoSugerido;
+  const ivaAplicaEfectivo = ivaTratamientoEfectivo === 'gravado';
+  const baseMayorQueVenta = Number(form.basePrice) > 0 && Number(form.suggestedPrice) > 0 && Number(form.basePrice) >= Number(form.suggestedPrice);
+
+  const perfilSeleccionado = perfilesEnvio.find((p) => String(p.id) === String(selectedPerfilEnvioId));
+
   const categoriaComision = categories.find((c) => String(c.id) === String(form.categoriaId))?.comision;
   const glopsyPorcentaje = categoriaComision != null ? Number(categoriaComision) : (Number(commissionGlobal) || 0);
   const priceBreakdown = calculatePublishedPrice({
-    salePrice: form.suggestedPrice,
+    salePrice: Number(form.suggestedPrice || 0),
     paisCodigo,
-    ivaAplica: ivaInfo.aplica,
+    ivaAplica: ivaAplicaEfectivo,
     glopsyPorcentaje,
+    currency,
   });
 
   return (
@@ -376,49 +422,19 @@ export default function ManualProductForm({
           {fieldErrors.name && <span style={errorStyle}>{fieldErrors.name}</span>}
         </div>
         <div>
-          <label style={labelStyle}>Categoría *</label>
+          <label style={labelStyle}>Categoría (automática)</label>
           <select
             value={form.categoriaId}
-            onChange={(e) => update({ categoriaId: e.target.value })}
-            style={{ ...inputStyle, borderColor: fieldErrors.categoriaId ? '#dc2626' : '#d4d4d8' }}
+            disabled
+            title="La categoría la asigna el algoritmo según el título del producto"
+            style={{ ...inputStyle, background: '#e4e4e7', color: '#52525b', cursor: 'not-allowed' }}
           >
-            <option value="">Selecciona una categoría</option>
+            <option value="">Se asignará según el título…</option>
             {categories.map((c) => (
               <option key={c.id} value={c.id}>{c.nombre}</option>
             ))}
           </select>
           {fieldErrors.categoriaId && <span style={errorStyle}>{fieldErrors.categoriaId}</span>}
-        </div>
-      </div>
-
-      {/* Aduana (envíos internacionales) */}
-      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1rem' }}>
-        <p style={{ margin: '0 0 0.6rem', fontWeight: 700, fontSize: '0.9rem', color: '#0f172a' }}>
-          Datos de aduana <span style={{ fontWeight: 400, color: '#64748b' }}>(solo envíos internacionales)</span>
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-          <div>
-            <label style={labelStyle}>Código HS</label>
-            <input
-              value={form.hsCode}
-              maxLength={20}
-              onChange={(e) => update({ hsCode: e.target.value })}
-              placeholder="Ej. 6109.10"
-              style={inputStyle}
-            />
-            <span style={{ color: '#64748b', fontSize: '0.72rem' }}>Si lo dejas vacío lo inferimos automáticamente.</span>
-          </div>
-          <div>
-            <label style={labelStyle}>País de fabricación</label>
-            <input
-              value={form.countryOfManufacture}
-              maxLength={2}
-              onChange={(e) => update({ countryOfManufacture: e.target.value.toUpperCase() })}
-              placeholder="Ej. CO"
-              style={inputStyle}
-            />
-            <span style={{ color: '#64748b', fontSize: '0.72rem' }}>Código ISO de 2 letras.</span>
-          </div>
         </div>
       </div>
 
@@ -495,12 +511,11 @@ export default function ManualProductForm({
             <Tag size={16} /> Precio de Venta ({currency}) *
           </label>
           <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={form.suggestedPrice}
-            onChange={(e) => update({ suggestedPrice: e.target.value })}
-            placeholder="Ej. 49900"
+            type="text"
+            inputMode="decimal"
+            value={formatMoneyInput(form.suggestedPrice)}
+            onChange={(e) => update({ suggestedPrice: cleanMoneyInput(e.target.value) })}
+            placeholder="Ej. 49.900"
             style={{ ...inputStyle, background: '#fdf2f8', border: `1px solid ${fieldErrors.suggestedPrice ? '#dc2626' : '#f472b6'}`, fontWeight: 700 }}
           />
           {fieldErrors.suggestedPrice && <span style={errorStyle}>{fieldErrors.suggestedPrice}</span>}
@@ -510,15 +525,17 @@ export default function ManualProductForm({
             <DollarSign size={16} /> Precio Base *
           </label>
           <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={form.basePrice}
-            onChange={(e) => update({ basePrice: e.target.value })}
+            type="text"
+            inputMode="decimal"
+            value={formatMoneyInput(form.basePrice)}
+            onChange={(e) => update({ basePrice: cleanMoneyInput(e.target.value) })}
             placeholder="Costo de referencia"
-            style={{ ...inputStyle, borderColor: fieldErrors.basePrice ? '#dc2626' : '#d4d4d8' }}
+            style={{ ...inputStyle, borderColor: (fieldErrors.basePrice || baseMayorQueVenta) ? '#dc2626' : '#d4d4d8' }}
           />
           {fieldErrors.basePrice && <span style={errorStyle}>{fieldErrors.basePrice}</span>}
+          {!fieldErrors.basePrice && baseMayorQueVenta && (
+            <span style={errorStyle}>El precio base debe ser menor que el precio de venta.</span>
+          )}
         </div>
         <div>
           <label style={labelStyle}>Moneda de la tienda</label>
@@ -545,8 +562,32 @@ export default function ManualProductForm({
         </div>
       </div>
 
-      {ivaInfo.aplica && (
+      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '1rem' }}>
+        <label style={{ display: 'block', color: '#334155', fontWeight: 600, fontSize: '0.85rem', marginBottom: '6px' }}>
+          Tratamiento de IVA ({paisCodigo === 'VE' ? 'SENIAT' : 'DIAN'})
+        </label>
+        <select
+          value={ivaTratamientoEfectivo}
+          onChange={(e) => update({ ivaTratamiento: e.target.value })}
+          style={{ ...inputStyle, background: '#fff' }}
+        >
+          <option value="gravado">Gravado ({ivaInfo.porcentaje}%)</option>
+          <option value="excluido">Excluido (0%)</option>
+          <option value="exento">Exento (0%)</option>
+          <option value="no_responsable">No responsable de IVA</option>
+        </select>
+        <span style={{ display: 'block', marginTop: '4px', fontSize: '0.75rem', color: '#64748b' }}>
+          Detectado automáticamente: <strong>{ivaTratamientoSugerido.replace('_', ' ')}</strong>. Ajústalo si aplica.
+        </span>
+      </div>
+
+      {ivaAplicaEfectivo && (
         <IvaNoticeCard porcentaje={ivaInfo.porcentaje} paisCodigo={paisCodigo} />
+      )}
+      {(ivaTratamientoEfectivo === 'excluido' || ivaTratamientoEfectivo === 'exento') && (
+        <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '10px', padding: '0.9rem 1rem', fontSize: '0.85rem', color: '#065f46', fontWeight: 600 }}>
+          Producto <strong>{ivaTratamientoEfectivo}</strong> de IVA en {paisCodigo === 'VE' ? 'Venezuela' : 'Colombia'}. No se agrega IVA al precio publicado.
+        </div>
       )}
 
       {/* Variantes / tallas */}
@@ -685,6 +726,13 @@ export default function ManualProductForm({
       </div>
 
       <PriceBreakdown breakdown={priceBreakdown} currency={currency} />
+
+      {perfilSeleccionado && (
+        <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px', padding: '0.75rem 1rem', fontSize: '0.82rem', color: '#075985', fontWeight: 600 }}>
+          Envía a <strong>{perfilSeleccionado.ciudad_nombre || (perfilSeleccionado.alcance === 'global' ? 'toda la tienda' : 'ciudad configurada')}</strong> — {(Number(perfilSeleccionado.costo) || 0).toLocaleString('es-CO')} {currency}
+          {String(perfilSeleccionado.tipo || '').toLowerCase() === 'gratis' ? ' (envío gratis)' : ' (envío de cobro, se paga en el checkout)'}
+        </div>
+      )}
 
       {/* Publicar */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginTop: '1rem' }}>

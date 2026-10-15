@@ -26,6 +26,7 @@ const Vender = lazy(() => import('./pages/vender/Vender'));
 const Panel = lazy(() => import('./pages/panel/panel'));
 const Market = lazy(() => import('./pages/market/market'));
 const MarketConfig = lazy(() => import('./pages/market/MarketConfig'));
+const Vitrina = lazy(() => import('./pages/market/Vitrina'));
 const Analytics = lazy(() => import('./pages/market/Analytics'));
 const ProductsManage = lazy(() => import('./pages/market/ProductsManage'));
 const Marketing = lazy(() => import('./pages/market/Marketing'));
@@ -274,6 +275,7 @@ function MainApp() {
           <Route path="/market" element={<StoreRoute><Market /></StoreRoute>} />
           <Route path="/vender" element={<ProtectedRoute><Vender /></ProtectedRoute>} />
           <Route path="/market/config" element={<StoreRoute><MarketConfig /></StoreRoute>} />
+          <Route path="/market/vitrina" element={<StoreRoute><Vitrina /></StoreRoute>} />
           <Route path="/market/analytics" element={<StoreRoute><Analytics /></StoreRoute>} />
           <Route path="/market/products" element={<StoreRoute><ProductsManage /></StoreRoute>} />
           <Route path="/market/marketing" element={<StoreRoute><Marketing /></StoreRoute>} />

@@ -1,0 +1,75 @@
+@keyframes liqRise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.liq-stagger { animation: liqRise 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@media (prefers-reduced-motion: reduce) { .liq-stagger { animation: none; } }
+
+.liq-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem;
+}
+
+.liq-back {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  background: #7e22ce; color: #fff; border: 0; border-radius: 0.75rem;
+  padding: 0.6rem 1rem; font-weight: 700; font-size: 0.85rem; cursor: pointer;
+  transition: background 0.2s ease, transform 0.15s ease;
+}
+.liq-back:hover { background: #6b21a8; transform: translateY(-1px); }
+
+.liq-stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem; margin-bottom: 1.25rem;
+}
+
+.liq-stat {
+  display: flex; align-items: center; gap: 0.75rem;
+  background: #fff; border: 1px solid #ece7f6; border-radius: 0.9rem; padding: 0.9rem 1rem;
+}
+
+.liq-stat__icon {
+  display: grid; place-items: center; width: 36px; height: 36px;
+  border-radius: 0.65rem; flex-shrink: 0;
+}
+.liq-stat__label { font-size: 0.72rem; font-weight: 700; color: #64748b; }
+.liq-stat__value { font-size: 1.15rem; font-weight: 800; }
+
+.liq-toolbar {
+  display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-end; margin: 1rem 0;
+}
+.liq-field label {
+  display: block; font-size: 0.72rem; font-weight: 700; color: #64748b; margin-bottom: 0.25rem;
+}
+.liq-field input, .liq-field select {
+  padding: 0.55rem 0.75rem; border-radius: 0.5rem; border: 1px solid #cbd5e1; background: #fff;
+}
+
+.liq-btn {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  background: #7e22ce; color: #fff; border: 0; border-radius: 0.6rem;
+  padding: 0.6rem 1rem; font-weight: 700; font-size: 0.85rem; cursor: pointer;
+  transition: background 0.2s ease, transform 0.15s ease;
+}
+.liq-btn:hover:not(:disabled) { background: #6b21a8; transform: translateY(-1px); }
+.liq-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.liq-subgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; }
+.liq-mini { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.75rem; padding: 0.75rem; }
+.liq-mini__label { font-size: 0.7rem; color: #64748b; font-weight: 700; }
+.liq-mini__value { font-size: 1.05rem; font-weight: 800; color: #0f172a; }
+
+.liq-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.liq-table th {
+  text-align: left; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.03em;
+  color: #94a3b8; font-weight: 700; padding: 0.5rem;
+}
+.liq-table td { padding: 0.5rem; border-top: 1px solid #eef2f7; color: #334155; }
+.liq-table td.num, .liq-table th.num { text-align: right; }
+.liq-table tr:hover td { background: #faf7fe; }
+
+html.dark .liq-stat, html.dark .liq-mini { background: #141419; border-color: #26262e; }
+html.dark .liq-stat__value, html.dark .liq-mini__value { color: #f1f5f9; }
+html.dark .liq-field input, html.dark .liq-field select { background: #141419; color: #f1f5f9; border-color: #26262e; }
+html.dark .liq-table td { color: #cbd5e1; border-top-color: #26262e; }
+html.dark .liq-table tr:hover td { background: #1b1b22; }

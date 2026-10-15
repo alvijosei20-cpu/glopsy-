@@ -5,7 +5,15 @@ import { cleanString, toInt, toNumber, isAllowedEnum } from '../utils/validation
 export const getPerfilesForUser = async (req, res) => {
   try {
     const userId = req.auth.userId;
-    const { rows } = await pool.query(`SELECT id, nombre, tipo_envio AS tipo, alcance, fullment_id, ciudad_id, costo, estado FROM perfiles_envio WHERE tienda_id = $1 ORDER BY id`, [userId]);
+    const { rows } = await pool.query(
+      `SELECT p.id, p.nombre, p.tipo_envio AS tipo, p.alcance, p.fullment_id, p.ciudad_id,
+              p.costo, p.estado, c.nombre AS ciudad_nombre
+       FROM perfiles_envio p
+       LEFT JOIN ciudades c ON c.id = p.ciudad_id
+       WHERE p.tienda_id = $1
+       ORDER BY p.id`,
+      [userId]
+    );
     return res.json({ ok: true, perfiles: rows });
   } catch (err) {
     console.error('Error al obtener perfiles de envío:', err.message);

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getProductById, saveProduct, uploadProductImages, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, internationalShippingController, createPreferenceController, processMpPaymentController, processSavedCardPaymentController, getTiposEmpaqueController, getUserComprasController, searchOrdersController, getOrderByHashController, getOrderReviewsStatusController, recordPurchaseController, cancelOrderController, updateOrderAddressController, getProductReviewsController, getUserReviewController, addReviewController, updateReviewController, deleteReviewController, getMyProductsManagement, pauseProduct, activateProduct, deleteProduct, addProductImages, updateProductName } from '../controllers/product.controller.js';
+import { getProductById, saveProduct, uploadProductImages, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, suggestCategoryController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, internationalShippingController, createPreferenceController, processMpPaymentController, processSavedCardPaymentController, getTiposEmpaqueController, getUserComprasController, searchOrdersController, getOrderByHashController, getOrderReviewsStatusController, recordPurchaseController, cancelOrderController, updateOrderAddressController, getProductReviewsController, getUserReviewController, addReviewController, updateReviewController, deleteReviewController, getMyProductsManagement, pauseProduct, activateProduct, deleteProduct, addProductImages, updateProductName } from '../controllers/product.controller.js';
 import { productAssistant } from '../controllers/product.assistant.controller.js';
 import { requireAuth, optionalAuth, requireSeller } from '../middlewares/auth.js';
 import { tiendaLimiter, heavyLimiter } from '../middlewares/limiters.js';
@@ -9,6 +9,7 @@ const router = Router();
 // Endpoint: Categorías
 router.get('/categories', getCategoriesController);
 router.post('/auto-categorize', autoCategorizeController);
+router.post('/suggest-category', suggestCategoryController);
 
 // Subida de imágenes de producto (webp → Cloudflare R2). Debe ir antes de /:id.
 router.post('/images', requireAuth, requireSeller, tiendaLimiter, uploadProductImages);

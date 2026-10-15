@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ShieldCheck, ArrowLeft, QrCode, RefreshCw } from 'lucide-react';
 import api from '../services/api';
-import { boldGatewayFeeForMethod } from '../utils/pricing';
 
 const DOC_TYPES = {
   CEDULA: 'CEDULA',
@@ -61,9 +60,6 @@ export default function BoldQrPayment({
   const [remaining, setRemaining] = useState(0);
   const [checking, setChecking] = useState(false);
   const pollRef = useRef(null);
-
-  const fee = boldGatewayFeeForMethod(total, 'qr_breb', { currency });
-  const newTotal = (Number(total) || 0) + fee.total;
 
   useEffect(() => {
     if (!user) return;
@@ -154,8 +150,6 @@ export default function BoldQrPayment({
         },
         guestHash,
         currency,
-        payment_method: 'qr_breb',
-        gateway_fee: { base: fee.base, iva: fee.iva, total: fee.total },
         billing: {
           name: billing.name,
           email: billing.email,
@@ -167,12 +161,13 @@ export default function BoldQrPayment({
       });
 
       if (!res.data?.ok) {
-        const msg = {
+        const base = {
           bold_no_configurado: 'Aún no se ha configurado el cobro por QR Bre-B.',
-          bold_intent_error: 'No fue posible crear la intención de pago.',
+          bold_intent_error: 'La API de Pagos en Línea de Bold rechazó la intención de pago.',
           bold_qr_error: 'No fue posible generar el QR Bre-B.',
         }[res.data?.message] || res.data?.message;
-        setError(msg || 'No fue posible generar el QR.');
+        const detail = res.data?.detail?.error?.message || res.data?.detail?.message || res.data?.detail?.hint || '';
+        setError(detail ? `${base} — ${detail}` : (base || 'No fue posible generar el QR.'));
         return;
       }
 
@@ -204,7 +199,7 @@ export default function BoldQrPayment({
             <QrCode size={20} className="text-blue-600" /> Pago con QR Bre-B
           </h2>
           <p className="text-xs text-slate-500">
-            Paga desde la app de cualquier banco o billetera. La tarifa se agrega al total.
+            Paga desde la app de cualquier banco o billetera.
           </p>
         </div>
         <button type="button" onClick={onBack} className="text-xs font-bold text-fuchsia-600 hover:underline cursor-pointer flex items-center gap-1">
@@ -214,14 +209,11 @@ export default function BoldQrPayment({
 
       {!qr && (
         <div className="space-y-2 bg-slate-50 border border-slate-200 rounded-xl p-4">
-          <div className="flex items-center justify-between text-sm">
-            <span className="font-bold text-slate-700">Tarifa de pago (QR Bre-B)</span>
-            <strong className="text-slate-900">{formatPrice ? formatPrice(fee.total) : fee.total}</strong>
-          </div>
           <div className="flex items-center justify-between text-sm font-extrabold text-slate-900">
             <span>Total a pagar</span>
-            <span className="text-base">{formatPrice ? formatPrice(newTotal) : newTotal}</span>
+            <span className="text-base">{formatPrice ? formatPrice(total) : total}</span>
           </div>
+          <p className="text-[11px] text-slate-400">El precio ya incluye todos los costos.</p>
         </div>
       )}
 
@@ -285,7 +277,7 @@ export default function BoldQrPayment({
         <button type="submit" disabled={loading}
           className="w-full text-white font-bold py-4 rounded-2xl shadow-lg text-base flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700">
           <QrCode size={20} />
-          {loading ? 'Generando QR…' : `Generar QR y pagar ${formatPrice ? formatPrice(newTotal) : newTotal}`}
+          {loading ? 'Generando QR…' : `Generar QR y pagar ${formatPrice ? formatPrice(total) : total}`}
         </button>
       )}
 
