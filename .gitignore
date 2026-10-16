@@ -27,3 +27,15 @@ eurusd_daily.csv
 
 # Monitor local (solo uso local, no se sube)
 glopsy/back/monitor/
+
+# Respaldos de BD y artefactos locales/temporales
+glopsy/back/backups/
+*.bak-ts
+_fly_backup/
+.tmp/
+b.js
+eschunk.js
+adminbundle.js
+gp_live.html
+pl.js
+rw*.mjs
