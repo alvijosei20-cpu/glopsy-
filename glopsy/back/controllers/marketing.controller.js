@@ -195,11 +195,13 @@ export const sendPushCampaign = async (req, res) => {
 };
 
 // --- TikTok (subir video a la bandeja de borradores) ---
-const requestBaseUrl = (req) => {
-  const proto = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
-  const host = req.headers['x-forwarded-host'] || req.get('host');
-  return `${proto}://${host}`;
-};
+// Base pública de la API (para URLs que servicios externos deben poder abrir).
+// Prioriza PUBLIC_API_BASE_URL; si no, FRONTEND_URL + /api (setup gateway local).
+const publicApiBase = () =>
+  String(
+    process.env.PUBLIC_API_BASE_URL ||
+      `${String(process.env.FRONTEND_URL || '').replace(/\/$/, '')}/api`
+  ).replace(/\/$/, '');
 
 export const tiktokStatus = async (req, res) => {
   try {
@@ -213,7 +215,9 @@ export const tiktokStatus = async (req, res) => {
 
 export const tiktokConnect = async (req, res) => {
   try {
-    const redirectUri = `${requestBaseUrl(req)}/api/tienda/marketing/tiktok/callback`;
+    const redirectUri =
+      process.env.TIKTOK_PUBLISH_REDIRECT_URI ||
+      `${publicApiBase()}/tienda/marketing/tiktok/callback`;
     const state = tiktokPublish.buildState({ userId: req.auth.userId, redirectUri, ts: Date.now() });
     const url = await tiktokPublish.buildAuthorizeUrl({ redirectUri, state });
     return res.json({ ok: true, url });
@@ -330,7 +334,7 @@ export const tiktokPostCarousel = async (req, res) => {
     const images = Array.isArray(row.images) ? row.images.map((i) => i?.src || i).filter((s) => typeof s === 'string') : [];
     if (images.length === 0) return res.status(400).json({ ok: false, message: 'Este producto no tiene imágenes para el carrusel.' });
 
-    const base = requestBaseUrl(req);
+    const base = publicApiBase();
     const basePrice = Number(row.suggested_price ?? row.base_price ?? 0);
     const priceStr = basePrice > 0 ? formatPrice(basePrice, configFromMoneda(row.moneda, row.locale)) : '';
 
@@ -348,14 +352,14 @@ export const tiktokPostCarousel = async (req, res) => {
       images,
       format: 'feed',
     });
-    urls.push(`${base}/api/banners/${storeBanner({ name: suggestion.titulo || row.name, kind: 'cover' }, cover)}.png`);
+    urls.push(`${base}/banners/${storeBanner({ name: suggestion.titulo || row.name, kind: 'cover' }, cover)}.png`);
 
     // Fotos del producto (normalizadas a PNG 1080x1350).
     for (const src of images.slice(0, 4)) {
       try {
         const buf = (await axios.get(src, { responseType: 'arraybuffer', timeout: 20000, maxContentLength: 15 * 1024 * 1024 })).data;
         const png = await sharp(Buffer.from(buf)).resize(1080, 1350, { fit: 'cover' }).png().toBuffer();
-        urls.push(`${base}/api/banners/${storeBanner({ src, kind: 'photo' }, png)}.png`);
+        urls.push(`${base}/banners/${storeBanner({ src, kind: 'photo' }, png)}.png`);
       } catch { /* imagen omitida */ }
     }
 
