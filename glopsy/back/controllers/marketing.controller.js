@@ -301,6 +301,82 @@ export const tiktokUpload = async (req, res) => {
   }
 };
 
+// Genera un carrusel con las fotos del producto (portada + fotos) y lo sube a
+// la bandeja de TikTok (borradores). No requiere video.
+export const tiktokPostCarousel = async (req, res) => {
+  const tiendaId = req.auth.userId;
+  const suggestionId = toInt(req.body?.suggestionId, { min: 1 });
+  if (!suggestionId) return res.status(400).json({ ok: false, message: 'Sugerencia inválida.' });
+  try {
+    const tk = await tiktokPublish.getTikTokIntegration(tiendaId);
+    if (!tk) return res.status(400).json({ ok: false, message: 'Conecta tu cuenta de TikTok primero.' });
+
+    const suggestion = await getSuggestionOwned(tiendaId, suggestionId);
+    if (!suggestion) return res.status(404).json({ ok: false, message: 'Sugerencia no encontrada.' });
+
+    const { rows } = await pool.query(
+      `SELECT p.images, p.name, p.suggested_price, p.base_price,
+              COALESCE(t.moneda, pa.moneda, 'COP') AS moneda,
+              COALESCE(t.locale, pa.locale, 'es-CO') AS locale
+       FROM marketing_suggestions s
+       LEFT JOIN produc p ON p.id = s.product_id
+       LEFT JOIN tiendas t ON t.usrid = s.tienda_id
+       LEFT JOIN paises pa ON pa.id = t.pais_id
+       WHERE s.id = $1 AND s.tienda_id = $2 LIMIT 1`,
+      [suggestionId, tiendaId]
+    );
+    const row = rows[0] || {};
+    const payload = suggestion.payload || {};
+    const images = Array.isArray(row.images) ? row.images.map((i) => i?.src || i).filter((s) => typeof s === 'string') : [];
+    if (images.length === 0) return res.status(400).json({ ok: false, message: 'Este producto no tiene imágenes para el carrusel.' });
+
+    const base = requestBaseUrl(req);
+    const basePrice = Number(row.suggested_price ?? row.base_price ?? 0);
+    const priceStr = basePrice > 0 ? formatPrice(basePrice, configFromMoneda(row.moneda, row.locale)) : '';
+
+    const { generateBanner, storeBanner } = await import('../services/banners.service.js');
+    const sharp = (await import('sharp')).default;
+
+    const urls = [];
+    // Portada con foto + nombre + precio.
+    const cover = await generateBanner({
+      name: row.name || 'Producto',
+      category: '',
+      price: priceStr,
+      badge: payload.badge || 'Nuevo',
+      brand: 'Glopsy',
+      images,
+      format: 'feed',
+    });
+    urls.push(`${base}/api/banners/${storeBanner({ name: suggestion.titulo || row.name, kind: 'cover' }, cover)}.png`);
+
+    // Fotos del producto (normalizadas a PNG 1080x1350).
+    for (const src of images.slice(0, 4)) {
+      try {
+        const buf = (await axios.get(src, { responseType: 'arraybuffer', timeout: 20000, maxContentLength: 15 * 1024 * 1024 })).data;
+        const png = await sharp(Buffer.from(buf)).resize(1080, 1350, { fit: 'cover' }).png().toBuffer();
+        urls.push(`${base}/api/banners/${storeBanner({ src, kind: 'photo' }, png)}.png`);
+      } catch { /* imagen omitida */ }
+    }
+
+    const description = [payload.texto, payload.hashtags].filter(Boolean).join('\n\n').slice(0, 4000);
+    const { publishId } = await tiktokPublish.postPhotoCarousel({
+      accessToken: tk.accessToken,
+      title: String(row.name || suggestion.titulo || '').slice(0, 90) || null,
+      description: description || null,
+      imageUrls: urls,
+      coverIndex: 0,
+    });
+
+    await markSuggestionState(tiendaId, suggestionId, 'aplicada').catch(() => {});
+    return res.json({ ok: true, publishId, count: urls.length, message: `Carrusel (${urls.length} imágenes) enviado a tu bandeja de TikTok.` });
+  } catch (err) {
+    console.error('Error subiendo carrusel a TikTok:', err.response?.data || err.message);
+    const msg = err.response?.data?.error?.message || err.message || 'No fue posible enviar el carrusel.';
+    return res.status(500).json({ ok: false, message: `TikTok: ${msg}` });
+  }
+};
+
 export default {
   getMarketingOverview,
   getSuggestions,
@@ -313,5 +389,6 @@ export default {
   tiktokConnect,
   tiktokCallback,
   tiktokUpload,
+  tiktokPostCarousel,
   tiktokDisconnect,
 };

@@ -52,6 +52,7 @@ import {
   tiktokConnect,
   tiktokCallback,
   tiktokUpload,
+  tiktokPostCarousel,
   tiktokDisconnect,
 } from '../controllers/marketing.controller.js';
 
@@ -143,6 +144,7 @@ router.post('/marketing/sugerencias/:id/enviar', sendPushCampaign);
 router.get('/marketing/tiktok', tiktokStatus);
 router.get('/marketing/tiktok/connect', tiktokConnect);
 router.post('/marketing/tiktok/upload', tiktokUpload);
+router.post('/marketing/tiktok/post', tiktokPostCarousel);
 router.delete('/marketing/tiktok', tiktokDisconnect);
 
 export default router;

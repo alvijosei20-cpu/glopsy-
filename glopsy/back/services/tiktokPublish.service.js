@@ -145,6 +145,33 @@ export const uploadVideoToInbox = async ({ accessToken, videoBuffer, contentType
   return { publishId };
 };
 
+// Carrusel de fotos a la bandeja de borradores (PULL_FROM_URL; las URLs deben
+// ser de un dominio verificado en TikTok). Devuelve { publishId }.
+export const postPhotoCarousel = async ({ accessToken, title = null, description = null, imageUrls = [], coverIndex = 0 }) => {
+  if (!accessToken) throw new Error('Falta el token de TikTok.');
+  const imgs = (Array.isArray(imageUrls) ? imageUrls : []).filter(Boolean).slice(0, 35);
+  if (imgs.length === 0) throw new Error('Sin imágenes para el carrusel.');
+  const { data } = await axios.post(
+    `${OPEN_API}/v2/post/publish/content/init/`,
+    {
+      media_type: 'PHOTO',
+      post_mode: 'MEDIA_UPLOAD',
+      post_info: {
+        ...(title ? { title: String(title).slice(0, 90) } : {}),
+        ...(description ? { description: String(description).slice(0, 4000) } : {}),
+      },
+      source_info: { source: 'PULL_FROM_URL', photo_cover_index: Math.max(0, Number(coverIndex) || 0), photo_images: imgs },
+    },
+    { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json; charset=UTF-8' }, timeout: 20000 }
+  );
+  if (data?.error?.code && data.error.code !== 'ok') {
+    throw new Error(`TikTok: ${data.error.message || data.error.code}`);
+  }
+  const publishId = data?.data?.publish_id;
+  if (!publishId) throw new Error('TikTok no devolvió publish_id.');
+  return { publishId };
+};
+
 export const fetchPublishStatus = async ({ accessToken, publishId }) => {
   const { data } = await axios.post(
     `${OPEN_API}/v2/post/publish/status/fetch/`,
@@ -163,5 +190,6 @@ export default {
   buildAuthorizeUrl,
   exchangeCode,
   uploadVideoToInbox,
+  postPhotoCarousel,
   fetchPublishStatus,
 };

@@ -401,17 +401,15 @@ const Marketing = () => {
   };
 
   const uploadTiktok = async (s) => {
-    const url = window.prompt('URL del video (.mp4) que quieres subir a la bandeja de TikTok:');
-    if (!url) return;
     setBusy(true);
     setError('');
     setNotice('');
     try {
-      const { data } = await api.post('/tienda/marketing/tiktok/upload', { videoUrl: url.trim(), suggestionId: s?.id });
-      if (data.ok) { setNotice(data.message || 'Video enviado a tu bandeja de TikTok.'); await load(); }
-      else setError(data.message || 'No se pudo subir el video.');
+      const { data } = await api.post('/tienda/marketing/tiktok/post', { suggestionId: s?.id });
+      if (data.ok) { setNotice(data.message || 'Carrusel enviado a tu bandeja de TikTok.'); await load(); }
+      else setError(data.message || 'No se pudo enviar a TikTok.');
     } catch (err) {
-      setError(err.response?.data?.message || 'No se pudo subir el video.');
+      setError(err.response?.data?.message || 'No se pudo enviar a TikTok.');
     } finally {
       setBusy(false);
     }
