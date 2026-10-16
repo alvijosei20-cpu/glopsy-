@@ -23,7 +23,9 @@ if (process.env.ENABLE_HTTPS && fs.existsSync(SSL_KEY) && fs.existsSync(SSL_CERT
 server.listen(PORT, () => {
   console.log(`🚀 Servidor backend escuchando en el puerto ${PORT}`);
   console.log(`🌐 Frontend autorizado (CORS): ${process.env.FRONTEND_URL || 'No definido'}`);
-  if (process.env.MARKETING_WORKER !== 'off') {
+  // Generación de marketing SOLO manual (botón "Analizar ahora");
+  // el ciclo automático de 6h queda desactivado por defecto (activar con MARKETING_WORKER=on).
+  if (process.env.MARKETING_WORKER === 'on') {
     import('./services/marketing/worker.js').then(({ scheduleMarketingWorker }) => scheduleMarketingWorker());
   }
   import('./services/stockReserve.cleaner.js').then(({ scheduleStockReserveCleaner }) => scheduleStockReserveCleaner());

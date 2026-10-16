@@ -473,7 +473,7 @@ const Marketing = () => {
           <div>
             <h1 className="text-2xl font-extrabold text-slate-950">Marketing</h1>
             <p className="mt-0.5 max-w-2xl text-sm text-slate-500">
-              Tu asistente analiza el catálogo y genera acciones: SEO, promociones, contenido social y campañas. Se actualiza automáticamente cada 6 horas.
+              Tu asistente analiza el catálogo y genera acciones: SEO, promociones, contenido social y campañas. La generación es manual: pulsa Analizar ahora cuando quieras actualizarlo.
             </p>
           </div>
           <button
@@ -493,7 +493,7 @@ const Marketing = () => {
           </div>
           <ul className="list-disc space-y-1 pl-5 marker:text-slate-300">
             <li>La IA <b>redacta el post</b> (texto, hashtags y foto del producto). Cópialo con <b>“Copiar texto”</b> para publicarlo en tus redes (Instagram, TikTok, etc.).</li>
-            <li>Se genera solo cada <b>6 horas</b> (ciclo automático) o cuando pulsas <b>Analizar ahora</b>.</li>
+            <li>Se genera <b>solo cuando pulsas “Analizar ahora”</b>; no hay generación automática.</li>
             <li>Por ciclo genera hasta <b>3 posts</b>, de los productos con ventas recientes.</li>
             <li>Máximo <b>1 post por producto por día</b>.</li>
             <li><b>“Marcar aplicada”</b> es solo tu registro interno de que ya lo publicaste.</li>
@@ -574,7 +574,7 @@ const Marketing = () => {
             </div>
             <p className="text-sm font-bold text-slate-800">Sin sugerencias en esta sección por ahora</p>
             <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">
-              Pulsa <b>Analizar ahora</b> o espera al siguiente ciclo automático (cada 6 horas) para generar contenido nuevo.
+              Pulsa <b>Analizar ahora</b> para generar contenido nuevo.
             </p>
           </Card>
         )}
