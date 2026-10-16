@@ -315,3 +315,148 @@ export function BoutiqueTemplate({ store, slug, ciudad }) {
     </div>
   );
 }
+
+// ------------------------------------------------------------------
+// Plantilla 4: Minimalista (limpia, enfocada en productos)
+// ------------------------------------------------------------------
+export function MinimalTemplate({ store, slug, ciudad }) {
+  const [q, setQ] = useState('');
+  const [products, setProducts] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const load = async (term = q) => {
+    setLoading(true);
+    try {
+      const { data } = await api.get(`/storefront/${slug}/products`, {
+        params: { limit: 24, offset: 0, q: (term || '').trim() || undefined, ciudad: ciudad || undefined },
+      });
+      setProducts(data.products || []);
+      setTotal(data.total || 0);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { if (slug) load(''); /* eslint-disable-next-line */ }, [slug, ciudad]);
+
+  return (
+    <div className="sf-root">
+      <section className="border-b sf-border">
+        <div className="max-w-3xl mx-auto px-4 py-10 text-center space-y-4">
+          {store?.imageUrl && <img src={store.imageUrl} alt="" className="w-14 h-14 rounded-2xl object-cover mx-auto" />}
+          <h1 className="text-2xl sm:text-3xl font-black sf-text">{store?.name || 'Tienda'}</h1>
+          <p className="text-sm sf-muted">Elige lo que buscas y compra en segundos.</p>
+          <div className="flex justify-center">
+            <SearchBar value={q} onChange={setQ} onSubmit={(e) => { e.preventDefault(); load(q); }} />
+          </div>
+        </div>
+      </section>
+
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 sf-muted py-16">
+            <Loader2 size={16} className="animate-spin" /> Cargando…
+          </div>
+        ) : products.length === 0 ? (
+          <Empty>No encontramos productos.</Empty>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5">
+            {products.map((p) => <ProductCard key={p.public_id} p={p} store={store} />)}
+          </div>
+        )}
+        {!loading && products.length > 0 && products.length < total && (
+          <div className="text-center mt-8">
+            <Link to="/products" className="sf-btn inline-block px-5 py-2.5 text-sm">Ver más productos</Link>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------
+// Plantilla 5: Lookbook (portada editorial + destacados)
+// ------------------------------------------------------------------
+export function LookbookTemplate({ store, slug, ciudad }) {
+  const [data, setData] = useState({ latest: [], promotions: [], discounts: [] });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!slug) return;
+    setLoading(true);
+    api.get(`/storefront/${slug}/home`, { params: { ciudad: ciudad || undefined } })
+      .then(({ data: res }) => setData({ latest: res.latest || [], promotions: res.promotions || [], discounts: res.discounts || [] }))
+      .catch(() => setData({ latest: [], promotions: [], discounts: [] }))
+      .finally(() => setLoading(false));
+  }, [slug, ciudad]);
+
+  const featured = [...data.discounts, ...data.latest];
+  const [cover, ...rest] = featured;
+
+  return (
+    <div className="sf-root">
+      <section className="relative min-h-[300px] sm:min-h-[420px] flex items-center overflow-hidden">
+        {store?.storefrontBanner ? (
+          <img src={store.storefrontBanner} alt="" className="absolute inset-0 w-full h-full object-cover" />
+        ) : (
+          <div className="absolute inset-0 sf-gradient-soft" />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
+        <div className="relative max-w-6xl mx-auto px-6 py-14 text-white">
+          <p className="text-[11px] uppercase tracking-[0.2em] text-white/80 mb-2">Colección</p>
+          <h1 className="text-3xl sm:text-5xl font-black max-w-xl leading-tight">{store?.name || 'Tienda'}</h1>
+          <p className="text-sm text-white/85 mt-3 max-w-md">Una selección pensada para ti.</p>
+          <Link to="/products" className="sf-btn inline-block px-6 py-3 text-sm mt-5">Explorar</Link>
+        </div>
+      </section>
+
+      <div className="max-w-6xl mx-auto px-4 py-8 space-y-10">
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 sf-muted py-16">
+            <Loader2 size={16} className="animate-spin" /> Cargando…
+          </div>
+        ) : featured.length === 0 ? (
+          <Empty>Pronto publicaremos productos.</Empty>
+        ) : (
+          <>
+            <section>
+              <SectionTitle icon={<Star size={18} className="sf-accent-text" />}>Selección</SectionTitle>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
+                {cover && (
+                  <Link to={`/product/${cover.public_id}`} className="sf-surface group rounded-2xl overflow-hidden sf-shadow col-span-2 row-span-2 block">
+                    <div className="aspect-[4/3] sf-soft overflow-hidden">
+                      <img src={productImg(cover)} alt={cover.name} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                    </div>
+                    <div className="p-4">
+                      <p className="text-sm font-bold sf-text line-clamp-2">{cover.name}</p>
+                      <p className="mt-1 font-extrabold sf-text">{money(cover, store)}</p>
+                    </div>
+                  </Link>
+                )}
+                {rest.slice(0, 6).map((p) => <ProductCard key={p.public_id} p={p} store={store} />)}
+              </div>
+            </section>
+
+            {data.promotions.length > 0 && (
+              <section>
+                <SectionTitle icon={<Sparkles size={18} className="sf-accent-text" />}>Promociones</SectionTitle>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {data.promotions.map((o) => (
+                    <div key={o.id} className="sf-surface rounded-2xl p-4">
+                      <p className="font-bold sf-text">{o.titulo}</p>
+                      {o.descripcion && <p className="text-xs sf-muted mt-1 line-clamp-2">{o.descripcion}</p>}
+                      <span className="sf-chip inline-block mt-2 px-2.5 py-0.5 text-[11px] font-bold">
+                        {o.tipo === 'porcentaje' ? `${o.valor}% OFF` : `$${o.valor} OFF`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

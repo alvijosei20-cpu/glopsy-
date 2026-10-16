@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useStorefront } from './StorefrontContext';
 import { useUserCity } from '../utils/location';
 import { applyStorefrontAppearance } from './appearance';
-import { DashboardTemplate, CatalogTemplate, BoutiqueTemplate } from './templates';
+import { DashboardTemplate, CatalogTemplate, BoutiqueTemplate, MinimalTemplate, LookbookTemplate } from './templates';
 import './storefront.css';
 
 export default function StorefrontHome() {
@@ -25,5 +25,7 @@ export default function StorefrontHome() {
   const template = store?.storefrontTemplate || 'dashboard';
   if (template === 'catalog') return <CatalogTemplate {...props} />;
   if (template === 'boutique') return <BoutiqueTemplate {...props} />;
+  if (template === 'minimal') return <MinimalTemplate {...props} />;
+  if (template === 'lookbook') return <LookbookTemplate {...props} />;
   return <DashboardTemplate {...props} />;
 }

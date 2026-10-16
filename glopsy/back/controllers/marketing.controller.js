@@ -11,13 +11,8 @@ import {
 import { runMarketingAnalysis } from '../services/marketing/engine.js';
 import { formatPrice, configFromMoneda } from '../services/pais.service.js';
 import { sendPushToUser } from '../services/push.service.js';
-import {
-  listFacebookAccounts,
-  connectFacebookPage,
-  deleteFacebookPage,
-  getFacebookPageForTienda,
-  publishToFacebookPage,
-} from '../services/facebook.service.js';
+import axios from 'axios';
+import * as tiktokPublish from '../services/tiktokPublish.service.js';
 import { toInt, isAllowedEnum } from '../utils/validation.js';
 
 export const getMarketingOverview = async (req, res) => {
@@ -199,133 +194,110 @@ export const sendPushCampaign = async (req, res) => {
   }
 };
 
-export const facebookListPages = async (req, res) => {
+// --- TikTok (subir video a la bandeja de borradores) ---
+const requestBaseUrl = (req) => {
+  const proto = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
+  const host = req.headers['x-forwarded-host'] || req.get('host');
+  return `${proto}://${host}`;
+};
+
+export const tiktokStatus = async (req, res) => {
   try {
-    const result = await listFacebookAccounts(req.body?.token);
-    return res.json({ ok: true, ...result });
+    const tk = await tiktokPublish.getTikTokIntegration(req.auth.userId);
+    return res.json({ ok: true, tiktok: { connected: Boolean(tk), openId: tk?.openId || null, scope: tk?.scope || null } });
   } catch (err) {
-    console.error('Error al listar páginas de Facebook:', err.message);
-    return res.status(400).json({ ok: false, message: err.message });
+    console.error('Error consultando TikTok:', err.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible consultar TikTok.' });
   }
 };
 
-export const facebookConnect = async (req, res) => {
-  const tiendaId = req.auth.userId;
+export const tiktokConnect = async (req, res) => {
   try {
-    const page = await connectFacebookPage(tiendaId, {
-      token: req.body?.token,
-      pageId: req.body?.pageId,
+    const redirectUri = `${requestBaseUrl(req)}/api/tienda/marketing/tiktok/callback`;
+    const state = tiktokPublish.buildState({ userId: req.auth.userId, redirectUri, ts: Date.now() });
+    const url = await tiktokPublish.buildAuthorizeUrl({ redirectUri, state });
+    return res.json({ ok: true, url });
+  } catch (err) {
+    console.error('Error iniciando TikTok OAuth:', err.message);
+    return res.status(400).json({ ok: false, message: err.message || 'No fue posible iniciar la conexión.' });
+  }
+};
+
+// Callback público de TikTok (sin sesión): valida el state firmado y guarda el token.
+export const tiktokCallback = async (req, res) => {
+  try {
+    const error = req.query.error || req.query.error_description;
+    if (error) return res.redirect(`${process.env.FRONTEND_URL}/market/marketing?tiktok=error`);
+    const code = req.query.code;
+    const parsed = tiktokPublish.parseState(req.query.state);
+    if (!code || !parsed?.userId || !parsed?.redirectUri) {
+      return res.status(400).send('Solicitud de TikTok inválida.');
+    }
+    const data = await tiktokPublish.exchangeCode({ code, redirectUri: parsed.redirectUri });
+    if (!data?.access_token || !data?.open_id) {
+      console.error('TikTok token error:', data?.error, data?.error_description);
+      return res.redirect(`${process.env.FRONTEND_URL}/market/marketing?tiktok=error`);
+    }
+    await tiktokPublish.saveTikTokIntegration(parsed.userId, {
+      openId: data.open_id,
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      scope: data.scope,
+      expiresIn: data.expires_in,
     });
+    return res.redirect(`${process.env.FRONTEND_URL}/market/marketing?tiktok=connected`);
+  } catch (err) {
+    console.error('Error en callback de TikTok:', err.response?.data || err.message);
+    return res.redirect(`${process.env.FRONTEND_URL}/market/marketing?tiktok=error`);
+  }
+};
+
+export const tiktokDisconnect = async (req, res) => {
+  try {
+    await tiktokPublish.deleteTikTokIntegration(req.auth.userId);
+    return res.json({ ok: true, message: 'Cuenta de TikTok desconectada.' });
+  } catch (err) {
+    console.error('Error desconectando TikTok:', err.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible desconectar TikTok.' });
+  }
+};
+
+// Sube un video (por URL) a la bandeja de borradores del creador.
+export const tiktokUpload = async (req, res) => {
+  const tiendaId = req.auth.userId;
+  const videoUrl = String(req.body?.videoUrl || '').trim();
+  const suggestionId = toInt(req.body?.suggestionId, { min: 1 });
+  if (!/^https?:\/\//i.test(videoUrl)) {
+    return res.status(400).json({ ok: false, message: 'Indica una URL de video válida (mp4).' });
+  }
+  try {
+    const tk = await tiktokPublish.getTikTokIntegration(tiendaId);
+    if (!tk) return res.status(400).json({ ok: false, message: 'Conecta tu cuenta de TikTok primero.' });
+
+    const resp = await axios.get(videoUrl, {
+      responseType: 'arraybuffer',
+      timeout: 60000,
+      maxContentLength: 80 * 1024 * 1024,
+      maxBodyLength: Infinity,
+    });
+    const buffer = Buffer.from(resp.data);
+    if (buffer.length === 0) return res.status(400).json({ ok: false, message: 'El video está vacío.' });
+    if (buffer.length > 80 * 1024 * 1024) return res.status(400).json({ ok: false, message: 'El video supera 80 MB.' });
+    const ct = String(resp.headers['content-type'] || '');
+    const contentType = /^video\//i.test(ct) ? ct.split(';')[0] : 'video/mp4';
+
+    const { publishId } = await tiktokPublish.uploadVideoToInbox({ accessToken: tk.accessToken, videoBuffer: buffer, contentType });
+    if (suggestionId) await markSuggestionState(tiendaId, suggestionId, 'aplicada').catch(() => {});
+
     return res.json({
       ok: true,
-      message: `Página "${page.pageName}" conectada. Ya puedes publicar los posts con IA.`,
-      page,
+      publishId,
+      message: 'Video enviado a tu bandeja de TikTok. Ábrela para terminar de publicar.',
     });
   } catch (err) {
-    console.error('Error al conectar página de Facebook:', err.message);
-    return res.status(400).json({ ok: false, message: err.message });
-  }
-};
-
-export const facebookDisconnect = async (req, res) => {
-  const tiendaId = req.auth.userId;
-  try {
-    const removed = await deleteFacebookPage(tiendaId);
-    if (!removed) return res.status(404).json({ ok: false, message: 'No hay una página conectada.' });
-    return res.json({ ok: true, message: 'Página de Facebook desconectada.' });
-  } catch (err) {
-    console.error('Error al desconectar página de Facebook:', err.message);
-    return res.status(500).json({ ok: false, message: 'No fue posible desconectar la página.' });
-  }
-};
-
-export const publishFacebook = async (req, res) => {
-  const tiendaId = req.auth.userId;
-  const id = toInt(req.params.id, { min: 1 });
-  if (!id) return res.status(400).json({ ok: false, message: 'ID inválido.' });
-  try {
-    const suggestion = await getSuggestionOwned(tiendaId, id);
-    if (!suggestion) return res.status(404).json({ ok: false, message: 'Sugerencia no encontrada.' });
-    if (suggestion.tipo !== 'social') {
-      return res.status(400).json({ ok: false, message: 'Solo los posts sociales se publican en Facebook.' });
-    }
-    if (suggestion.estado === 'aplicada') {
-      return res.status(409).json({ ok: false, message: 'Este post ya fue publicado.' });
-    }
-    if (suggestion.estado === 'descartada') {
-      return res.status(409).json({ ok: false, message: 'Este post fue descartado. Genera uno nuevo.' });
-    }
-
-    const { rows } = await pool.query(
-      `SELECT s.payload, p.images, p.suggested_price, p.base_price, p.name,
-              COALESCE(t.moneda, pa.moneda, 'COP') AS moneda,
-              COALESCE(t.locale, pa.locale, 'es-CO') AS locale
-       FROM marketing_suggestions s
-       LEFT JOIN produc p ON p.id = s.product_id
-       LEFT JOIN tiendas t ON t.usrid = s.tienda_id
-       LEFT JOIN paises pa ON pa.id = t.pais_id
-       WHERE s.id = $1 AND s.tienda_id = $2
-       LIMIT 1`,
-      [id, tiendaId]
-    );
-    const payload = rows[0]?.payload || suggestion.payload || {};
-    const images = Array.isArray(rows[0]?.images)
-      ? rows[0].images.map((i) => i?.src || i).filter(Boolean)
-      : [];
-    const texto = String(payload.texto || '').trim();
-    const hashtags = String(payload.hashtags || '').trim();
-    const message = hashtags ? `${texto}\n\n${hashtags}` : texto;
-    const firstSrc = (x) => (typeof x === 'string' ? x : x?.src || '');
-    let photoUrl = firstSrc(payload.imagen) || (images.length ? firstSrc(images[0]) : '') || null;
-
-    // Intenta publicar con un banner generado (foto real + texto). Si falla, usa la foto simple.
-    try {
-      const bannerSvc = await import('../services/banners.service.js');
-      const base = Number(rows[0]?.suggested_price ?? rows[0]?.base_price ?? 0);
-      const buf = await bannerSvc.generateBanner({
-        name: rows[0]?.name || suggestion.titulo || 'Descubre este producto',
-        category: '',
-        price: base > 0 ? formatPrice(base, configFromMoneda(rows[0]?.moneda, rows[0]?.locale)) : '',
-        badge: payload.badge || '',
-        brand: 'Glopsy',
-        images,
-        format: 'feed',
-      });
-      const key = bannerSvc.storeBanner({ name: suggestion.titulo, images }, buf);
-      const proto = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
-      const host = req.headers['x-forwarded-host'] || req.get('host');
-      photoUrl = `${proto}://${host}/api/banners/${key}.png`;
-    } catch (bannerErr) {
-      console.warn('[marketing] banner no generado, se usa la foto del producto:', bannerErr.message);
-    }
-
-    const page = await getFacebookPageForTienda(tiendaId);
-    if (!page) {
-      return res.status(400).json({
-        ok: false,
-        message: 'Conecta tu página de Facebook primero para poder publicar.',
-      });
-    }
-
-    const result = await publishToFacebookPage({
-      accessToken: page.access_token,
-      pageId: page.fb_page_id,
-      message,
-      photoUrl,
-    });
-
-    await markSuggestionState(tiendaId, id, 'aplicada');
-    return res.json({
-      ok: true,
-      message: result.kind === 'photo'
-        ? `Publicado con foto en "${page.fb_page_name}".`
-        : `Publicado en "${page.fb_page_name}" (sin imagen).`,
-      postId: result.postId,
-      page: page.fb_page_name,
-    });
-  } catch (err) {
-    console.error('Error al publicar en Facebook:', err.message);
-    return res.status(500).json({ ok: false, message: err.message || 'No fue posible publicar en Facebook.' });
+    console.error('Error subiendo video a TikTok:', err.response?.data || err.message);
+    const msg = err.response?.data?.error?.message || err.message || 'No fue posible enviar el video.';
+    return res.status(500).json({ ok: false, message: `TikTok: ${msg}` });
   }
 };
 
@@ -337,8 +309,9 @@ export default {
   dismissSuggestion,
   updateCampaignUrl,
   sendPushCampaign,
-  facebookListPages,
-  facebookConnect,
-  facebookDisconnect,
-  publishFacebook,
+  tiktokStatus,
+  tiktokConnect,
+  tiktokCallback,
+  tiktokUpload,
+  tiktokDisconnect,
 };

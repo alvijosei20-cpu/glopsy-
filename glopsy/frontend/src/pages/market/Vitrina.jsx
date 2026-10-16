@@ -1,17 +1,18 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Palette, ArrowLeft } from 'lucide-react';
+import { Palette, ArrowLeft, LayoutTemplate, Moon, Droplet, Image as ImageIcon, Check } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { ApiLoadingModal } from '../../components/LoadingScreen';
 import api from '../../services/api';
 import { PALETTE_OPTIONS } from '../../storefront/appearance';
 import '../panel/panel.css';
-import './market.css';
 
 const TEMPLATES = [
   { id: 'dashboard', name: 'Dashboard', desc: 'Promos, descuentos y novedades' },
   { id: 'catalog', name: 'Catálogo', desc: 'Lista total de productos' },
   { id: 'boutique', name: 'Boutique', desc: 'Portada y destacados' },
+  { id: 'minimal', name: 'Minimalista', desc: 'Limpia y enfocada en productos' },
+  { id: 'lookbook', name: 'Lookbook', desc: 'Portada editorial y selección' },
 ];
 
 const THEMES = [
@@ -19,6 +20,20 @@ const THEMES = [
   ['light', 'Claro'],
   ['dark', 'Oscuro'],
 ];
+
+const Step = ({ n, title, hint, icon: Icon, children }) => (
+  <div className="relative pl-12">
+    <span className="absolute left-0 top-0 w-8 h-8 rounded-full bg-fuchsia-600 text-white text-sm font-extrabold flex items-center justify-center">{n}</span>
+    <div className="pb-6">
+      <div className="flex items-center gap-2 mb-1">
+        {Icon && <Icon size={16} className="text-fuchsia-600" />}
+        <h3 className="font-bold text-slate-900 dark:text-white">{title}</h3>
+      </div>
+      {hint && <p className="text-xs text-slate-500 mb-3">{hint}</p>}
+      {children}
+    </div>
+  </div>
+);
 
 const Vitrina = () => {
   const { tienda, refreshTienda } = useAuth();
@@ -64,140 +79,132 @@ const Vitrina = () => {
     }
   };
 
-  const label = { display: 'block', color: '#334155', fontWeight: 600, fontSize: '0.9rem' };
+  const pal = PALETTE_OPTIONS.find((p) => p.id === appearance.palette);
+  const from = pal?.from || appearance.color;
+  const to = pal?.to || appearance.color;
+  const dark = appearance.theme === 'dark';
 
   return (
-    <section className="panel" aria-labelledby="vitrina-title">
-      <ApiLoadingModal
-        status={apiStatus}
-        message="Guardando..."
-        successMessage="¡Guardado con éxito!"
-        errorMessage="Ocurrió un error"
-      />
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <ApiLoadingModal status={apiStatus} message="Guardando..." successMessage="¡Guardado con éxito!" errorMessage="Ocurrió un error" />
 
-      <div className="market__top">
-        <div className="market__intro">
-          <p className="panel__eyebrow">Panel de control</p>
-          <h1 id="vitrina-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Palette size={26} color="#7e22ce" aria-hidden="true" /> Apariencia de tu vitrina
-          </h1>
-          <p className="market__subtitle">Elige plantilla, tema y colores de tu tienda.</p>
+      <div className="flex flex-wrap items-center gap-3 mb-6">
+        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-fuchsia-600 to-pink-600 text-white flex items-center justify-center"><Palette size={22} /></div>
+        <div className="flex-1">
+          <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">Apariencia de tu vitrina</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Plantilla, tema y color. Los cambios se aplican a tu tienda pública.</p>
         </div>
-        <Link
-          to="/market"
-          className="market__visit"
-          style={{ backgroundImage: 'none', background: '#7e22ce' }}
-        >
-          <ArrowLeft size={16} /> Volver a mi tienda
+        <Link to="/market" className="inline-flex items-center gap-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800 px-3.5 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-zinc-700">
+          <ArrowLeft size={16} /> Mi tienda
         </Link>
       </div>
 
-      {error && <div className="panel__error" role="alert">{error}</div>}
-      {notice && <p className="panel__notice" role="status">{notice}</p>}
+      {error && <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-sm px-4 py-2.5">{error}</div>}
+      {notice && <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 text-sm px-4 py-2.5">{notice}</div>}
 
-      <section className="market__card" aria-labelledby="appearance-title">
-        <h2 className="market__card-title" id="appearance-title">
-          <Palette size={18} aria-hidden="true" /> Personaliza tu tienda
-        </h2>
-        <p className="market__hint">Los cambios se aplican a tu vitrina pública.</p>
+      <div className="grid lg:grid-cols-[1fr_300px] gap-6">
+        {/* Cascada de pasos */}
+        <form onSubmit={handleSaveAppearance} className="relative">
+          <span className="absolute left-4 top-4 bottom-16 w-px bg-slate-200 dark:bg-zinc-800" aria-hidden="true" />
 
-        <form onSubmit={handleSaveAppearance}>
-          <label style={label}>Plantilla</label>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.75rem', margin: '0.5rem 0 1.25rem' }}>
-            {TEMPLATES.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setAppearance({ ...appearance, template: t.id })}
-                style={{
-                  textAlign: 'left', padding: '0.75rem', borderRadius: '0.75rem', cursor: 'pointer',
-                  border: appearance.template === t.id ? '2px solid #7c3aed' : '1px solid #cbd5e1',
-                  background: appearance.template === t.id ? '#f5f3ff' : 'white',
-                }}
-              >
-                <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.9rem' }}>{t.name}</div>
-                <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{t.desc}</div>
+          <Step n={1} title="Plantilla" hint="Cómo se organiza tu portada." icon={LayoutTemplate}>
+            <div className="grid sm:grid-cols-3 gap-2">
+              {TEMPLATES.map((t) => {
+                const active = appearance.template === t.id;
+                return (
+                  <button key={t.id} type="button" onClick={() => setAppearance({ ...appearance, template: t.id })}
+                    className={`text-left rounded-xl border p-3 transition-colors ${active ? 'border-fuchsia-500 bg-fuchsia-50 dark:bg-fuchsia-950/30' : 'border-slate-200 dark:border-zinc-700 hover:border-slate-300'}`}>
+                    <div className="font-bold text-sm text-slate-900 dark:text-white">{t.name}</div>
+                    <div className="text-[11px] text-slate-500">{t.desc}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </Step>
+
+          <Step n={2} title="Tema" hint="Claro, oscuro o según el dispositivo." icon={Moon}>
+            <div className="flex flex-wrap gap-2">
+              {THEMES.map(([id, name]) => {
+                const active = appearance.theme === id;
+                return (
+                  <button key={id} type="button" onClick={() => setAppearance({ ...appearance, theme: id })}
+                    className={`px-3.5 py-2 rounded-xl text-sm font-semibold border transition-colors ${active ? 'border-fuchsia-500 bg-fuchsia-50 dark:bg-fuchsia-950/30 text-fuchsia-700 dark:text-fuchsia-300' : 'border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-slate-300 hover:border-slate-300'}`}>
+                    {name}
+                  </button>
+                );
+              })}
+            </div>
+          </Step>
+
+          <Step n={3} title="Color" hint="Paleta de tu marca." icon={Droplet}>
+            <div className="flex flex-wrap items-center gap-2.5">
+              {PALETTE_OPTIONS.map((p) => (
+                <button key={p.id} type="button" title={p.name} aria-label={p.name}
+                  onClick={() => setAppearance({ ...appearance, palette: p.id })}
+                  className="w-9 h-9 rounded-full transition-transform hover:scale-105"
+                  style={{
+                    backgroundImage: `linear-gradient(135deg, ${p.from}, ${p.to})`,
+                    boxShadow: appearance.palette === p.id ? '0 0 0 2px #0f172a' : '0 0 0 1px #cbd5e1',
+                  }} />
+              ))}
+              <button type="button" onClick={() => setAppearance({ ...appearance, palette: 'custom' })}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${appearance.palette === 'custom' ? 'border-fuchsia-500 bg-fuchsia-50 dark:bg-fuchsia-950/30 text-fuchsia-700 dark:text-fuchsia-300' : 'border-slate-200 dark:border-zinc-700 text-slate-500'}`}>
+                Personalizado
               </button>
-            ))}
-          </div>
+              {appearance.palette === 'custom' && (
+                <input type="color" aria-label="Color personalizado" value={appearance.color}
+                  onChange={(e) => setAppearance({ ...appearance, color: e.target.value })}
+                  className="w-9 h-9 rounded-lg border border-slate-200 dark:border-zinc-700 cursor-pointer bg-transparent" />
+              )}
+            </div>
+          </Step>
 
-          <label style={label}>Tema</label>
-          <div style={{ display: 'flex', gap: '0.5rem', margin: '0.5rem 0 1.25rem', flexWrap: 'wrap' }}>
-            {THEMES.map(([id, name]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setAppearance({ ...appearance, theme: id })}
-                style={{
-                  padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600,
-                  border: appearance.theme === id ? '2px solid #7c3aed' : '1px solid #cbd5e1',
-                  background: appearance.theme === id ? '#f5f3ff' : 'white', color: '#0f172a',
-                }}
-              >
-                {name}
-              </button>
-            ))}
-          </div>
-
-          <label style={label}>Paleta de colores</label>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', margin: '0.5rem 0 1rem', alignItems: 'center' }}>
-            {PALETTE_OPTIONS.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                title={p.name}
-                aria-label={p.name}
-                onClick={() => setAppearance({ ...appearance, palette: p.id })}
-                style={{
-                  width: 40, height: 40, borderRadius: '50%', cursor: 'pointer',
-                  backgroundImage: `linear-gradient(135deg, ${p.from}, ${p.to})`,
-                  border: appearance.palette === p.id ? '3px solid #0f172a' : '2px solid transparent',
-                  boxShadow: '0 0 0 1px #cbd5e1',
-                }}
-              />
-            ))}
-            <button
-              type="button"
-              onClick={() => setAppearance({ ...appearance, palette: 'custom' })}
-              style={{
-                padding: '0.4rem 0.8rem', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600,
-                border: appearance.palette === 'custom' ? '2px solid #7c3aed' : '1px solid #cbd5e1',
-                background: appearance.palette === 'custom' ? '#f5f3ff' : 'white', color: '#0f172a',
-              }}
-            >
-              Personalizado
-            </button>
-            {appearance.palette === 'custom' && (
-              <input
-                type="color"
-                aria-label="Color personalizado"
-                value={appearance.color}
-                onChange={(e) => setAppearance({ ...appearance, color: e.target.value })}
-                style={{ width: 40, height: 40, borderRadius: '0.5rem', border: '1px solid #cbd5e1', cursor: 'pointer' }}
-              />
-            )}
-          </div>
-
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ ...label, marginBottom: '0.35rem' }}>
-              Banner (plantilla Boutique, opcional)
-            </label>
-            <input
-              value={appearance.banner}
-              onChange={(e) => setAppearance({ ...appearance, banner: e.target.value })}
+          <Step n={4} title="Banner" hint="Solo para la plantilla Boutique (opcional)." icon={ImageIcon}>
+            <input value={appearance.banner} onChange={(e) => setAppearance({ ...appearance, banner: e.target.value })}
               placeholder="https://…/banner.jpg"
-              style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
-            />
-          </div>
+              className="w-full rounded-xl border border-slate-200 dark:border-zinc-700 bg-transparent px-3 py-2.5 text-sm outline-none focus:border-fuchsia-400" />
+          </Step>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button type="submit" className="action-button" disabled={savingAppearance}>
+          <div className="relative pl-12">
+            <span className="absolute left-0 top-0 w-8 h-8 rounded-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 flex items-center justify-center"><Check size={16} /></span>
+            <button type="submit" disabled={savingAppearance}
+              className="rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white font-bold px-5 py-2.5 text-sm hover:opacity-90 disabled:opacity-60">
               {savingAppearance ? 'Guardando…' : 'Guardar apariencia'}
             </button>
           </div>
         </form>
-      </section>
-    </section>
+
+        {/* Vista previa */}
+        <aside className="lg:sticky lg:top-6 lg:self-start">
+          <p className="text-xs font-semibold text-slate-500 mb-2">Vista previa</p>
+          <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden shadow-sm">
+            <div className="h-24 flex items-end p-4 text-white" style={{ backgroundImage: `linear-gradient(120deg, ${from}, ${to})` }}>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide opacity-80">Tu tienda</p>
+                <p className="font-extrabold">{tienda.name || 'Mi tienda'}</p>
+              </div>
+            </div>
+            <div className={`p-4 space-y-3 ${dark ? 'bg-zinc-900 text-white' : 'bg-white text-slate-800'}`}>
+              {appearance.banner && appearance.template === 'boutique' && (
+                <img src={appearance.banner} alt="banner" className="w-full h-20 object-cover rounded-lg" onError={(e) => { e.target.style.display = 'none'; }} />
+              )}
+              <div className="grid grid-cols-2 gap-2">
+                {[0, 1, 2, 3].map((i) => (
+                  <div key={i} className={`rounded-lg border ${dark ? 'border-zinc-700 bg-zinc-800' : 'border-slate-200 bg-slate-50'} p-2`}>
+                    <div className={`h-12 rounded ${dark ? 'bg-zinc-700' : 'bg-slate-200'}`} />
+                    <div className="h-2 w-3/4 rounded bg-slate-300 dark:bg-zinc-600 mt-2" />
+                    <div className="h-2 w-1/2 rounded mt-1" style={{ background: to }} />
+                  </div>
+                ))}
+              </div>
+              <span className="inline-block text-xs font-bold px-3 py-1.5 rounded-lg text-white" style={{ background: to }}>
+                {TEMPLATES.find((t) => t.id === appearance.template)?.name || 'Plantilla'}
+              </span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
   );
 };
 

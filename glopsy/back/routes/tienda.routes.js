@@ -48,10 +48,11 @@ import {
   dismissSuggestion,
   updateCampaignUrl,
   sendPushCampaign,
-  facebookListPages,
-  facebookConnect,
-  facebookDisconnect,
-  publishFacebook,
+  tiktokStatus,
+  tiktokConnect,
+  tiktokCallback,
+  tiktokUpload,
+  tiktokDisconnect,
 } from '../controllers/marketing.controller.js';
 
 const router = Router();
@@ -67,6 +68,9 @@ router.get('/payment-methods', getPaymentMethods);
 // Solicitud para ser vendedor (para usuarios sin can_sell, antes de requireSeller).
 router.get('/seller-request', requireAuth, tiendaLimiter, getSellerRequest);
 router.post('/seller-request', requireAuth, tiendaLimiter, requestSeller);
+
+// Callback público de TikTok (redirect de TikTok, sin sesión; valida state firmado).
+router.get('/marketing/tiktok/callback', tiktokCallback);
 
 router.use(requireAuth, requireSeller, tiendaLimiter);
 // Pedidos del vendedor + rastreo por guía
@@ -134,11 +138,11 @@ router.post('/marketing/sugerencias/:id/aplicar', applySuggestion);
 router.post('/marketing/sugerencias/:id/descartar', dismissSuggestion);
 router.post('/marketing/sugerencias/:id/url', updateCampaignUrl);
 router.post('/marketing/sugerencias/:id/enviar', sendPushCampaign);
-router.post('/marketing/sugerencias/:id/facebook', publishFacebook);
 
-// Facebook Pages (publicar el contenido social del asistente)
-router.post('/marketing/facebook/pages', facebookListPages);
-router.post('/marketing/facebook/connect', facebookConnect);
-router.delete('/marketing/facebook', facebookDisconnect);
+// TikTok: subir video a la bandeja de borradores (Content Posting API).
+router.get('/marketing/tiktok', tiktokStatus);
+router.get('/marketing/tiktok/connect', tiktokConnect);
+router.post('/marketing/tiktok/upload', tiktokUpload);
+router.delete('/marketing/tiktok', tiktokDisconnect);
 
 export default router;

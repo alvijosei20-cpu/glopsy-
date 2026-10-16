@@ -678,7 +678,7 @@ export const createTiendaController = ({
     const color = cleanString(req.body.color, { maxLength: 9 });
     const banner = cleanString(req.body.banner, { maxLength: 500 });
 
-    if (!isAllowedEnum(template, ['dashboard', 'catalog', 'boutique'])) {
+    if (!isAllowedEnum(template, ['dashboard', 'catalog', 'boutique', 'minimal', 'lookbook'])) {
       return res.status(400).json({ ok: false, message: 'Plantilla no válida.' });
     }
     if (!isAllowedEnum(theme, ['light', 'dark', 'auto'])) {

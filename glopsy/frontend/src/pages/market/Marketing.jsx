@@ -45,9 +45,9 @@ const copyText = async (text) => {
   }
 };
 
-const FacebookIcon = ({ size = 16 }) => (
+const TikTokGlyph = ({ size = 16 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-    <path d="M22 12a10 10 0 1 0-11.56 9.88v-6.99H7.9V12h2.54V9.8c0-2.5 1.49-3.89 3.77-3.89 1.09 0 2.23.2 2.23.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56V12h2.78l-.45 2.89h-2.33v6.99A10 10 0 0 0 22 12Z" />
+    <path d="M16 8.245a5.5 5.5 0 0 0 3.5 1.255V7.02A3.5 3.5 0 0 1 16 3.5h-2.5v9.75A2.25 2.25 0 1 1 11.25 11v-2.6a4.85 4.85 0 1 0 4.75 4.85V8.245Z" />
   </svg>
 );
 
@@ -68,7 +68,7 @@ const KpiChip = ({ icon: Icon, label, value, sub, accent }) => (
 
 const firstSrc = (x) => (typeof x === 'string' ? x : x && typeof x === 'object' ? x.src || '' : '');
 
-const SuggestionCard = ({ s, onAction, busy, fbConnected }) => {
+const SuggestionCard = ({ s, onAction, busy, tiktokConnected, onTiktok }) => {
   const [copied, setCopied] = useState(false);
   const [urlEditing, setUrlEditing] = useState(false);
   const [urlDraft, setUrlDraft] = useState('');
@@ -241,13 +241,13 @@ const SuggestionCard = ({ s, onAction, busy, fbConnected }) => {
             {copied ? 'Copiado' : 'Copiar texto'}
           </button>
         )}
-        {fbConnected && s.tipo === 'social' && s.estado === 'pendiente' && (
+        {s.tipo === 'social' && s.estado === 'pendiente' && tiktokConnected && (
           <button
-            onClick={() => onAction(s, 'facebook')}
+            onClick={() => onTiktok(s)}
             disabled={busy}
-            className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-[#1877F2] text-white hover:bg-[#166FE5] transition-colors disabled:opacity-60"
+            className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-black text-white hover:opacity-90 transition-colors disabled:opacity-60"
           >
-            <FacebookIcon size={14} /> Publicar en Facebook
+            <TikTokGlyph size={14} /> Subir a TikTok
           </button>
         )}
         {s.tipo === 'email' && s.estado !== 'aplicada' && (
@@ -291,195 +291,6 @@ const SuggestionCard = ({ s, onAction, busy, fbConnected }) => {
   );
 };
 
-const FacebookConnectModal = ({ open, onClose, onConnected }) => {
-  const [token, setToken] = useState('');
-  const [step, setStep] = useState('token');
-  const [owner, setOwner] = useState('');
-  const [pages, setPages] = useState([]);
-  const [selected, setSelected] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (!open) return;
-    setToken('');
-    setStep('token');
-    setOwner('');
-    setPages([]);
-    setSelected('');
-    setError('');
-  }, [open]);
-
-  if (!open) return null;
-
-  const listPages = async () => {
-    const t = token.trim();
-    if (!t) {
-      setError('Pega el token del system user de tu negocio.');
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      const { data } = await api.post('/tienda/marketing/facebook/pages', { token: t });
-      if (!data.ok) {
-        setError(data.message || 'No se pudo validar el token.');
-        return;
-      }
-      if (!data.pages?.length) {
-        setError('No se encontraron páginas para este token. Verifica que el system user tenga tu página asignada con permiso para publicar contenido.');
-        return;
-      }
-      setOwner(data.owner || 'Mi negocio');
-      setPages(data.pages);
-      setSelected(data.pages[0].id);
-      setStep('pages');
-    } catch (err) {
-      setError(err.response?.data?.message || 'No se pudieron cargar tus páginas.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const connect = async () => {
-    if (!selected) {
-      setError('Elige una página.');
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      const { data } = await api.post('/tienda/marketing/facebook/connect', {
-        token: token.trim(),
-        pageId: selected,
-      });
-      if (!data.ok) {
-        setError(data.message || 'No se pudo conectar.');
-        return;
-      }
-      onConnected();
-      onClose();
-    } catch (err) {
-      setError(err.response?.data?.message || 'No se pudo conectar la página.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 p-5 max-h-[calc(100dvh-2rem)] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-3 mb-5">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-[#1877F2]/10 text-[#1877F2] shrink-0">
-              <FacebookIcon size={18} />
-            </div>
-            <div>
-              <h3 className="text-sm font-extrabold text-slate-900">Conectar página de Facebook</h3>
-              <p className="text-[11px] text-slate-500">La IA publicará los posts sociales en esta página.</p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors shrink-0"
-            aria-label="Cerrar"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        {step === 'token' && (
-          <>
-            <label className="block text-center text-[11px] font-bold text-slate-500 mb-2">
-              Pega el token del system user de tu negocio
-            </label>
-            <textarea
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              rows={3}
-              placeholder="EAA..."
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-700 font-mono text-center placeholder:text-slate-300 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-            />
-            <p className="text-[10px] text-slate-400 mt-2 leading-relaxed text-center">
-              Meta for Developers → tu app → Marketing API → System User (o Configuración del negocio).
-              El system user debe tener tu página asignada con un rol que permita publicar contenido.
-            </p>
-            <button
-              onClick={listPages}
-              disabled={busy}
-              className="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-xl bg-[#1877F2] text-white text-xs font-bold px-4 py-2.5 hover:bg-[#166FE5] transition-colors disabled:opacity-60"
-            >
-              {busy ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-              Buscar mis páginas
-            </button>
-          </>
-        )}
-
-        {step === 'pages' && (
-          <>
-            <p className="text-[11px] text-slate-500 mb-3 text-center">
-              <b className="text-slate-700">{owner}</b> — elige la página donde publicar:
-            </p>
-            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-              {pages.map((pg) => (
-                <button
-                  key={pg.id}
-                  onClick={() => setSelected(pg.id)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left transition-colors ${
-                    selected === pg.id
-                      ? 'border-[#1877F2] bg-[#1877F2]/5 ring-2 ring-[#1877F2]/15'
-                      : 'border-slate-200 hover:border-blue-200'
-                  }`}
-                >
-                  <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black text-white ${
-                      selected === pg.id ? 'bg-[#1877F2]' : 'bg-slate-300'
-                    }`}
-                  >
-                    {(pg.name || '?').charAt(0).toUpperCase()}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-slate-800 truncate">{pg.name}</p>
-                    <p className="text-[10px] text-slate-400">Publicar como página</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-2 mt-4">
-              <button
-                onClick={() => setStep('token')}
-                disabled={busy}
-                className="flex-1 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold px-4 py-2.5 hover:bg-slate-200 transition-colors disabled:opacity-60"
-              >
-                Volver
-              </button>
-              <button
-                onClick={connect}
-                disabled={busy}
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-[#1877F2] text-white text-xs font-bold px-4 py-2.5 hover:bg-[#166FE5] transition-colors disabled:opacity-60"
-              >
-                {busy ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                Conectar
-              </button>
-            </div>
-          </>
-        )}
-
-        {error && (
-          <p className="mt-3 bg-pink-50 border border-pink-200 text-pink-700 rounded-xl px-3 py-2 text-[11px] font-semibold" role="alert">
-            {error}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-};
 
 const Marketing = () => {
   const navigate = useNavigate();
@@ -492,18 +303,20 @@ const Marketing = () => {
   const [notice, setNotice] = useState('');
   const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState(null);
-  const [fbModal, setFbModal] = useState(false);
+  const [tiktok, setTiktok] = useState({ connected: false });
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [ovRes, sugRes] = await Promise.all([
+      const [ovRes, sugRes, tkRes] = await Promise.all([
         api.get('/tienda/marketing'),
         api.get('/tienda/marketing/sugerencias', { params: { limit: 60 } }),
+        api.get('/tienda/marketing/tiktok').catch(() => ({ data: {} })),
       ]);
       if (ovRes.data.ok) setOverview(ovRes.data);
       if (sugRes.data.ok) setSuggestions(sugRes.data.suggestions || []);
+      if (tkRes.data?.ok) setTiktok(tkRes.data.tiktok || { connected: false });
     } catch {
       setError('No se pudieron cargar los datos de marketing.');
     } finally {
@@ -514,6 +327,12 @@ const Marketing = () => {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get('tiktok');
+    if (q === 'connected') setNotice('Cuenta de TikTok conectada. Ya puedes subir videos a tu bandeja.');
+    else if (q === 'error') setError('No se pudo conectar con TikTok. Intenta de nuevo.');
+  }, []);
 
   const runAnalysis = async () => {
     setRunning(true);
@@ -555,21 +374,44 @@ const Marketing = () => {
     }
   };
 
-  const disconnectFb = async () => {
-    if (!window.confirm('¿Desconectar la página de Facebook? Ya no podrás publicar desde aquí.')) return;
+  const connectTiktok = async () => {
+    setError('');
+    try {
+      const { data } = await api.get('/tienda/marketing/tiktok/connect');
+      if (data.ok && data.url) window.location.href = data.url;
+      else setError(data.message || 'No fue posible iniciar la conexión con TikTok.');
+    } catch (err) {
+      setError(err.response?.data?.message || 'No fue posible iniciar la conexión con TikTok.');
+    }
+  };
+
+  const disconnectTiktok = async () => {
+    if (!window.confirm('¿Desconectar tu cuenta de TikTok?')) return;
+    setBusy(true);
+    setError('');
+    try {
+      const { data } = await api.delete('/tienda/marketing/tiktok');
+      if (data.ok) { setNotice(data.message || 'Cuenta de TikTok desconectada.'); await load(); }
+      else setError(data.message || 'No se pudo desconectar TikTok.');
+    } catch (err) {
+      setError(err.response?.data?.message || 'No se pudo desconectar TikTok.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const uploadTiktok = async (s) => {
+    const url = window.prompt('URL del video (.mp4) que quieres subir a la bandeja de TikTok:');
+    if (!url) return;
     setBusy(true);
     setError('');
     setNotice('');
     try {
-      const { data } = await api.delete('/tienda/marketing/facebook');
-      if (data.ok) {
-        setNotice(data.message || 'Página desconectada.');
-        await load();
-      } else {
-        setError(data.message || 'No se pudo desconectar la página.');
-      }
+      const { data } = await api.post('/tienda/marketing/tiktok/upload', { videoUrl: url.trim(), suggestionId: s?.id });
+      if (data.ok) { setNotice(data.message || 'Video enviado a tu bandeja de TikTok.'); await load(); }
+      else setError(data.message || 'No se pudo subir el video.');
     } catch (err) {
-      setError(err.response?.data?.message || 'No se pudo desconectar la página.');
+      setError(err.response?.data?.message || 'No se pudo subir el video.');
     } finally {
       setBusy(false);
     }
@@ -577,7 +419,6 @@ const Marketing = () => {
 
   const counts = overview?.summary || {};
   const filtered = tab === 'all' ? suggestions : suggestions.filter((s) => s.tipo === tab);
-
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -637,7 +478,7 @@ const Marketing = () => {
             <p className="font-bold text-slate-800">Cómo funciona el contenido social</p>
           </div>
           <ul className="space-y-1 pl-5 list-disc marker:text-slate-300">
-            <li>La IA <b>redacta el post</b> (texto, hashtags y foto del producto). Si conectas tu página de Facebook, publícalo con un clic en <b>“Publicar en Facebook”</b>; si no, cópialo con <b>“Copiar texto”</b> para Instagram u otras redes.</li>
+            <li>La IA <b>redacta el post</b> (texto, hashtags y foto del producto). Cópialo con <b>“Copiar texto”</b> para publicarlo en tus redes (Instagram, TikTok, etc.).</li>
             <li>Se genera solo cada <b>6 horas</b> (ciclo automático) o cuando pulsas <b>Analizar ahora</b>.</li>
             <li>Por ciclo genera hasta <b>3 posts</b>, de los productos con ventas recientes.</li>
             <li>Máximo <b>1 post por producto por día</b>.</li>
@@ -645,53 +486,27 @@ const Marketing = () => {
           </ul>
         </div>
 
-        {overview?.facebook?.connected ? (
-          <div className="mb-5 rounded-2xl border border-[#1877F2]/25 bg-gradient-to-br from-[#1877F2]/8 to-white px-5 py-4 flex flex-col items-center text-center sm:flex-row sm:items-center sm:text-left">
-            <div className="w-11 h-11 rounded-xl bg-[#1877F2] text-white flex items-center justify-center shadow-md shadow-[#1877F2]/25 mb-2.5 sm:mb-0 shrink-0">
-              <FacebookIcon size={18} />
-            </div>
-            <div className="min-w-0 sm:mx-4 flex-1">
-              <p className="text-sm font-bold text-slate-900">
-                Conectado a <span className="text-[#1877F2]">{overview.facebook.fb_page_name}</span>
-              </p>
-              <p className="text-[11px] text-slate-500 mt-0.5">Los posts sociales tendrán el botón “Publicar en Facebook”.</p>
-            </div>
-            <button
-              onClick={disconnectFb}
-              disabled={busy}
-              className="mt-3 sm:mt-0 inline-flex items-center gap-1.5 text-xs font-bold px-3.5 py-2 rounded-xl bg-white text-slate-600 border border-slate-200 hover:border-pink-300 hover:text-pink-600 transition-colors disabled:opacity-60 shrink-0"
-            >
+        {/* TikTok: subir videos a la bandeja (Content Posting API) */}
+        <div className="mb-5 rounded-2xl border border-slate-200 bg-white shadow-sm px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-black text-white flex items-center justify-center shrink-0"><TikTokGlyph size={20} /></div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-slate-900">{tiktok.connected ? 'TikTok conectado' : 'Publica en TikTok desde tu catálogo'}</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              {tiktok.connected
+                ? 'En los posts sociales tienes el botón “Subir a TikTok”: el video va a tu bandeja y luego lo publicas.'
+                : 'Conecta tu cuenta de TikTok y sube los videos de tus productos a tu bandeja de borradores.'}
+            </p>
+          </div>
+          {tiktok.connected ? (
+            <button onClick={disconnectTiktok} disabled={busy} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-600 hover:border-pink-300 hover:text-pink-600 transition-colors disabled:opacity-60 shrink-0">
               <XCircle size={13} /> Desconectar
             </button>
-          </div>
-        ) : (
-          <div className="mb-5 rounded-2xl border border-slate-200 bg-white shadow-sm px-5 pt-7 pb-6 flex flex-col items-center text-center">
-            <div className="w-12 h-12 rounded-2xl bg-[#1877F2] text-white flex items-center justify-center shadow-md shadow-[#1877F2]/30 mb-3">
-              <FacebookIcon size={20} />
-            </div>
-            <p className="text-sm font-extrabold text-slate-900">
-              Publica los posts de la IA en tu página de Facebook
-            </p>
-            <p className="text-[11px] text-slate-500 max-w-xs mt-1 leading-relaxed">
-              Conecta tu página una sola vez y cada post social tendrá el botón para publicarlo con un clic.
-            </p>
-            <button
-              onClick={() => setFbModal(true)}
-              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[#1877F2] text-white text-xs font-bold px-4 py-2.5 hover:bg-[#166FE5] transition-colors shadow-sm shadow-[#1877F2]/25"
-            >
-              <FacebookIcon size={14} /> Conectar página de Facebook
+          ) : (
+            <button onClick={connectTiktok} className="inline-flex items-center gap-2 rounded-xl bg-black text-white text-xs font-bold px-4 py-2.5 hover:opacity-90 transition-opacity shrink-0">
+              <TikTokGlyph size={14} /> Conectar TikTok
             </button>
-          </div>
-        )}
-
-        <FacebookConnectModal
-          open={fbModal}
-          onClose={() => setFbModal(false)}
-          onConnected={() => {
-            setNotice('Página conectada. Ya puedes publicar los posts con IA.');
-            load();
-          }}
-        />
+          )}
+        </div>
 
         {runResult && (
           <div className="mb-5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl px-4 py-3 text-xs font-medium">
@@ -735,7 +550,8 @@ const Marketing = () => {
                 s={s}
                 onAction={action}
                 busy={busy}
-                fbConnected={!!overview?.facebook?.connected}
+                tiktokConnected={!!tiktok.connected}
+                onTiktok={uploadTiktok}
               />
             ))}
           </div>
