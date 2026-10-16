@@ -30,7 +30,8 @@ glopsy/back/monitor/
 
 # Respaldos de BD y artefactos locales/temporales
 glopsy/back/backups/
-*.bak-ts
+*.bak-ts*
+glopsy-pay/
 _fly_backup/
 .tmp/
 b.js
