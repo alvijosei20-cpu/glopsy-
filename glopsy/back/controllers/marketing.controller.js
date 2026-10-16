@@ -6,6 +6,7 @@ import {
   applySeoSuggestion,
   applyPromoSuggestion,
   updateSuggestionUrl,
+  deleteSuggestion,
   sanitizeCampaignUrl,
 } from '../services/marketing.service.js';
 import { runMarketingAnalysis } from '../services/marketing/engine.js';
@@ -105,12 +106,12 @@ export const dismissSuggestion = async (req, res) => {
   const id = toInt(req.params.id, { min: 1 });
   if (!id) return res.status(400).json({ ok: false, message: 'ID inválido.' });
   try {
-    const updated = await markSuggestionState(tiendaId, id, 'descartada');
-    if (!updated) return res.status(404).json({ ok: false, message: 'Sugerencia no encontrada.' });
-    return res.json({ ok: true, message: 'Sugerencia descartada.' });
+    const deleted = await deleteSuggestion(tiendaId, id);
+    if (!deleted) return res.status(404).json({ ok: false, message: 'Sugerencia no encontrada.' });
+    return res.json({ ok: true, message: 'Sugerencia eliminada.' });
   } catch (err) {
-    console.error('Error al descartar sugerencia:', err.message);
-    return res.status(500).json({ ok: false, message: 'No fue posible descartar la sugerencia.' });
+    console.error('Error al eliminar sugerencia:', err.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible eliminar la sugerencia.' });
   }
 };
 

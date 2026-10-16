@@ -142,6 +142,14 @@ export const markSuggestionState = async (tiendaId, suggestionId, estado, extra 
   return rows[0] || null;
 };
 
+export const deleteSuggestion = async (tiendaId, suggestionId) => {
+  const { rows } = await pool.query(
+    `DELETE FROM marketing_suggestions WHERE id = $2 AND tienda_id = $1 RETURNING *`,
+    [tiendaId, suggestionId]
+  );
+  return rows[0] || null;
+};
+
 export const updateSuggestionUrl = async (tiendaId, suggestionId, url) => {
   const { rows } = await pool.query(
     `UPDATE marketing_suggestions
