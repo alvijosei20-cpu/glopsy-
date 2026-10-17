@@ -142,19 +142,20 @@ export const resolveCommissionRate = async (client, { productoId, categoriaId, t
 // Tasas de IVA por país (referencia; el precio publicado ya incluye el IVA).
 const IVA_RATES = { CO: 19, VE: 16 };
 
-// Tarifa MÁXIMA de Bold (mismo criterio que el precio publicado). Se registra
-// como tarifa de pasarela del ledger (la asume el proveedor).
-const BOLD_FEE_METHODS = [
-  { percent: 2.99, fixed: 900 },
-  { percent: 3.29, fixed: 900 },
-  { percent: 2.89, fixed: 900 },
-  { percent: 4.29, fixed: 900 },
-  { percent: 2.89, fixed: 0 },
+// Tarifa MÁXIMA de ePayco (mismo criterio que el precio publicado). Se registra
+// como tarifa de pasarela del ledger (la asume el proveedor). Fallback cuando la
+// confirmación no trae el fee real. ePayco = plan Agregador, otros bancos:
+// base 3.29% + $700, tarjeta internacional +0.8%, PSE < $60.000 fijo $2.000.
+// IVA 19% sobre el fee. No incluye efectivo.
+const EPAYCO_FEE_METHODS = [
+  { percent: 3.29, fixed: 700 },  // tarjeta nacional / PSE ≥ $60.000
+  { percent: 4.09, fixed: 700 },  // tarjeta internacional (+0.8%)
+  { percent: 0, fixed: 2000 },    // PSE < $60.000
 ];
-export const maxBoldGatewayFee = (amount, moneda = 'COP') => {
+export const maxEpaycoGatewayFee = (amount, moneda = 'COP') => {
   const esLocal = String(moneda).toUpperCase() === 'COP';
   let best = 0;
-  for (const fee of BOLD_FEE_METHODS) {
+  for (const fee of EPAYCO_FEE_METHODS) {
     const base = (Number(amount) || 0) * fee.percent / 100 + (esLocal ? fee.fixed : 0);
     const total = base * 1.19; // + IVA 19% sobre la tarifa
     if (total > best) best = total;
@@ -264,7 +265,7 @@ export const recordSaleForOrder = async (orderId, {
   }
 
   // Tarifa de pasarela: la máxima de Bold (la asume el proveedor).
-  const fee = processorFee == null ? maxBoldGatewayFee(totalGross, currency) : round2(Number(processorFee) || 0);
+  const fee = processorFee == null ? maxEpaycoGatewayFee(totalGross, currency) : round2(Number(processorFee) || 0);
 
   // IVA correcto por línea. El precio publicado se compone así:
   //   total = venta*(1 + iva + comisión) + pasarela

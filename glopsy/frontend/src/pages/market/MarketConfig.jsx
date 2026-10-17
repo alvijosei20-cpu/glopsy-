@@ -159,6 +159,8 @@ const MarketConfig = () => {
   const [tariffSaving, setTariffSaving] = useState(false);
   const [usdStatus, setUsdStatus] = useState({ usd_activation_status: 'none' });
   const [requestingUsd, setRequestingUsd] = useState(false);
+  const [usdtStatus, setUsdtStatus] = useState({ usdt_payments_enabled: false });
+  const [savingUsdt, setSavingUsdt] = useState(false);
   const [payoutAccount, setPayoutAccount] = useState({ banco_codigo: '', banco_nombre: '', tipo_cuenta: '', numero_cuenta: '', titular_cuenta: '', tipo_documento: '', titular_documento: '', tipo_proveedor: '', responsable_iva: false });
   const [bancos, setBancos] = useState([]);
   const [savingPayout, setSavingPayout] = useState(false);
@@ -245,6 +247,9 @@ const MarketConfig = () => {
     api.get('/tienda/usd-activation')
       .then(res => { if (res.data?.status) setUsdStatus(res.data.status); })
       .catch(() => {});
+    api.get('/tienda/usdt-payments')
+      .then(res => { if (res.data?.status) setUsdtStatus(res.data.status); })
+      .catch(() => {});
   }, []);
 
   const handleRequestUsd = async () => {
@@ -257,6 +262,20 @@ const MarketConfig = () => {
       setNotice(err.response?.data?.message || 'No fue posible enviar la solicitud.');
     } finally {
       setRequestingUsd(false);
+    }
+  };
+
+  const handleToggleUsdt = async () => {
+    const enabled = !usdtStatus.usdt_payments_enabled;
+    setSavingUsdt(true);
+    try {
+      const res = await api.put('/tienda/usdt-payments', { enabled });
+      if (res.data?.status) setUsdtStatus(res.data.status);
+      setNotice(res.data?.message || 'Guardado.');
+    } catch (err) {
+      setNotice(err.response?.data?.message || 'No fue posible guardar.');
+    } finally {
+      setSavingUsdt(false);
     }
   };
 
@@ -2615,6 +2634,24 @@ const MarketConfig = () => {
                   )}
                 </div>
               )}
+
+              <div style={{ background: '#ffffff', padding: '1.75rem', borderRadius: '1rem', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginTop: '2rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
+                  <DollarSign size={20} color="#0f172a" />
+                  <div>
+                    <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>Recibir pagos en USDT (Glopsy Pay)</h4>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Habilita el cobro internacional en USDT (BEP20) con la pasarela Glopsy Pay.</p>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+                  <p style={{ margin: 0, color: usdtStatus.usdt_payments_enabled ? '#166534' : '#64748b', fontWeight: 600, fontSize: '0.9rem' }}>
+                    {usdtStatus.usdt_payments_enabled ? 'Habilitado' : 'Deshabilitado'}
+                  </p>
+                  <button type="button" onClick={handleToggleUsdt} disabled={savingUsdt} className="config-btn-primary">
+                    {savingUsdt ? 'Guardando…' : (usdtStatus.usdt_payments_enabled ? 'Deshabilitar' : 'Habilitar')}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </main>

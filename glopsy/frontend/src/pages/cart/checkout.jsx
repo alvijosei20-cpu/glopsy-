@@ -16,6 +16,7 @@ export default function Checkout() {
   const { format: formatPrice, currency: storeCurrency, locale, rate: currencyRate = 1 } = useMoney();
   const { store } = useStorefront();
   const { user } = useAuth();
+  const [usdtEnabled, setUsdtEnabled] = useState(false);
   const paisId = store?.paisId || null;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -472,6 +473,18 @@ export default function Checkout() {
     );
   }
 
+  // Disponibilidad de USDT (Glopsy Pay): la define la tienda dueña del carrito.
+  useEffect(() => {
+    if (isCOP || !cartItems.length) { setUsdtEnabled(false); return; }
+    let alive = true;
+    api.post('/payments/glopsypay/availability', {
+      items: cartItems.map(i => ({ id: i.id, external_id: i.external_id })),
+    })
+      .then(({ data }) => { if (alive) setUsdtEnabled(data?.usdt_enabled === true); })
+      .catch(() => { if (alive) setUsdtEnabled(false); });
+    return () => { alive = false; };
+  }, [cartItems, isCOP]);
+
   const filteredCiudades = selectedDepartamentoId
     ? (ciudadesDepartamento.length > 0
         ? ciudadesDepartamento
@@ -534,7 +547,11 @@ export default function Checkout() {
               ) : (
                 <div className="p-3 rounded-xl border border-fuchsia-200 bg-fuchsia-50 text-sm">
                   <p className="font-bold text-fuchsia-700">Glopsy Pay (USDT)</p>
-                  <p className="text-xs text-fuchsia-600 mt-0.5">Pago internacional en USDT (BEP20) con Glopsy Pay.</p>
+                  <p className="text-xs text-fuchsia-600 mt-0.5">
+                    {usdtEnabled
+                      ? 'Pago internacional en USDT (BEP20) con Glopsy Pay.'
+                      : 'Esta tienda no tiene habilitado el cobro en USDT.'}
+                  </p>
                 </div>
               )}
             </div>
@@ -775,15 +792,17 @@ export default function Checkout() {
 
             <button
               type="submit"
-              disabled={loadingCheckout || loadingShipping || !isCOP}
+              disabled={loadingCheckout || loadingShipping || (!isCOP && !usdtEnabled)}
               className="w-full text-white font-bold py-4 rounded-2xl shadow-lg text-base transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 shadow-blue-600/30"
             >
               <ShieldCheck size={20} />
-              {!isCOP
-                ? 'Glopsy Pay (USDT) — próximamente'
-                : loadingCheckout
-                  ? 'Procesando pago...'
-                  : 'Continuar con Glopsy'}
+              {loadingCheckout
+                ? 'Procesando pago...'
+                : isCOP
+                  ? 'Continuar con Glopsy'
+                  : usdtEnabled
+                    ? 'Continuar con Glopsy Pay (USDT)'
+                    : 'USDT no habilitado'}
             </button>
           </form>
           )}

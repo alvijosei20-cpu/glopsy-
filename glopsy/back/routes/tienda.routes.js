@@ -16,6 +16,8 @@ import {
   getPaymentMethods,
   requestUsdActivation,
   getUsdActivation,
+  getUsdtPayments,
+  saveUsdtPayments,
   saveStorefrontAppearance,
   getFiscalReport,
   getLibroVentasPdf,
@@ -100,6 +102,9 @@ router.put('/payout-account', savePayoutAccount);
 // Solicitud de tienda en USD para vender al exterior
 router.get('/usd-activation', getUsdActivation);
 router.post('/usd-activation', requestUsdActivation);
+// Cobro en USDT con Glopsy Pay: lo habilita la propia tienda (self-service).
+router.get('/usdt-payments', getUsdtPayments);
+router.put('/usdt-payments', saveUsdtPayments);
 // Apariencia de la vitrina (plantilla, tema, paleta)
 router.put('/storefront', saveStorefrontAppearance);
 // Reporte fiscal BA VEN-NIF N° 12 (criptoactivos) a partir de las ventas

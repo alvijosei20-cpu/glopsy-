@@ -2,6 +2,7 @@ import {
   startGlopsyPayCheckout,
   processGlopsyPayWebhook,
   getGlopsyPayOrderStatus,
+  getCartUsdtAvailability,
 } from '../services/glopsyPay.service.js';
 
 export const glopsyPayStart = async (req, res) => {
@@ -19,6 +20,7 @@ export const glopsyPayStart = async (req, res) => {
       const status = result.reason === 'glopsypay_no_configurado' ? 503 : 400;
       const messages = {
         glopsypay_no_configurado: 'Glopsy Pay no está configurado para esta tienda.',
+        usdt_no_habilitado: 'Esta tienda no tiene habilitado el cobro en USDT.',
         carrito_vacio: 'Tu carrito está vacío.',
       };
       return res.status(status).json({ ok: false, message: messages[result.reason] || result.reason, orderNumber: result.orderNumber || null });
@@ -27,6 +29,16 @@ export const glopsyPayStart = async (req, res) => {
   } catch (error) {
     console.error('Error iniciando checkout Glopsy Pay:', error.message);
     return res.status(502).json({ ok: false, message: 'No fue posible iniciar el pago con Glopsy Pay.' });
+  }
+};
+
+export const glopsyPayAvailability = async (req, res) => {
+  try {
+    const result = await getCartUsdtAvailability(req.body?.items || []);
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    console.error('Error consultando disponibilidad USDT:', error.message);
+    return res.status(500).json({ ok: false, message: 'No fue posible consultar la disponibilidad.' });
   }
 };
 

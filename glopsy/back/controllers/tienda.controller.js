@@ -14,6 +14,8 @@ import {
   getPublicPaymentMethods,
   requestUsdActivation as requestUsdActivationForUser,
   getUsdActivationStatus,
+  getUsdtPaymentsSetting,
+  setUsdtPaymentsEnabled,
   saveStorefrontAppearanceForUser,
   getSellerRequestForUser,
   requestSellerForUser,
@@ -671,6 +673,27 @@ export const createTiendaController = ({
     }
   },
 
+  getUsdtPayments: async (req, res) => {
+    try {
+      const status = await getUsdtPaymentsSetting(req.auth.userId);
+      return res.json({ ok: true, status });
+    } catch (error) {
+      console.error('Error al consultar cobro en USDT:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible consultar la configuración.' });
+    }
+  },
+
+  saveUsdtPayments: async (req, res) => {
+    try {
+      const enabled = req.body?.enabled === true || req.body?.enabled === 'true';
+      const status = await setUsdtPaymentsEnabled(req.auth.userId, enabled);
+      return res.json({ ok: true, status, message: enabled ? 'Cobro en USDT (Glopsy Pay) habilitado.' : 'Cobro en USDT deshabilitado.' });
+    } catch (error) {
+      console.error('Error al guardar cobro en USDT:', error.message);
+      return res.status(500).json({ ok: false, message: 'No fue posible guardar la configuración.' });
+    }
+  },
+
   saveStorefrontAppearance: async (req, res) => {
     const template = cleanString(req.body.template, { maxLength: 20 });
     const theme = cleanString(req.body.theme, { maxLength: 10 });
@@ -1021,6 +1044,8 @@ export const {
   getPaymentMethods,
   requestUsdActivation,
   getUsdActivation,
+  getUsdtPayments,
+  saveUsdtPayments,
   saveStorefrontAppearance,
   getFiscalReport,
   getLibroVentasPdf,

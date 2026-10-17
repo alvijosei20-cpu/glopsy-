@@ -25,7 +25,7 @@ const PROVIDERS = [
   { key: 'mercadopago', label: 'Mercado Pago', fields: ['public_key', 'access_token', 'webhook_secret'] },
   { key: 'bold', label: 'Bold', fields: ['public_key', 'access_token', 'webhook_secret'] },
   { key: 'envia', label: 'ENVIA', fields: ['access_token', 'webhook_secret'] },
-  { key: 'glopsypay', label: 'Glopsy Pay', fields: ['access_token', 'webhook_secret'], labels: { access_token: 'API Key', webhook_secret: 'Webhook Secret' }, hint: 'Pasarela propia. Genera la API Key en el panel de Glopsy Pay (Ajustes → API).' },
+  { key: 'glopsypay', label: 'Glopsy Pay', fields: ['access_token', 'webhook_secret'], labels: { access_token: 'API Key', webhook_secret: 'Webhook Secret' }, hint: 'Cuenta GLOBAL única para toda la plataforma. El neto por tienda lo reparte el ledger de la tienda. Genera la API Key en pay.glopsy.shop (Ajustes → API).' },
   { key: 'epayco', label: 'ePayco', fields: ['public_key', 'access_token', 'cust_id', 'webhook_secret'], labels: { public_key: 'Public Key', access_token: 'Private Key', cust_id: 'Customer ID (p_cust_id_cliente)', webhook_secret: 'P_KEY (firma)' }, hint: 'Credenciales del panel de ePayco. El entorno (test/producción) lo define tu cuenta en ePayco, no las llaves.' },
 ];
 const FIELD_LABEL = { public_key: 'Public Key', access_token: 'Access Token', webhook_secret: 'Webhook Secret', cust_id: 'Customer ID' };

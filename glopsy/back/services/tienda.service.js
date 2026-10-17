@@ -44,6 +44,8 @@ const mapTienda = (row) => ({
   mandateContractId: row.mandate_contract_id || null,
   mandateVersion: row.mandate_version || null,
   mandateAcceptedAt: row.mandate_accepted_at || null,
+  // Cobro en USDT (Glopsy Pay) habilitado por la propia tienda.
+  usdtPaymentsEnabled: row.usdt_payments_enabled === true,
 });
 
 // ------------------------------------------------------------------ Subdominio (slug)
@@ -108,7 +110,8 @@ const STORE_COLUMNS = `
   t.storefront_color, t.storefront_banner,
   t.contacto_email, t.contacto_telefono,
   t.terms_version, t.terms_accepted_at,
-  t.mandate_contract_id, t.mandate_version, t.mandate_accepted_at
+  t.mandate_contract_id, t.mandate_version, t.mandate_accepted_at,
+  t.usdt_payments_enabled
 `;
 const STORE_JOIN = `
   LEFT JOIN paises pa ON pa.id = t.pais_id
@@ -884,6 +887,25 @@ export const approveUsdActivation = async (userId, approve = true) => {
   );
   await redisClient.del(cacheKey(userId)).catch(() => {});
   return rows[0] || null;
+};
+
+// Cobro en USDT (Glopsy Pay) habilitado por la propia tienda (self-service).
+export const getUsdtPaymentsSetting = async (userId) => {
+  const { rows } = await pool.query(
+    `SELECT usdt_payments_enabled FROM tiendas WHERE usrid = $1 LIMIT 1`,
+    [userId]
+  );
+  return { usdt_payments_enabled: rows[0]?.usdt_payments_enabled === true };
+};
+
+export const setUsdtPaymentsEnabled = async (userId, enabled = false) => {
+  const { rows } = await pool.query(
+    `UPDATE tiendas SET usdt_payments_enabled = $2 WHERE usrid = $1
+     RETURNING usdt_payments_enabled`,
+    [userId, enabled === true]
+  );
+  await redisClient.del(cacheKey(userId)).catch(() => {});
+  return { usdt_payments_enabled: rows[0]?.usdt_payments_enabled === true };
 };
 
 export const deleteCheckoutIntegrationForUser = async (userId, provider, mode) => {

@@ -166,17 +166,20 @@ export const processEpaycoConfirmation = async (payload = {}) => {
   if (!order) return { ok: true, ignored: true, reason: 'orden_no_encontrada' };
 
   const response = String(payload.x_response || '');
+  // Comisión real de ePayco reportada en la confirmación (fee + IVA del fee).
+  const epaycoFee = Math.round(((Number(payload.x_fee) || 0) + (Number(payload.x_fee_iva) || 0)) * 100) / 100;
   const payloadExtra = {
     epayco_ref: payload.x_ref_payco || payload.ref_payco || null,
     epayco_transaction_id: payload.x_transaction_id || null,
     epayco_response: response || null,
     epayco_test: String(payload.x_test_request || '').toLowerCase() === 'true',
+    epayco_fee: epaycoFee > 0 ? epaycoFee : null,
     epayco_event: payload,
   };
 
   if (response === 'Aceptada') {
     if (order.status === 'Completado') return { ok: true, ignored: true, reason: 'ya_procesada', orderId: order.id };
-    await markOrderPaid(order.id, { provider: 'epayco', refBold: payload.x_ref_payco || null, payloadExtra });
+    await markOrderPaid(order.id, { provider: 'epayco', refBold: payload.x_ref_payco || null, processorFee: epaycoFee > 0 ? epaycoFee : null, payloadExtra });
     await convertCopToUsdt(order.id, order.amount);
     return { ok: true, orderId: order.id, status: 'Completado' };
   }

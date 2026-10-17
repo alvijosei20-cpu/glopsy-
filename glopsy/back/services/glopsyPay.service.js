@@ -22,7 +22,8 @@ const findOrder = async (reference) => {
   if (!reference) return null;
   const { rows } = await pool.query(
     `SELECT id, tienda_id, order_number, order_hash, status, amount, currency,
-            payload->>'glopsypay_token' AS glopsypay_token
+            payload->>'glopsypay_token' AS glopsypay_token,
+            payload->>'glopsypay_fee' AS glopsypay_fee
        FROM orders
       WHERE order_number = $1
          OR order_hash = $1
@@ -35,39 +36,44 @@ const findOrder = async (reference) => {
 };
 
 // Credenciales Glopsy Pay de una tienda (con respaldo en cualquier tienda).
-export const loadGlopsyPayCredentials = async (tiendaId = null) => {
-  const params = [];
-  let where = `provider = 'glopsypay'`;
-  if (tiendaId) {
-    params.push(tiendaId);
-    where += ` AND tienda_id = $1`;
-  }
+// Cuenta GLOBAL única de Glopsy Pay (toda la plataforma). El reparto del neto
+// a cada tienda lo administra el ledger de la ecommerce (recordSaleForOrder
+// por tienda), no la pasarela.
+export const loadGlopsyPayCredentials = async () => {
   const { rows } = await pool.query(
-    `SELECT tienda_id, access_token, webhook_secret, mode
+    `SELECT access_token, webhook_secret, mode
        FROM checkout_integrations
-      WHERE ${where}
+      WHERE provider = 'glopsypay'
       ORDER BY (mode = 'produccion') DESC, updated_at DESC NULLS LAST
-      LIMIT 1`,
-    params
+      LIMIT 1`
   );
-  let row = rows[0];
-  if (!row && tiendaId) {
-    const { rows: any } = await pool.query(
-      `SELECT tienda_id, access_token, webhook_secret, mode
-         FROM checkout_integrations
-        WHERE provider = 'glopsypay'
-        ORDER BY (mode = 'produccion') DESC, updated_at DESC NULLS LAST
-        LIMIT 1`
-    );
-    row = any[0];
-  }
+  const row = rows[0];
   if (!row?.access_token) return null;
   return {
-    tiendaId: row.tienda_id,
     apiKey: decryptSecret(row.access_token) || '',
     webhookSecret: row.webhook_secret ? decryptSecret(row.webhook_secret) || '' : '',
     test: row.mode !== 'produccion',
   };
+};
+
+// Disponibilidad de cobro en USDT para un carrito: la define la tienda
+// dueña de los productos. El carrito es de una sola tienda (ensureSingleStoreCart).
+export const getCartUsdtAvailability = async (items = []) => {
+  const ids = (Array.isArray(items) ? items : [])
+    .map((i) => Number(typeof i === 'object' ? (i.id ?? i.external_id) : i))
+    .filter(Boolean);
+  if (!ids.length) return { usdt_enabled: false, tienda_id: null };
+  const { rows } = await pool.query(
+    `SELECT DISTINCT tienda_id FROM produc WHERE id = ANY($1::int[]) AND tienda_id IS NOT NULL`,
+    [ids]
+  );
+  const tiendas = rows.map((r) => Number(r.tienda_id));
+  if (tiendas.length !== 1) return { usdt_enabled: false, tienda_id: null, tiendas };
+  const { rows: t } = await pool.query(
+    `SELECT usdt_payments_enabled FROM tiendas WHERE usrid = $1 LIMIT 1`,
+    [tiendas[0]]
+  );
+  return { usdt_enabled: t[0]?.usdt_payments_enabled === true, tienda_id: tiendas[0] };
 };
 
 const gpFetch = async (path, { apiKey, method = 'GET', body = null } = {}) => {
@@ -115,7 +121,16 @@ export const startGlopsyPayCheckout = async (userId, {
     shippingPayload,
   });
 
-  const creds = await loadGlopsyPayCredentials(order.tiendaId);
+  // La tienda debe haber habilitado el cobro en USDT (self-service).
+  const { rows: usdtFlag } = await pool.query(
+    `SELECT usdt_payments_enabled FROM tiendas WHERE usrid = $1 LIMIT 1`,
+    [order.tiendaId]
+  );
+  if (usdtFlag[0]?.usdt_payments_enabled !== true) {
+    return { ok: false, reason: 'usdt_no_habilitado', orderId: order.orderId, orderNumber: order.orderNumber };
+  }
+
+  const creds = await loadGlopsyPayCredentials();
   if (!creds?.apiKey) {
     return { ok: false, reason: 'glopsypay_no_configurado', orderId: order.orderId, orderNumber: order.orderNumber };
   }
@@ -141,7 +156,7 @@ export const startGlopsyPayCheckout = async (userId, {
     `UPDATE orders SET currency = 'USD', es_exportacion = TRUE,
           payload = COALESCE(payload, '{}'::jsonb) || $2::jsonb
      WHERE id = $1`,
-    [order.orderId, JSON.stringify({ glopsypay_token: token, glopsypay_charge_id: data?.charge?.id || null })]
+    [order.orderId, JSON.stringify({ glopsypay_token: token, glopsypay_charge_id: data?.charge?.id || null, glopsypay_fee: data?.charge?.fee ?? null })]
   );
 
   return {
@@ -185,7 +200,7 @@ export const processGlopsyPayWebhook = async ({ rawBody, signature }) => {
     return { ok: true, ignored: true, reason: 'orden_no_encontrada' };
   }
 
-  const creds = await loadGlopsyPayCredentials(order.tienda_id);
+  const creds = await loadGlopsyPayCredentials();
   if (!creds?.webhookSecret) return { ok: false, status: 503, reason: 'webhook_no_configurado' };
   if (!verifyGlopsyPaySignature(rawBody, signature, creds.webhookSecret)) {
     return { ok: false, status: 401, reason: 'firma_invalida' };
@@ -202,6 +217,7 @@ export const processGlopsyPayWebhook = async ({ rawBody, signature }) => {
   await markOrderPaid(order.id, {
     provider: 'glopsypay',
     refBold: token,
+    processorFee: order.glopsypay_fee != null ? Number(order.glopsypay_fee) : null,
     payloadExtra: { glopsypay_token: token, glopsypay_paid_at: data.paid_at || null, glopsypay_event: data },
   });
   return { ok: true, orderId: order.id, status: 'Completado' };
@@ -213,7 +229,7 @@ export const getGlopsyPayOrderStatus = async (reference) => {
   if (order.status === 'Completado') return { ok: true, orderId: order.id, status: 'APPROVED', orderStatus: 'Completado' };
 
   const token = order.glopsypay_token;
-  const creds = await loadGlopsyPayCredentials(order.tienda_id);
+  const creds = await loadGlopsyPayCredentials();
   if (token && creds?.apiKey) {
     try {
       const data = await gpFetch(`/api/v1/charges/${encodeURIComponent(token)}`, { apiKey: creds.apiKey });
@@ -222,6 +238,7 @@ export const getGlopsyPayOrderStatus = async (reference) => {
         await markOrderPaid(order.id, {
           provider: 'glopsypay',
           refBold: token,
+          processorFee: order.glopsypay_fee != null ? Number(order.glopsypay_fee) : null,
           payloadExtra: { glopsypay_token: token, glopsypay_status: 'paid' },
         });
         return { ok: true, orderId: order.id, status: 'APPROVED', orderStatus: 'Completado' };

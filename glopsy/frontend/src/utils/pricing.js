@@ -4,7 +4,7 @@
 // sistema le suma, según el país de la tienda:
 //   + IVA (si aplica)
 //   + comisión de Glopsy por categoría
-//   + tarifa MÁXIMA de la pasarela (Bold), que asume el proveedor
+//   + tarifa MÁXIMA de la pasarela (ePayco), que asume el proveedor
 // El resultado es el PRECIO TOTAL que se publica (suggested_price).
 //
 // La tarifa de la pasarela la paga el PROVEEDOR: se cubre con el precio
@@ -13,13 +13,15 @@
 
 import { ivaRateForCountry } from './iva';
 
-// Tarifas públicas de Bold para pagos en línea (antes de IVA y retenciones).
-export const BOLD_METHOD_FEES = {
-  visa_mastercard: { label: 'Tarjeta Visa / Mastercard', percent: 2.99, fixed: 900, ivaOnFee: 19 },
-  otras_tarjetas: { label: 'Otras tarjetas', percent: 3.29, fixed: 900, ivaOnFee: 19 },
-  pse_bancolombia: { label: 'PSE / Bancolombia / Billeteras', percent: 2.89, fixed: 900, ivaOnFee: 19 },
-  internacional: { label: 'Tarjeta internacional (+1%)', percent: 4.29, fixed: 900, ivaOnFee: 19 },
-  qr_breb: { label: 'QR Bre-B (transferencia)', percent: 2.89, fixed: 0, ivaOnFee: 19 },
+// Tarifas públicas de ePayco (plan Agregador, otros bancos), antes de IVA.
+// Fuente: epayco.com/tarifas (2026). Base 3.29% + $700; tarjeta internacional
+// +0.8%; PSE < $60.000 tiene tarifa fija $2.000. IVA 19% sobre el fee.
+// No se incluye efectivo.
+export const EPAYCO_METHOD_FEES = {
+  tarjeta_nacional: { label: 'Tarjeta crédito/débito nacional', percent: 3.29, fixed: 700, ivaOnFee: 19 },
+  tarjeta_internacional: { label: 'Tarjeta crédito/débito internacional (+0.8%)', percent: 4.09, fixed: 700, ivaOnFee: 19 },
+  pse: { label: 'PSE (≥ $60.000)', percent: 3.29, fixed: 700, ivaOnFee: 19 },
+  pse_menor: { label: 'PSE (< $60.000)', percent: 0, fixed: 2000, ivaOnFee: 19 },
 };
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -48,11 +50,11 @@ export const formatMoneyInput = (raw) => {
   return decPart !== undefined && decPart !== '' ? `${intFmt},${decPart}` : intFmt;
 };
 
-// Recargo de la pasarela según el método de pago Bold.
+// Recargo de la pasarela según el método de pago ePayco.
 // `amount` es el monto a cobrar (sin tarifa). Devuelve base (sin IVA), iva y
 // el total del recargo. El fijo aplica solo en moneda local (COP).
-export const boldGatewayFeeForMethod = (amount, methodKey, { currency = 'COP' } = {}) => {
-  const fee = BOLD_METHOD_FEES[methodKey] || BOLD_METHOD_FEES.otras_tarjetas;
+export const epaycoGatewayFeeForMethod = (amount, methodKey, { currency = 'COP' } = {}) => {
+  const fee = EPAYCO_METHOD_FEES[methodKey] || EPAYCO_METHOD_FEES.tarjeta_nacional;
   const esLocal = String(currency).toUpperCase() === 'COP';
   const base = round2((Number(amount) * (Number(fee.percent) || 0)) / 100 + (esLocal ? Number(fee.fixed) || 0 : 0));
   const iva = round2(base * (Number(fee.ivaOnFee) || 0) / 100);
@@ -61,10 +63,10 @@ export const boldGatewayFeeForMethod = (amount, methodKey, { currency = 'COP' } 
 
 // Tarifa MÁXIMA de la pasarela (el método más caro). Se usa para calcular el
 // precio publicado de modo que el proveedor quede cubierto en el peor caso.
-export const maxBoldGatewayFee = (amount, { currency = 'COP' } = {}) => {
+export const maxEpaycoGatewayFee = (amount, { currency = 'COP' } = {}) => {
   let best = null;
-  for (const key of Object.keys(BOLD_METHOD_FEES)) {
-    const calc = boldGatewayFeeForMethod(amount, key, { currency });
+  for (const key of Object.keys(EPAYCO_METHOD_FEES)) {
+    const calc = epaycoGatewayFeeForMethod(amount, key, { currency });
     if (!best || calc.total > best.total) best = { methodKey: key, ...calc };
   }
   return best;
@@ -88,7 +90,7 @@ export const calculatePublishedPrice = ({
   const glopsy = round2((price * glopsyPct) / 100);
   const base = round2(price + iva + glopsy);
 
-  const gatewayCalc = includeGateway ? maxBoldGatewayFee(base, { currency }) : null;
+  const gatewayCalc = includeGateway ? maxEpaycoGatewayFee(base, { currency }) : null;
 
   return {
     price,
