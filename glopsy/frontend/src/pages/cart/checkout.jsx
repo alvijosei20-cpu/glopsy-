@@ -434,6 +434,18 @@ export default function Checkout() {
     }
   };
 
+  // Disponibilidad de USDT (Glopsy Pay): la define la tienda dueña del carrito.
+  useEffect(() => {
+    if (isCOP || !cartItems.length) { setUsdtEnabled(false); return; }
+    let alive = true;
+    api.post('/payments/glopsypay/availability', {
+      items: cartItems.map(i => ({ id: i.id, external_id: i.external_id })),
+    })
+      .then(({ data }) => { if (alive) setUsdtEnabled(data?.usdt_enabled === true); })
+      .catch(() => { if (alive) setUsdtEnabled(false); });
+    return () => { alive = false; };
+  }, [cartItems, isCOP]);
+
   if (checkoutSuccess) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
@@ -472,18 +484,6 @@ export default function Checkout() {
       </div>
     );
   }
-
-  // Disponibilidad de USDT (Glopsy Pay): la define la tienda dueña del carrito.
-  useEffect(() => {
-    if (isCOP || !cartItems.length) { setUsdtEnabled(false); return; }
-    let alive = true;
-    api.post('/payments/glopsypay/availability', {
-      items: cartItems.map(i => ({ id: i.id, external_id: i.external_id })),
-    })
-      .then(({ data }) => { if (alive) setUsdtEnabled(data?.usdt_enabled === true); })
-      .catch(() => { if (alive) setUsdtEnabled(false); });
-    return () => { alive = false; };
-  }, [cartItems, isCOP]);
 
   const filteredCiudades = selectedDepartamentoId
     ? (ciudadesDepartamento.length > 0
