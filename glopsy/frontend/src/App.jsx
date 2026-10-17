@@ -70,7 +70,6 @@ function StoreRoute({ children }) {
 // Separamos el contenido principal para poder usar `useAuth` de forma segura
 function MainApp() {
   console.log('MainApp RENDER');
-  const [showSplash, setShowSplash] = useState(false);
   const [loading, setLoading] = useState(true);
   const { user, isLoading } = useAuth();
   const location = useLocation();
@@ -113,15 +112,6 @@ function MainApp() {
     initApp();
   }, []);
 
-  // Mostrar splash si la ubicación ya está confirmada
-  useEffect(() => {
-    if (locationReady) {
-      setShowSplash(true);
-      const t = setTimeout(() => setShowSplash(false), 1700);
-      return () => clearTimeout(t);
-    }
-  }, [locationReady]);
-
   const { slug: storeSlug, store: sfStore, ready: sfReady } = useStorefront();
   const deniedStorePath =
     storeSlug &&
@@ -151,47 +141,6 @@ function MainApp() {
   if (loading || isLoading) {
     return <ConfiguringScreen message="Configurando Glopsy ..." />;
   }
-  if (showSplash) {
-    return (
-      <div
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: '#181818',
-          color: '#fff',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999,
-        }}
-      >
-        <div
-          style={{
-            width: 60,
-            height: 60,
-            border: '6px solid #444',
-            borderTop: '6px solid #fff',
-            borderRadius: '50%',
-            animation: 'spinSplash 1s linear infinite',
-            marginBottom: 30,
-          }}
-        />
-        <h2 style={{ fontWeight: 900, fontSize: '2rem', marginBottom: 12 }}>
-          Configurando Glopsy ...
-        </h2>
-        <style>
-          {`
-            @keyframes spinSplash {
-              0% { transform: rotate(0deg);}
-              100% { transform: rotate(360deg);}
-            }
-          `}
-        </style>
-      </div>
-    );
-  }
-
   if (deniedStorePath) {
     return <Navigate to="/" replace />;
   }
@@ -224,7 +173,7 @@ function MainApp() {
       {storeSlug ? <StoreHeader store={sfStore} /> : <Navbar />}
 
       <main className={`app-content${storeSlug ? ' app-content--store' : ''}`}>
-        <Suspense fallback={<ConfiguringScreen message="Cargando Glopsy ..." />}>
+        <Suspense fallback={<ConfiguringScreen message="Configurando Glopsy ..." />}>
         <Routes>
           {/* RUTAS PÚBLICAS */}
           <Route path="/" element={storeSlug ? <StorefrontHome /> : <Home />} />
