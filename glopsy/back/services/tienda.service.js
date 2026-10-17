@@ -733,7 +733,7 @@ export const requestSellerForUser = async (userId, note = null) => {
 
 export const getCheckoutIntegrationsForUser = async (userId) => {
   const { rows } = await pool.query(
-    `SELECT provider, mode, public_key, access_token, webhook_secret, is_default, updated_at
+    `SELECT provider, mode, public_key, access_token, webhook_secret, cust_id, is_default, updated_at
      FROM checkout_integrations
      WHERE tienda_id = $1`,
     [userId]
@@ -753,6 +753,7 @@ export const getCheckoutIntegrationsForUser = async (userId) => {
       public_key: row.public_key,
       access_token: access ? maskSecret(access) : '',
       webhook_secret: web ? maskSecret(web) : '',
+      cust_id: row.cust_id || '',
       is_default: row.is_default === true,
       broken,
       updated_at: row.updated_at,
@@ -760,10 +761,11 @@ export const getCheckoutIntegrationsForUser = async (userId) => {
   });
 };
 
-export const saveCheckoutIntegrationForUser = async (userId, provider, mode, { publicKey, accessToken, webhookSecret, isDefault = false } = {}) => {
+export const saveCheckoutIntegrationForUser = async (userId, provider, mode, { publicKey, accessToken, webhookSecret, custId, isDefault = false } = {}) => {
   const encPublicKey = publicKey || null;
   const encAccessToken = accessToken ? encryptSecret(accessToken) : null;
   const encWebhookSecret = webhookSecret ? encryptSecret(webhookSecret) : null;
+  const encCustId = custId || null;
 
   // Solo una pasarela predeterminada por tienda: se desmarcan las demás.
   if (isDefault) {
@@ -786,11 +788,12 @@ export const saveCheckoutIntegrationForUser = async (userId, provider, mode, { p
        SET public_key = COALESCE($4, public_key),
            access_token = COALESCE($5, access_token),
            webhook_secret = COALESCE($6, webhook_secret),
+           cust_id = COALESCE($8, cust_id),
            is_default = CASE WHEN $7 THEN true ELSE is_default END,
            updated_at = NOW()
        WHERE tienda_id = $1 AND provider = $2 AND mode = $3
-       RETURNING provider, mode, public_key, access_token, webhook_secret, is_default, updated_at`,
-      [userId, provider, mode || 'prueba', encPublicKey, encAccessToken, encWebhookSecret, isDefault]
+       RETURNING provider, mode, public_key, access_token, webhook_secret, cust_id, is_default, updated_at`,
+      [userId, provider, mode || 'prueba', encPublicKey, encAccessToken, encWebhookSecret, isDefault, encCustId]
     );
     return {
       provider: rows[0].provider,
@@ -798,6 +801,7 @@ export const saveCheckoutIntegrationForUser = async (userId, provider, mode, { p
       public_key: rows[0].public_key,
       access_token: maskSecret(decryptSecret(rows[0].access_token)),
       webhook_secret: rows[0].webhook_secret ? maskSecret(decryptSecret(rows[0].webhook_secret)) : '',
+      cust_id: rows[0].cust_id || '',
       is_default: rows[0].is_default === true,
       updated_at: rows[0].updated_at,
     };
@@ -808,10 +812,10 @@ export const saveCheckoutIntegrationForUser = async (userId, provider, mode, { p
   }
 
   const { rows } = await pool.query(
-    `INSERT INTO checkout_integrations (tienda_id, provider, mode, public_key, access_token, webhook_secret, is_default, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-     RETURNING provider, mode, public_key, access_token, webhook_secret, is_default, updated_at`,
-    [userId, provider, mode || 'prueba', encPublicKey, encAccessToken, encWebhookSecret, isDefault]
+    `INSERT INTO checkout_integrations (tienda_id, provider, mode, public_key, access_token, webhook_secret, cust_id, is_default, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $8, $7, NOW())
+     RETURNING provider, mode, public_key, access_token, webhook_secret, cust_id, is_default, updated_at`,
+    [userId, provider, mode || 'prueba', encPublicKey, encAccessToken, encWebhookSecret, isDefault, encCustId]
   );
   return {
     provider: rows[0].provider,
@@ -819,6 +823,7 @@ export const saveCheckoutIntegrationForUser = async (userId, provider, mode, { p
     public_key: rows[0].public_key,
     access_token: maskSecret(decryptSecret(rows[0].access_token)),
     webhook_secret: rows[0].webhook_secret ? maskSecret(decryptSecret(rows[0].webhook_secret)) : '',
+    cust_id: rows[0].cust_id || '',
     is_default: rows[0].is_default === true,
     updated_at: rows[0].updated_at,
   };

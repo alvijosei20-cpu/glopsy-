@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getProductById, saveProduct, uploadProductImages, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, suggestCategoryController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, internationalShippingController, createPreferenceController, processMpPaymentController, processSavedCardPaymentController, getTiposEmpaqueController, getUserComprasController, searchOrdersController, getOrderByHashController, getOrderTrackingController, getOrderReviewsStatusController, recordPurchaseController, cancelOrderController, updateOrderAddressController, getProductReviewsController, getUserReviewController, addReviewController, updateReviewController, deleteReviewController, getMyProductsManagement, pauseProduct, activateProduct, deleteProduct, addProductImages, updateProductName } from '../controllers/product.controller.js';
+import { getProductById, saveProduct, uploadProductImages, getMyProducts, searchProducts, getCategoriesController, autoCategorizeController, suggestCategoryController, getFavorites, getFavoritesProductsController, toggleFavorite, reserveStockController, releaseStockController, migrateCartController, calculateShippingController, createPreferenceController, processMpPaymentController, processSavedCardPaymentController, getTiposEmpaqueController, getUserComprasController, searchOrdersController, getOrderByHashController, getOrderTrackingController, getOrderReviewsStatusController, recordPurchaseController, cancelOrderController, updateOrderAddressController, getProductReviewsController, getUserReviewController, addReviewController, updateReviewController, deleteReviewController, getMyProductsManagement, pauseProduct, activateProduct, deleteProduct, addProductImages, updateProductName } from '../controllers/product.controller.js';
 import { productAssistant } from '../controllers/product.assistant.controller.js';
 import { requireAuth, optionalAuth, requireSeller } from '../middlewares/auth.js';
 import { tiendaLimiter, heavyLimiter } from '../middlewares/limiters.js';
@@ -55,7 +55,6 @@ router.post('/reserve-stock', reserveStockController);
 router.post('/release-stock', releaseStockController);
 router.post('/migrate-cart', requireAuth, migrateCartController);
 router.post('/calculate-shipping', heavyLimiter, calculateShippingController);
-router.post('/international-shipping', heavyLimiter, optionalAuth, internationalShippingController);
 router.post('/create-preference', heavyLimiter, createPreferenceController);
 router.post('/process-mp-payment', heavyLimiter, optionalAuth, processMpPaymentController);
 router.post('/process-saved-card-payment', requireAuth, heavyLimiter, processSavedCardPaymentController);

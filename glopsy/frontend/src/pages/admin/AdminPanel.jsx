@@ -25,13 +25,16 @@ const PROVIDERS = [
   { key: 'mercadopago', label: 'Mercado Pago', fields: ['public_key', 'access_token', 'webhook_secret'] },
   { key: 'bold', label: 'Bold', fields: ['public_key', 'access_token', 'webhook_secret'] },
   { key: 'envia', label: 'ENVIA', fields: ['access_token', 'webhook_secret'] },
+  { key: 'glopsypay', label: 'Glopsy Pay', fields: ['access_token', 'webhook_secret'], labels: { access_token: 'API Key', webhook_secret: 'Webhook Secret' }, hint: 'Pasarela propia. Genera la API Key en el panel de Glopsy Pay (Ajustes → API).' },
+  { key: 'epayco', label: 'ePayco', fields: ['public_key', 'access_token', 'cust_id', 'webhook_secret'], labels: { public_key: 'Public Key', access_token: 'Private Key', cust_id: 'Customer ID (p_cust_id_cliente)', webhook_secret: 'P_KEY (firma)' }, hint: 'Credenciales del panel de ePayco. El entorno (test/producción) lo define tu cuenta en ePayco, no las llaves.' },
 ];
-const FIELD_LABEL = { public_key: 'Public Key', access_token: 'Access Token', webhook_secret: 'Webhook Secret' };
+const FIELD_LABEL = { public_key: 'Public Key', access_token: 'Access Token', webhook_secret: 'Webhook Secret', cust_id: 'Customer ID' };
+const fieldLabel = (provider, f) => provider?.labels?.[f] || FIELD_LABEL[f];
 const BANNER_FIELDS = ['title', 'highlight', 'badge', 'desc', 'cta', 'to', 'bgFrom', 'bgVia', 'bgTo', 'btnBg', 'btnText', 'glow'];
 const NOTIF_TYPES = [['aviso', 'Aviso'], ['link', 'Enlace'], ['app', 'App']];
 
-const Card = ({ className = '', children }) => (
-  <div className={`bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl ${className}`}>{children}</div>
+const Card = ({ className = '', children, ...props }) => (
+  <div className={`bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl ${className}`} {...props}>{children}</div>
 );
 const Btn = ({ variant = 'primary', className = '', children, ...p }) => {
   const styles = {
@@ -625,26 +628,30 @@ function Integrations({ call, setMsg }) {
 
   const find = (p, mode) => integrations.find((i) => i.provider === p && (i.mode || 'prueba') === mode) || null;
 
+  const providerFields = (key) => (PROVIDERS.find((p) => p.key === key)?.fields) || ['public_key', 'access_token', 'webhook_secret'];
+
   const openModal = (provider) => {
     const prod = find(provider, 'produccion');
-    const mode = prod ? 'produccion' : 'prueba';
+    const mode = provider === 'epayco' ? 'produccion' : (prod ? 'produccion' : 'prueba');
     const cur = find(provider, mode);
-    const f = { public_key: '', access_token: '', webhook_secret: '' };
-    for (const k of Object.keys(f)) f[k] = cur?.[k] || '';
+    const f = {};
+    for (const k of providerFields(provider)) f[k] = cur?.[k] || '';
     setIm(''); setModal({ provider, mode, form: { ...f }, initial: { ...f }, exists: Boolean(cur) });
   };
   const switchMode = (mode) => setModal((m) => {
     const cur = find(m.provider, mode);
-    const f = { public_key: '', access_token: '', webhook_secret: '' };
-    for (const k of Object.keys(f)) f[k] = cur?.[k] || '';
+    const f = {};
+    for (const k of providerFields(m.provider)) f[k] = cur?.[k] || '';
     return { ...m, mode, form: { ...f }, initial: { ...f }, exists: Boolean(cur) };
   });
 
   const save = async () => {
     const { provider, mode, form, initial, exists } = modal;
     const body = { provider, mode };
-    for (const f of ['public_key', 'access_token', 'webhook_secret']) if (form[f] !== initial[f] && String(form[f]).trim() !== '') body[f] = form[f];
+    for (const f of providerFields(provider)) if (form[f] !== initial[f] && String(form[f]).trim() !== '') body[f] = form[f];
     if ((provider === 'bold' || provider === 'mercadopago') && !exists && !String(form.public_key).trim()) { setIm('La Public Key es obligatoria.'); return; }
+    if (provider === 'glopsypay' && !exists && !String(form.access_token).trim()) { setIm('La API Key es obligatoria.'); return; }
+    if (provider === 'epayco' && !exists && (!String(form.public_key).trim() || !String(form.access_token).trim() || !String(form.cust_id).trim())) { setIm('Public Key, Private Key y Customer ID son obligatorios.'); return; }
     setBusy(true); setIm('');
     try { await call(`/admin/stores/${storeId}/checkout-integrations`, { method: 'POST', body: JSON.stringify(body) }); await loadIntegrations(storeId); setIm('Guardado.'); setModal((m) => ({ ...m, exists: true, initial: { ...m.form } })); }
     catch (e) { setIm(e.message); } finally { setBusy(false); }
@@ -659,7 +666,7 @@ function Integrations({ call, setMsg }) {
 
   return (
     <div>
-      <SectionTitle icon={CreditCard} title="Integraciones de pago/checkout" subtitle="Bold, Mercado Pago y ENVIA por tienda." />
+      <SectionTitle icon={CreditCard} title="Integraciones de pago/checkout" subtitle="ePayco, Mercado Pago, ENVIA y Glopsy Pay por tienda." />
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <span className="text-xs font-semibold text-slate-500">Tienda</span>
         <select value={storeId || ''} onChange={(e) => setStoreId(Number(e.target.value))} className={`${inputCls} max-w-xs`}>
@@ -690,16 +697,21 @@ function Integrations({ call, setMsg }) {
               <h3 className="font-extrabold text-slate-900 dark:text-white flex items-center gap-2"><KeyRound size={18} className="text-fuchsia-600" /> {provLabel(modal.provider)}</h3>
               <button type="button" onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-700"><X size={18} /></button>
             </div>
-            <div className="flex flex-wrap gap-2 mb-4">
-              {['prueba', 'produccion'].map((m) => (
-                <button key={m} type="button" onClick={() => switchMode(m)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold ${modal.mode === m ? 'bg-fuchsia-600 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'}`}>{m === 'prueba' ? 'Prueba' : 'Producción'}</button>
-              ))}
-            </div>
+            {modal.provider !== 'epayco' && (
+              <div className="flex flex-wrap gap-2 mb-4">
+                {['prueba', 'produccion'].map((m) => (
+                  <button key={m} type="button" onClick={() => switchMode(m)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold ${modal.mode === m ? 'bg-fuchsia-600 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'}`}>{m === 'prueba' ? 'Prueba' : 'Producción'}</button>
+                ))}
+              </div>
+            )}
             <div className="space-y-3">
+              {PROVIDERS.find((p) => p.key === modal.provider).hint && (
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">{PROVIDERS.find((p) => p.key === modal.provider).hint}</p>
+              )}
               {PROVIDERS.find((p) => p.key === modal.provider).fields.map((f) => (
-                <Field key={f} label={FIELD_LABEL[f]}>
-                  <input type="password" className={inputCls} value={modal.form[f] || ''} onChange={(e) => setModal((m) => ({ ...m, form: { ...m.form, [f]: e.target.value } }))} placeholder={modal.exists ? '•••• (vacío = no cambiar)' : FIELD_LABEL[f]} />
+                <Field key={f} label={fieldLabel(PROVIDERS.find((p) => p.key === modal.provider), f)}>
+                  <input type="password" className={inputCls} value={modal.form[f] || ''} onChange={(e) => setModal((m) => ({ ...m, form: { ...m.form, [f]: e.target.value } }))} placeholder={modal.exists ? '•••• (vacío = no cambiar)' : fieldLabel(PROVIDERS.find((p) => p.key === modal.provider), f)} />
                 </Field>
               ))}
               <p className="text-[11px] text-slate-400">Los valores se muestran enmascarados; deja vacío para conservarlos.</p>

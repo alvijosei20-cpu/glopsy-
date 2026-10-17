@@ -4,12 +4,13 @@ import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: '/glopsy/',
   plugins: [
     react(),
     tailwindcss(),
   ],
   server: {
-    allowedHosts: [".trycloudflare.com", "localhost", "127.0.0.1"],
+    allowedHosts: [".trycloudflare.com", ".ts.net", "localhost", "127.0.0.1"],
     port: 5173,
     proxy: {
       '/api': {

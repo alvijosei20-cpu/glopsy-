@@ -201,7 +201,7 @@ export default function Cart() {
                 </div>
                 <div className="flex justify-between text-xs text-slate-500">
                   <span>Pago</span>
-                  <span className="font-semibold">{esUsdt ? 'Glopsy Pay (USDT)' : 'Bold (COP)'}</span>
+                  <span className="font-semibold">{esUsdt ? 'Glopsy Pay (USDT)' : 'ePayco (COP)'}</span>
                 </div>
               </div>
 

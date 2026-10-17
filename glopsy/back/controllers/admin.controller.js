@@ -151,7 +151,7 @@ export const saveStoreCheckoutIntegration = async (req, res) => {
     const tiendaId = toInt(req.params.tiendaId, { min: 1 });
     if (!tiendaId) return res.status(400).json({ ok: false, message: 'tiendaId inválido.' });
     const provider = cleanString(req.body?.provider, { maxLength: 50 });
-    if (!isAllowedEnum(provider, ['mercadopago', 'envia', 'bold'])) {
+    if (!isAllowedEnum(provider, ['mercadopago', 'envia', 'bold', 'glopsypay', 'epayco'])) {
       return res.status(400).json({ ok: false, message: 'Proveedor no válido.' });
     }
     const mode = isAllowedEnum(req.body?.mode, ['prueba', 'produccion']) ? req.body.mode : 'prueba';
@@ -159,6 +159,7 @@ export const saveStoreCheckoutIntegration = async (req, res) => {
     const publicKey = strip(cleanString(req.body?.public_key, { maxLength: 2048 }));
     const accessToken = strip(cleanString(req.body?.access_token, { maxLength: 2048 }));
     const webhookSecret = strip(cleanString(req.body?.webhook_secret, { maxLength: 2048 }));
+    const custId = strip(cleanString(req.body?.cust_id, { maxLength: 200 }));
 
     if (provider === 'mercadopago' && !publicKey) {
       return res.status(400).json({ ok: false, message: 'La Public Key es obligatoria para Mercado Pago.' });
@@ -166,14 +167,21 @@ export const saveStoreCheckoutIntegration = async (req, res) => {
     if (provider === 'bold' && !publicKey) {
       return res.status(400).json({ ok: false, message: 'La Public Key es obligatoria para Bold.' });
     }
+    if (provider === 'glopsypay' && !accessToken) {
+      return res.status(400).json({ ok: false, message: 'La API Key es obligatoria para Glopsy Pay.' });
+    }
+    if (provider === 'epayco' && (!publicKey || !accessToken || !custId)) {
+      return res.status(400).json({ ok: false, message: 'Public Key, Private Key y Customer ID son obligatorios para ePayco.' });
+    }
 
     const saved = await saveCheckoutIntegrationForUser(tiendaId, provider, mode, {
       publicKey: publicKey || undefined,
       accessToken: accessToken || undefined,
       webhookSecret: webhookSecret || undefined,
+      custId: custId || undefined,
       isDefault: req.body?.is_default === true,
     });
-    const provName = provider === 'mercadopago' ? 'Mercado Pago' : provider === 'bold' ? 'Bold' : 'ENVIA';
+    const provName = provider === 'mercadopago' ? 'Mercado Pago' : provider === 'bold' ? 'Bold' : provider === 'glopsypay' ? 'Glopsy Pay' : provider === 'epayco' ? 'ePayco' : 'ENVIA';
     return res.json({ ok: true, integration: saved, message: `${provName} guardado.` });
   } catch (error) {
     console.error('Error guardando integración (admin):', error.message);
@@ -187,7 +195,7 @@ export const deleteStoreCheckoutIntegration = async (req, res) => {
     const tiendaId = toInt(req.params.tiendaId, { min: 1 });
     const provider = cleanString(req.params.provider, { maxLength: 50 });
     const mode = isAllowedEnum(req.query.mode, ['prueba', 'produccion']) ? req.query.mode : 'prueba';
-    if (!tiendaId || !isAllowedEnum(provider, ['mercadopago', 'envia', 'bold'])) {
+    if (!tiendaId || !isAllowedEnum(provider, ['mercadopago', 'envia', 'bold', 'glopsypay', 'epayco'])) {
       return res.status(400).json({ ok: false, message: 'Parámetros inválidos.' });
     }
     const deleted = await deleteCheckoutIntegrationForUser(tiendaId, provider, mode);

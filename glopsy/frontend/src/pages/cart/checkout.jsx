@@ -9,7 +9,7 @@ import { useMoney } from '../../utils/money';
 import { cartCurrency } from '../../utils/cartMode';
 import { useStorefront } from '../../storefront/StorefrontContext';
 import { useAuth } from '../../context/AuthContext';
-import BoldPayment from '../../components/BoldPayment';
+import EpaycoPayment from '../../components/EpaycoPayment';
 import './cart.css';
 
 export default function Checkout() {
@@ -20,23 +20,11 @@ export default function Checkout() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [cartItems, setCartItems] = useState([]);
-  // La moneda la fija el carrito (COP -> Bold, USDT -> Glopsy Pay).
+  // La moneda la fija el carrito (COP -> ePayco, USDT -> Glopsy Pay).
   const currency = cartCurrency(cartItems) || storeCurrency;
   const isCOP = String(currency || '').toUpperCase() === 'COP';
   const [guestHash, setGuestHash] = useState('');
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
-
-  // Carrito en USDT (Venezuela o compra internacional): usa Glopsy Pay y logística internacional.
-  const isInternationalStore = !isCOP;
-  const [shippingMode, setShippingMode] = useState('national');
-  const [paises, setPaises] = useState([]);
-  const [intlDestination, setIntlDestination] = useState({ country: '', state: '', city: '', postalCode: '', address: '' });
-  const [intlOptions, setIntlOptions] = useState([]);
-  const [intlDuties, setIntlDuties] = useState(null);
-  const [selectedIntlOptionId, setSelectedIntlOptionId] = useState('');
-  const [loadingIntl, setLoadingIntl] = useState(false);
-  const [intlError, setIntlError] = useState('');
-  const [intlConsent, setIntlConsent] = useState(false);
 
   const [departamentos, setDepartamentos] = useState([]);
   const [ciudades, setCiudades] = useState([]);
@@ -57,23 +45,26 @@ export default function Checkout() {
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [showBricks, setShowBricks] = useState(false);
   const [preferenceData, setPreferenceData] = useState(null);
-  const [paymentProvider, setPaymentProvider] = useState('bold');
-  const [showBold, setShowBold] = useState(false);
+  const [showEpayco, setShowEpayco] = useState(false);
 
-  // Si el cliente vuelve del checkout de Bold, retomamos la verificación del pago.
+  // Si el cliente vuelve del checkout de Glopsy Pay (USDT), sondeamos el estado.
   useEffect(() => {
-    if (sessionStorage.getItem('glopsy_bold_ref')) {
-      setPaymentProvider('bold');
-      setShowBold(true);
-    }
+    const ref = searchParams.get('glopsy_ref');
+    if (!ref) return;
+    let tries = 0;
+    const timer = setInterval(async () => {
+      try {
+        const res = await api.get(`/payments/glopsypay/status/${encodeURIComponent(ref)}`);
+        if (res.data?.status === 'APPROVED') {
+          clearInterval(timer);
+          setCheckoutSuccess(true);
+        }
+      } catch { /* reintentar */ }
+      if (++tries > 40) clearInterval(timer);
+    }, 3000);
+    return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Pasarela para tiendas COP. Mercado Pago está deshabilitado: siempre Bold.
-  useEffect(() => {
-    if (!isCOP) return;
-    setPaymentProvider('bold');
-  }, [isCOP, currency]);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!isLoggedIn()) return;
@@ -233,10 +224,9 @@ export default function Checkout() {
     const fetchGeo = async () => {
       try {
         const geoParams = paisId ? { pais_id: paisId } : {};
-        const [resDeps, resCius, resPaises] = await Promise.all([
+        const [resDeps, resCius] = await Promise.all([
           api.get('/geo/departamentos', { params: geoParams }).catch(() => ({ data: { departamentos: [] } })),
           api.get('/geo/ciudades', { params: geoParams }).catch(() => ({ data: { ciudades: [] } })),
-          api.get('/geo/paises').catch(() => ({ data: { paises: [] } }))
         ]);
         if (resDeps.data?.departamentos?.length > 0) {
           setDepartamentos(resDeps.data.departamentos);
@@ -247,9 +237,6 @@ export default function Checkout() {
           // Fallback: si el filtro por país no devolvió ciudades, cargar todas.
           const all = await api.get('/geo/ciudades').catch(() => ({ data: { ciudades: [] } }));
           if (all.data?.ciudades?.length > 0) setCiudades(all.data.ciudades);
-        }
-        if (resPaises.data?.paises?.length > 0) {
-          setPaises(resPaises.data.paises);
         }
       } catch {
         // Sin datos geográficos no se puede cotizar; el usuario reintenta.
@@ -277,9 +264,6 @@ export default function Checkout() {
 
   useEffect(() => {
     const calculateShipping = async () => {
-      if (isInternationalStore && shippingMode === 'international') {
-        return;
-      }
       if (!selectedCiudadId || cartItems.length === 0) {
         setShippingCost(0);
         setShippingMessage('');
@@ -313,60 +297,7 @@ export default function Checkout() {
       }
     };
     calculateShipping();
-  }, [selectedCiudadId, cartItems, shippingMode, isInternationalStore]);
-
-  useEffect(() => {
-    if (isInternationalStore && shippingMode === 'international') {
-      const opt = intlOptions.find((o) => o.id === selectedIntlOptionId);
-      setShippingCost(opt ? Number(opt.total || 0) : 0);
-      setShippingMessage(opt ? `Envío internacional (${opt.carrier})` : 'Selecciona una opción de envío internacional');
-    }
-  }, [selectedIntlOptionId, intlOptions, shippingMode, isInternationalStore]);
-
-  const quoteInternational = async () => {
-    if (!intlDestination.country || !intlDestination.state || !intlDestination.city || !intlDestination.address) {
-      setIntlError('Completa país, estado/región, ciudad y dirección de destino.');
-      return;
-    }
-    setIntlError('');
-    setLoadingIntl(true);
-    setIntlOptions([]);
-    setIntlDuties(null);
-    setIntlConsent(false);
-    setSelectedIntlOptionId('');
-    try {
-      const country = paises.find((p) => String(p.codigo_iso).toUpperCase() === String(intlDestination.country).toUpperCase());
-      const res = await api.post('/product/international-shipping', {
-        items: cartItemsConPrecio,
-        destination: {
-          name: user?.name || 'Cliente',
-          email: user?.email || undefined,
-          phone: telefono || undefined,
-          country: intlDestination.country,
-          state: intlDestination.state,
-          city: intlDestination.city,
-          postalCode: intlDestination.postalCode,
-          street: intlDestination.address,
-          number: '',
-          reference: '',
-          countryName: country?.nombre || undefined,
-        },
-      });
-      if (res.data?.ok) {
-        setIntlOptions(res.data.options || []);
-        setIntlDuties(res.data.dutiesEstimate || null);
-        if ((res.data.options || []).length === 0) {
-          setIntlError('No hay opciones de envío disponibles para ese destino.');
-        }
-      } else {
-        setIntlError(res.data?.message || 'No fue posible cotizar el envío internacional.');
-      }
-    } catch (err) {
-      setIntlError(err.response?.data?.message || 'No fue posible cotizar el envío internacional.');
-    } finally {
-      setLoadingIntl(false);
-    }
-  };
+  }, [selectedCiudadId, cartItems]);
 
   const backendPriceOf = (item) => {
     const pi = perItem.find(x => String(x.itemId) === String(item.id));
@@ -378,7 +309,6 @@ export default function Checkout() {
   });
   const subtotal = cartItemsConPrecio.reduce((acc, item) => acc + (Number(item.price || 0) * Number(item.quantity || 1)), 0);
   const total = subtotal + Number(shippingCost || 0);
-  const isIntlUI = isInternationalStore && shippingMode === 'international';
 
   const checkoutItemsForGA = () =>
     cartItemsConPrecio.map(item => ({
@@ -400,70 +330,31 @@ export default function Checkout() {
     sessionStorage.removeItem('glopsy_checkout_snapshot');
   };
 
-  const handleBoldSuccess = () => {
+  const handlePaymentSuccess = () => {
     setCheckoutSuccess(true);
     localStorage.removeItem('glopsy_cart');
     window.dispatchEvent(new Event('storage'));
     firePurchase(null, null, total);
   };
 
-  const customerInfoForOrder = () => (
-    isIntlUI
-      ? {
-          direccion: intlDestination.address,
-          telefono,
-          email: user?.email || undefined,
-          customer_name: user?.name || undefined,
-          country: intlDestination.country,
-          state: intlDestination.state,
-          city: intlDestination.city,
-          postalCode: intlDestination.postalCode,
-        }
-      : {
-          departamento_id: selectedDepartamentoId,
-          ciudad_id: selectedCiudadId,
-          direccion,
-          telefono,
-        }
-  );
+  const customerInfoForOrder = () => ({
+    departamento_id: selectedDepartamentoId,
+    ciudad_id: selectedCiudadId,
+    direccion,
+    telefono,
+  });
 
-  const shippingPayloadForOrder = () => (
-    isIntlUI
-      ? {
-          international: true,
-          destination: intlDestination,
-          option: intlOptions.find((o) => o.id === selectedIntlOptionId) || null,
-        }
-      : { grouped: shipmentsGrouped }
-  );
+  const shippingPayloadForOrder = () => ({ grouped: shipmentsGrouped });
 
   const handleCheckout = async (e) => {
     e.preventDefault();
-    if (!isCOP) {
-      alert('El pago internacional con Glopsy Pay (USDT) estará disponible pronto.');
+    if (!selectedDepartamentoId || !selectedCiudadId || !direccion.trim() || !telefono.trim()) {
+      alert('Por favor completa todos los datos de envío (Departamento, Ciudad, Dirección y Número Móvil).');
       return;
     }
-    if (isIntlUI) {
-      if (
-        !intlDestination.country || !intlDestination.state.trim() || !intlDestination.city.trim() ||
-        !intlDestination.address.trim() || !telefono.trim() || !selectedIntlOptionId
-      ) {
-        alert('Completa el destino internacional y selecciona una opción de envío.');
-        return;
-      }
-      if (intlDuties?.ok && !intlConsent) {
-        alert('Debes aceptar las condiciones de importación para continuar.');
-        return;
-      }
-    } else {
-      if (!selectedDepartamentoId || !selectedCiudadId || !direccion.trim() || !telefono.trim()) {
-        alert('Por favor completa todos los datos de envío (Departamento, Ciudad, Dirección y Número Móvil).');
-        return;
-      }
-      if (!/^3\d{9}$/.test(telefono) && isCOP) {
-        alert('El número móvil debe tener 10 dígitos y empezar por 3 (Ej. 3001234567).');
-        return;
-      }
+    if (!/^3\d{9}$/.test(telefono) && isCOP) {
+      alert('El número móvil debe tener 10 dígitos y empezar por 3 (Ej. 3001234567).');
+      return;
     }
 
     const checkoutItems = cartItemsConPrecio.map(item => ({
@@ -473,10 +364,36 @@ export default function Checkout() {
       quantity: Number(item.quantity || 1),
     }));
 
-    // Bold: checkout embebido (tarjeta, PSE, Nequi, QR Bre-B si está habilitado).
-    if (paymentProvider === 'bold') {
+    // Glopsy Pay (USDT): crea el cobro y redirige al checkout de la pasarela.
+    if (!isCOP) {
+      setLoadingCheckout(true);
+      try {
+        const res = await api.post('/payments/glopsypay/checkout', {
+          items: cartItemsConPrecio,
+          shipping_cost: shippingCost,
+          shipping_payload: shippingPayloadForOrder(),
+          customer_info: customerInfoForOrder(),
+          guestHash,
+          redirect_base: `${window.location.origin}${window.location.pathname}`,
+        });
+        if (res.data?.ok && res.data.url) {
+          trackEvent('begin_checkout', { currency, value: total, items: checkoutItems });
+          window.location.href = res.data.url;
+          return;
+        }
+        alert(res.data?.message || 'No se pudo iniciar el pago con Glopsy Pay.');
+      } catch (err) {
+        alert(err.response?.data?.message || 'Error al iniciar el pago con Glopsy Pay.');
+      } finally {
+        setLoadingCheckout(false);
+      }
+      return;
+    }
+
+    // COP: checkout con ePayco (tarjeta, PSE, Nequi, Daviplata, etc.).
+    if (isCOP) {
       trackEvent('begin_checkout', { currency, value: total, items: checkoutItems });
-      setShowBold(true);
+      setShowEpayco(true);
       return;
     }
 
@@ -592,8 +509,8 @@ export default function Checkout() {
               </div>
               <div id="paymentBrick_container" className="min-h-[450px]"></div>
             </div>
-          ) : showBold ? (
-            <BoldPayment
+          ) : showEpayco ? (
+            <EpaycoPayment
               total={total}
               items={cartItemsConPrecio}
               shippingCost={shippingCost}
@@ -603,8 +520,8 @@ export default function Checkout() {
               currency={currency}
               user={user}
               formatPrice={formatPrice}
-              onSuccess={handleBoldSuccess}
-              onBack={() => setShowBold(false)}
+              onSuccess={handlePaymentSuccess}
+              onBack={() => setShowEpayco(false)}
             />
           ) : (
             <form onSubmit={handleCheckout} className="space-y-6">
@@ -612,200 +529,16 @@ export default function Checkout() {
               <label className="block text-xs font-bold text-slate-700">Método de pago</label>
               {isCOP ? (
                 <div className="p-3 rounded-xl border border-blue-600 bg-blue-50 text-blue-700 text-sm font-bold">
-                  Tarjeta / PSE / Billeteras (Bold)
+                  Tarjeta / PSE / Billeteras (ePayco)
                 </div>
               ) : (
                 <div className="p-3 rounded-xl border border-fuchsia-200 bg-fuchsia-50 text-sm">
                   <p className="font-bold text-fuchsia-700">Glopsy Pay (USDT)</p>
-                  <p className="text-xs text-fuchsia-600 mt-0.5">Pago internacional en USDT. Disponible próximamente.</p>
+                  <p className="text-xs text-fuchsia-600 mt-0.5">Pago internacional en USDT (BEP20) con Glopsy Pay.</p>
                 </div>
               )}
             </div>
-            {isInternationalStore && (
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-slate-700">Tipo de envío</label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => { setShippingMode('national'); setIntlOptions([]); setSelectedIntlOptionId(''); }}
-                    className={`p-3 rounded-xl border text-sm font-bold transition-all cursor-pointer ${shippingMode === 'national' ? 'border-fuchsia-600 bg-fuchsia-50 text-fuchsia-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-                  >
-                    Nacional (Venezuela)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setShippingMode('international'); setShippingCost(0); }}
-                    className={`p-3 rounded-xl border text-sm font-bold transition-all cursor-pointer ${shippingMode === 'international' ? 'border-slate-900 bg-slate-100 text-slate-900' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-                  >
-                    Internacional
-                  </button>
-                </div>
-              </div>
-            )}
 
-            {isIntlUI ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">País de destino</label>
-                    <select
-                      value={intlDestination.country}
-                      onChange={(e) => setIntlDestination({ ...intlDestination, country: e.target.value })}
-                      className="w-full p-3 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none focus:border-slate-500"
-                    >
-                      <option value="">Selecciona un país</option>
-                      {paises.map((p) => (
-                        <option key={p.id} value={p.codigo_iso}>{p.nombre}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Estado / Región</label>
-                    <input
-                      type="text"
-                      value={intlDestination.state}
-                      onChange={(e) => setIntlDestination({ ...intlDestination, state: e.target.value })}
-                      placeholder="Ej. Florida"
-                      className="w-full p-3 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none focus:border-slate-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Ciudad</label>
-                    <input
-                      type="text"
-                      value={intlDestination.city}
-                      onChange={(e) => setIntlDestination({ ...intlDestination, city: e.target.value })}
-                      placeholder="Ej. Miami"
-                      className="w-full p-3 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none focus:border-slate-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Código postal</label>
-                    <input
-                      type="text"
-                      value={intlDestination.postalCode}
-                      onChange={(e) => setIntlDestination({ ...intlDestination, postalCode: e.target.value })}
-                      placeholder="Ej. 33125"
-                      className="w-full p-3 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none focus:border-slate-500"
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Dirección</label>
-                    <input
-                      type="text"
-                      value={intlDestination.address}
-                      onChange={(e) => setIntlDestination({ ...intlDestination, address: e.target.value })}
-                      placeholder="Calle, número, apartamento"
-                      className="w-full p-3 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none focus:border-slate-500"
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Teléfono de contacto</label>
-                    <input
-                      type="tel"
-                      value={telefono}
-                      onChange={(e) => setTelefono(e.target.value)}
-                      placeholder="Teléfono del destinatario"
-                      className="w-full p-3 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none focus:border-slate-500"
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={quoteInternational}
-                    disabled={loadingIntl}
-                    className="bg-slate-900 text-white font-bold px-4 py-2.5 rounded-xl text-sm cursor-pointer disabled:opacity-50"
-                  >
-                    {loadingIntl ? 'Cotizando…' : 'Cotizar envío internacional'}
-                  </button>
-                  {intlError && <span className="text-xs text-rose-600">{intlError}</span>}
-                </div>
-                {intlOptions.length > 0 && (
-                  <div className="space-y-2">
-                    <label className="block text-xs font-bold text-slate-700">Selecciona el envío</label>
-                    {intlOptions.map((opt) => (
-                      <label
-                        key={opt.id}
-                        className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl border cursor-pointer text-sm transition-all ${selectedIntlOptionId === opt.id ? 'border-slate-900 bg-slate-100' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <input
-                            type="radio"
-                            name="intl_option"
-                            checked={selectedIntlOptionId === opt.id}
-                            onChange={() => setSelectedIntlOptionId(opt.id)}
-                            className="text-slate-900 focus:ring-slate-500"
-                          />
-                          <div>
-                            <p className="font-bold text-slate-800 uppercase">{opt.carrier}{opt.branch?.reference ? ` · ${opt.branch.reference}` : ''}</p>
-                            <p className="text-[11px] text-slate-500">{opt.direct ? 'Envío internacional directo' : `${opt.leg1?.service || 'Internacional'} + última milla`}</p>
-                          </div>
-                        </div>
-                        <span className="font-extrabold text-slate-900">{formatPrice(opt.total)}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-                {intlDuties?.ok && (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-[11px] leading-snug text-amber-800">
-                    <p className="font-bold">Aranceles estimados al recibir (aprox.)</p>
-                    {intlDuties.deMinimisAplicado ? (
-                      <p>Tu compra califica como envío de bajo valor: no debería pagar aranceles ni IVA de importación en {intlDuties.paisNombre} por courier y para uso personal.</p>
-                    ) : (
-                      <>
-                        <p>
-                          Arancel: {formatPrice(intlDuties.duty)} · IVA ({intlDuties.ivaPct}%): {formatPrice(intlDuties.iva)}
-                        </p>
-                        <p className="font-extrabold text-amber-900">Total estimado en aduana: {formatPrice(intlDuties.total)}</p>
-                      </>
-                    )}
-                    <p className="mt-1 text-amber-700">
-                      Este valor es un estimado informativo. La aduana de {intlDuties.paisNombre} lo cobra al momento de la entrega y el monto final puede variar.
-                    </p>
-                  </div>
-                )}
-
-                {intlDuties?.ok && (intlDuties.pais === 'VE' || intlDuties.pais === 'CO') && (
-                  <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-[11px] leading-snug text-slate-600">
-                    <p className="font-bold text-slate-800">Importante para tu envío a {intlDuties.paisNombre} (uso personal)</p>
-                    {intlDuties.pais === 'VE' ? (
-                      <>
-                        <p className="mt-1">Para que tu envío por courier puerta a puerta quede exento de aranceles e IVA (hasta USD 100):</p>
-                        <ul className="mt-1 ml-4 list-disc space-y-0.5">
-                          <li>Debe ser para <strong>uso personal o familiar</strong>, no para reventa.</li>
-                          <li>El <strong>valor declarado de la guía no debe superar USD 100</strong>. Si tu carrito lo supera, pagará tributos al recibir.</li>
-                          <li>Evita <strong>muchas unidades del mismo artículo</strong> (más de ~6) o envíos repetidos: la aduana puede tratarlo como comercial.</li>
-                        </ul>
-                      </>
-                    ) : (
-                      <>
-                        <p className="mt-1">Al importar a Colombia:</p>
-                        <ul className="mt-1 ml-4 list-disc space-y-0.5">
-                          <li>Debe ser para <strong>uso personal</strong>, no para reventa.</li>
-                          <li>Los envíos de bajo valor (hasta USD 200) pueden no pagar arancel ni IVA; si tu carrito lo supera, la aduana cobra arancel e IVA (19%) al recibir.</li>
-                          <li>Evita <strong>cantidades comerciales</strong> del mismo artículo: la DIAN puede tratarlo como importación comercial.</li>
-                        </ul>
-                      </>
-                    )}
-                    <p className="mt-1">Declara siempre el <strong>valor real</strong>: la aduana lo cruza con facturas; una subdeclaración genera multas y retención.</p>
-                    <p className="mt-1">Datos del receptor completos (nombre, cédula, dirección y teléfono) agilizan la entrega.</p>
-                    <label className="mt-2 flex items-start gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={intlConsent}
-                        onChange={(e) => setIntlConsent(e.target.checked)}
-                        className="mt-0.5"
-                        required
-                      />
-                      <span className="font-semibold text-slate-700">
-                        Entiendo y acepto las condiciones de importación a {intlDuties.paisNombre} (uso personal, valor real declarado y límites aplicables).
-                      </span>
-                    </label>
-                  </div>
-                )}
-              </div>
-            ) : (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
@@ -879,7 +612,6 @@ export default function Checkout() {
               </div>
             </div>
             </>
-            )}
 
             {shippingOptions.length > 0 && (
               <div className="border-t border-slate-100 pt-6 space-y-2">

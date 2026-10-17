@@ -39,7 +39,7 @@ const findOrder = async (reference) => {
   return rows[0] || null;
 };
 
-export const markOrderPaid = async (orderId, { refBold = null, payloadExtra = {} } = {}) => {
+export const markOrderPaid = async (orderId, { refBold = null, payloadExtra = {}, provider = 'bold' } = {}) => {
   const { rows } = await pool.query(`SELECT currency FROM orders WHERE id = $1 LIMIT 1`, [orderId]);
   const moneda = rows[0]?.currency || 'COP';
   await pool.query(
@@ -51,7 +51,7 @@ export const markOrderPaid = async (orderId, { refBold = null, payloadExtra = {}
     [orderId, JSON.stringify(payloadExtra)]
   );
   try {
-    await recordSaleForOrder(orderId, { provider: 'bold', moneda, referenciaExterna: refBold });
+    await recordSaleForOrder(orderId, { provider, moneda, referenciaExterna: refBold });
   } catch (error) {
     console.error('[Bold] Error contabilizando venta en el ledger:', error.message);
   }

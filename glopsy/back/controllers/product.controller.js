@@ -3,8 +3,6 @@ import { uploadProductImage, isR2Configured } from '../services/r2.service.js';
 import { visitorCountryFromReq } from '../services/checkoutCurrency.service.js';
 import { saveProductForUser, getProductsForUser, getProductsForUserManagement, setProductStatusForUser, deleteProductForUser, addProductImagesForUser, updateProductNameForUser, searchQueryProductsCached, getCategories, getGlobalCommission, autoCategorizeUncategorizedProducts, suggestCategoryForProduct, getUserFavorites, toggleProductFavorite, getProductByPublicId, getMainStoreId, reserveStockForSession, releaseStockForSession, migrateCartSession, calculateShippingCost, createMercadoPagoPreferenceForCart, processMpPaymentForCart, processSavedCardPaymentForCart, getTiposEmpaque, getFavoriteProductsDetails, recordPurchaseForUser, getUserPurchasesDetails, searchOrdersByNumberOrDoc, getOrderByHash, getOrderTrackingForUser, cancelOrderForUser, updateOrderAddressForUser, getProductReviews, getUserReviewStatus, getOrderReviewsStatus, addProductReview, updateProductReview, deleteProductReview } from '../services/product.service.js';
 import { validatePaymentBiometricNonce } from '../services/auth.service.js';
-import { getInternationalShippingOptions } from '../services/internationalShipping.service.js';
-import { estimateImportDuties } from '../services/tariff.service.js';
 import { pool } from '../db.js';
 import {
   cleanString,
@@ -385,48 +383,6 @@ export const calculateShippingController = async (req, res) => {
   } catch (error) {
     console.error('Error al calcular envío:', error.message);
     res.status(400).json({ ok: false, message: error.message || 'Error al calcular el costo de envío.' });
-  }
-};
-
-export const internationalShippingController = async (req, res) => {
-  try {
-    const items = sanitizeCartItems(req.body.items);
-    const destination = sanitizeObject(req.body.destination || {}, { maxSize: 30 });
-    if (items.length === 0) {
-      return res.status(400).json({ ok: false, message: 'No hay productos en el carrito.' });
-    }
-    if (!destination?.country) {
-      return res.status(400).json({ ok: false, message: 'Selecciona el país de destino.' });
-    }
-
-    let tiendaId = items[0]?.tienda_id ? Number(items[0].tienda_id) : null;
-    if (!tiendaId && items[0]?.id) {
-      const { rows } = await pool.query(`SELECT tienda_id FROM produc WHERE id = $1 LIMIT 1`, [items[0].id]);
-      tiendaId = rows[0]?.tienda_id ? Number(rows[0].tienda_id) : null;
-    }
-
-    const result = await getInternationalShippingOptions({ tiendaId, items, destination });
-
-    // Estimado informativo de aranceles/IVA que pagará el cliente en aduana
-    // (DAP). Se calcula sobre la opción más económica cotizada.
-    let dutiesEstimate = null;
-    try {
-      const cheapest = (result.options || [])[0];
-      const shippingCost = cheapest ? Number(cheapest.shippingTotal ?? cheapest.total) || 0 : 0;
-      dutiesEstimate = await estimateImportDuties({
-        paisDestino: destination.country,
-        items,
-        shippingCost,
-        currency: result.currency || 'USD',
-      });
-    } catch (e) {
-      console.warn('No se pudo estimar aranceles:', e.message);
-    }
-
-    res.json({ ok: true, ...result, dutiesEstimate });
-  } catch (error) {
-    console.error('Error al cotizar envío internacional:', error.message);
-    res.status(400).json({ ok: false, message: error.message || 'No fue posible cotizar el envío internacional.' });
   }
 };
 
